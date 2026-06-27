@@ -145,11 +145,58 @@ def init_db():
         con.execute("ALTER TABLE routes ADD COLUMN device TEXT")
     if "immich_checked" not in route_cols:
         con.execute("ALTER TABLE routes ADD COLUMN immich_checked INTEGER DEFAULT 0")
+    if "start_lat" not in route_cols:
+        con.execute("ALTER TABLE routes ADD COLUMN start_lat REAL")
+        con.execute("ALTER TABLE routes ADD COLUMN start_lon REAL")
+        con.execute("""UPDATE routes
+                       SET start_lat = CAST(json_extract(geojson,'$[0][1]') AS REAL),
+                           start_lon = CAST(json_extract(geojson,'$[0][0]') AS REAL)
+                       WHERE geojson IS NOT NULL AND geojson != '[]'""")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_routes_date "
+                "ON routes(COALESCE(started_at,created_at) DESC)")
     con.commit()
     con.close()
 
 
 # ---------------------------------------------------------------- análisis GPX
+# Mapeo de <type> GPX → actividad. Cubre strings (Strava/Garmin Connect)
+# y códigos numéricos Garmin (sport_id del protocolo FIT exportado a GPX).
+_GPX_TYPE_MAP = {
+    # strings habituales
+    "hiking":           "senderismo",
+    "trail hiking":     "senderismo",
+    "mountaineering":   "senderismo",
+    "mountain":         "senderismo",
+    "trekking":         "senderismo",
+    "walking":          "caminata",
+    "casual walking":   "caminata",
+    "speed walking":    "caminata",
+    "running":          "correr",
+    "trail running":    "correr",
+    "street running":   "correr",
+    "cycling":          "bicicleta",
+    "biking":           "bicicleta",
+    "mountain biking":  "bicicleta",
+    "road cycling":     "bicicleta",
+    "gravel cycling":   "bicicleta",
+    "virtual cycling":  "bicicleta",
+    "skiing":           "esqui",
+    "alpine skiing":    "esqui",
+    "nordic skiing":    "esqui",
+    "cross country skiing": "esqui",
+    "snowboarding":     "esqui",
+    # códigos numéricos Garmin (sport_id)
+    "1":  "correr",
+    "2":  "bicicleta",
+    "11": "caminata",
+    "12": "esqui",
+    "13": "esqui",
+    "14": "esqui",
+    "16": "senderismo",
+    "17": "senderismo",
+}
+
+
 def analyse_gpx(text):
     """Devuelve stats, geojson (lista de [lon,lat]) y perfil de elevación."""
     gpx = gpxpy.parse(text)
@@ -198,8 +245,14 @@ def analyse_gpx(text):
         "started_at": started,
     }
     name = ""
-    if gpx.tracks and gpx.tracks[0].name:
-        name = gpx.tracks[0].name
+    gpx_type = None
+    if gpx.tracks:
+        if gpx.tracks[0].name:
+            name = gpx.tracks[0].name
+        if gpx.tracks[0].type:
+            gpx_type = gpx.tracks[0].type.strip()
+    if gpx_type:
+        stats["_gpx_type"] = gpx_type
     creator = (gpx.creator or "").strip() or None
     return stats, coords, elev_profile, name, creator
 
@@ -410,14 +463,19 @@ def get_route_by_name(name):
 
 @app.route("/api/routes", methods=["GET"])
 def list_routes():
-    rows = db().execute(
-        "SELECT id,name,distance_m,ascent_m,duration_s,moving_s,started_at,activity_type,"
-        "json_extract(geojson,'$[0][1]') AS start_lat,"
-        "json_extract(geojson,'$[0][0]') AS start_lon,"
-        "(SELECT COUNT(*) FROM photos WHERE route_id=routes.id) AS photo_count "
-        "FROM routes ORDER BY COALESCE(started_at, created_at) DESC"
-    ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    con = db()
+    limit  = request.args.get("limit",  type=int)
+    offset = request.args.get("offset", 0, type=int)
+    total  = con.execute("SELECT COUNT(*) FROM routes").fetchone()[0]
+    q = ("SELECT id,name,distance_m,ascent_m,duration_s,moving_s,"
+         "started_at,activity_type,start_lat,start_lon "
+         "FROM routes ORDER BY COALESCE(started_at,created_at) DESC")
+    if limit is not None:
+        rows = con.execute(q + " LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+    else:
+        rows = con.execute(q).fetchall()
+    items = [dict(r) for r in rows]
+    return jsonify({"items": items, "total": total})
 
 
 _ACTIVITY_KEYWORDS = {
@@ -441,6 +499,7 @@ _ACTIVITY_KEYWORDS = {
         "esqui", "esquí", "ski", "skiing", "nieve", "snow",
         "pista", "slalom", "esquiando", "nordic",
     ],
+    "otros": [],  # sin detección automática — solo selección manual
 }
 
 def _detect_activity(name: str) -> str | None:
@@ -478,24 +537,29 @@ def create_route():
     name = (request.form.get("name") or gpx_name
             or stats.get("started_at") or "Ruta sin nombre")
 
-    # Actividad: primero por nombre, luego por deporte FIT si lo hay
+    # Actividad: 1) keywords del nombre, 2) <type> GPX, 3) sport FIT
     activity_type = _detect_activity(name)
-    if not activity_type and is_fit:
-        fit_sport = stats.pop("_fit_sport", None)
-        activity_type = _FIT_SPORT_MAP.get(fit_sport or "")
-    else:
-        stats.pop("_fit_sport", None)
+    gpx_type = stats.pop("_gpx_type", None)
+    fit_sport = stats.pop("_fit_sport", None)
+    if not activity_type and gpx_type:
+        activity_type = _GPX_TYPE_MAP.get(gpx_type.lower())
+    if not activity_type and fit_sport:
+        activity_type = _FIT_SPORT_MAP.get(fit_sport)
+    start_lat = coords[0][1] if coords else None
+    start_lon = coords[0][0] if coords else None
     con = db()
     cur = con.execute(
         """INSERT INTO routes
         (name,notes,gpx_file,distance_m,ascent_m,descent_m,duration_s,moving_s,
-         ele_min,ele_max,avg_speed,started_at,geojson,elevation,created_at,activity_type,device)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         ele_min,ele_max,avg_speed,started_at,geojson,elevation,created_at,
+         activity_type,device,start_lat,start_lon)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (name, "", stored, stats["distance_m"], stats["ascent_m"],
          stats["descent_m"], stats["duration_s"], stats["moving_s"],
          stats["ele_min"], stats["ele_max"], stats["avg_speed"],
          stats["started_at"], json.dumps(coords), json.dumps(elev),
-         dt.datetime.now().isoformat(), activity_type, creator),
+         dt.datetime.now().isoformat(), activity_type, creator,
+         start_lat, start_lon),
     )
     con.commit()
     return jsonify({"id": cur.lastrowid}), 201
@@ -555,6 +619,59 @@ def update_route(rid):
     con.execute(f"UPDATE routes SET {', '.join(fields)} WHERE id=?", vals)
     con.commit()
     return "", 204
+
+
+# ---------------------------------------------------------------- reescaneo GPX/FIT
+@app.route("/api/routes/<int:rid>/rescan", methods=["POST"])
+def rescan_route(rid):
+    con = db()
+    r = con.execute("SELECT name, gpx_file, activity_type FROM routes WHERE id=?",
+                    (rid,)).fetchone()
+    if not r:
+        abort(404)
+
+    fpath = GPX_DIR / r["gpx_file"]
+    if not fpath.exists():
+        return jsonify({"error": "Archivo original no encontrado"}), 404
+
+    raw = fpath.read_bytes()
+    is_fit = r["gpx_file"].lower().endswith(".fit")
+    try:
+        if is_fit:
+            stats, coords, elev, _, creator = analyse_fit(raw)
+        else:
+            stats, coords, elev, _, creator = analyse_gpx(
+                raw.decode("utf-8", errors="replace"))
+    except Exception as e:
+        return jsonify({"error": f"Error al parsear: {e}"}), 400
+
+    gpx_type = stats.pop("_gpx_type", None)
+    fit_sport = stats.pop("_fit_sport", None)
+
+    # Redetectar actividad siempre (sobreescribe la selección manual)
+    activity_type = _detect_activity(r["name"])
+    if not activity_type and gpx_type:
+        activity_type = _GPX_TYPE_MAP.get(gpx_type.lower())
+    if not activity_type and fit_sport:
+        activity_type = _FIT_SPORT_MAP.get(fit_sport)
+
+    start_lat = coords[0][1] if coords else None
+    start_lon = coords[0][0] if coords else None
+    con.execute(
+        """UPDATE routes SET
+           distance_m=?,ascent_m=?,descent_m=?,duration_s=?,moving_s=?,
+           ele_min=?,ele_max=?,avg_speed=?,started_at=?,
+           geojson=?,elevation=?,device=?,activity_type=?,
+           start_lat=?,start_lon=?
+           WHERE id=?""",
+        (stats["distance_m"], stats["ascent_m"], stats["descent_m"],
+         stats["duration_s"], stats["moving_s"],
+         stats["ele_min"], stats["ele_max"], stats["avg_speed"], stats["started_at"],
+         json.dumps(coords), json.dumps(elev), creator, activity_type,
+         start_lat, start_lon, rid),
+    )
+    con.commit()
+    return jsonify(_route_dict(rid))
 
 
 # ---------------------------------------------------------------- API: fotos

@@ -55,6 +55,18 @@
 .sort-btn:hover{border-color:var(--ink);color:var(--ink)}
 .sort-btn.on{background:var(--panel-2);border-color:var(--pr-yellow);color:var(--pr-yellow)}
 .sort-sep{width:1px;height:18px;background:var(--line);margin:0 4px}
+.edit-bar{display:none;align-items:center;gap:8px;flex-wrap:wrap;
+  margin-bottom:14px;padding:8px 12px;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:8px}
+.edit-bar.on{display:flex}
+.card-check{position:absolute;top:12px;right:12px;width:22px;height:22px;
+  border-radius:50%;border:2px solid var(--muted);background:var(--panel);
+  display:flex;align-items:center;justify-content:center;font-size:13px;
+  color:var(--bg);transition:.15s;pointer-events:none}
+.card.selected{border-color:var(--pr-yellow)!important}
+.card.selected .card-check{background:var(--pr-yellow);border-color:var(--pr-yellow)}
+.card.edit-mode{cursor:default}
+.card.edit-mode:hover{transform:none}
 .view-btn{padding:5px 12px;border-radius:20px;border:1px solid var(--line);background:transparent;
   color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
 .view-btn:hover{border-color:var(--ink);color:var(--ink)}
@@ -104,7 +116,7 @@
   font-family:inherit;transition:all .15s}
 .dp-clear-btn:hover{border-color:var(--gr-red);color:var(--gr-red)}
 
-/* ── loader de subida ── */
+/* ── loader de subida / eliminación ── */
 .upload-loader{position:fixed;bottom:24px;right:24px;background:var(--panel-2);
   border:1px solid var(--line);border-radius:11px;padding:16px 20px;min-width:300px;
   z-index:9999;box-shadow:0 6px 28px #00000070}
@@ -115,6 +127,7 @@
 .upload-bar-bg{background:var(--line);border-radius:4px;height:5px;margin-bottom:8px;overflow:hidden}
 .upload-bar-fill{background:var(--pr-yellow);height:100%;border-radius:4px;
   transition:width .25s ease;width:0%}
+.upload-bar-fill.del{background:var(--gr-red)}
 .upload-filename{color:var(--muted);font-size:11px;font-family:var(--mono);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
 
@@ -240,6 +253,17 @@
     <span class="sort-label">Orden</span>
     <button class="sort-btn" id="sort-desc" onclick="setSort('desc')">↓ Más reciente</button>
     <button class="sort-btn" id="sort-asc"  onclick="setSort('asc')">↑ Más antiguo</button>
+    <div class="sort-sep"></div>
+    <button class="sort-btn" id="edit-toggle-btn" onclick="toggleEdit()">✎ Editar</button>
+  </div>
+
+  <div class="edit-bar" id="edit-bar">
+    <span class="sort-label" style="color:var(--pr-yellow)">EDITAR</span>
+    <button class="btn ghost sm" onclick="selectAllVisible()">Seleccionar todos</button>
+    <button class="btn ghost sm" onclick="deselectAll()">Deseleccionar</button>
+    <button class="btn sm" id="delete-sel-btn" onclick="deleteSelected()"
+      style="background:var(--gr-red);margin-left:auto">Eliminar (<span id="sel-count">0</span>)</button>
+    <button class="btn ghost sm" onclick="toggleEdit()">Cancelar</button>
   </div>
 
   <div id="routes"></div>
@@ -295,6 +319,14 @@ const ACTIVITIES=[
     <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
     <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
     <line x1="12"   y1="19"   x2="16" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+  `},
+  {id:'otros',label:'Otros',color:'#e0559e',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="8.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="17.5" y2="11" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
   `},
 ];
 function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
@@ -387,16 +419,33 @@ class DatePicker{
 let dpFrom,dpTo,ovMap=null,ovMarkers=[],ovPts=[];
 let allRoutes=[],activeActs=new Set(ACTIVITIES.map(a=>a.id));
 let sortOrder='desc',viewMode='a';
+let editMode=false,selectedIds=new Set(),visibleRoutes=[];
+let monthDomMap=new Map(); // "YYYY-MM" → {section, grid, count}
+const FIRST_BATCH=25,BATCH_SIZE=100;
+const ROUTE_CACHE='sendero_routes_v1';
+
+function saveRouteCache(){
+  try{sessionStorage.setItem(ROUTE_CACHE,JSON.stringify({ts:Date.now(),routes:allRoutes}));}
+  catch(e){}
+}
+function loadRouteCache(){
+  try{
+    const raw=sessionStorage.getItem(ROUTE_CACHE);if(!raw)return null;
+    const{ts,routes}=JSON.parse(raw);
+    if(Date.now()-ts>10*60*1000)return null; // 10 min TTL
+    return routes;
+  }catch(e){return null;}
+}
+function clearRouteCache(){sessionStorage.removeItem(ROUTE_CACHE);}
 
 /* ── mapa ── */
-function renderOverviewMap(routes){
+function renderOverviewMap(routes,append=false){
   if(!ovMap){
     ovMap=L.map("overview-map",{zoomControl:true});
     L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
       {maxZoom:17,attribution:"© OpenTopoMap · OSM"}).addTo(ovMap);
   }
-  ovMarkers.forEach(m=>m.remove());ovMarkers=[];ovPts=[];
-  const pts=[];
+  if(!append){ovMarkers.forEach(m=>m.remove());ovMarkers=[];ovPts=[];}
   routes.forEach(r=>{
     if(r.start_lat==null||r.start_lon==null)return;
     const act=activityOf(r.activity_type);
@@ -406,10 +455,9 @@ function renderOverviewMap(routes){
       .addTo(ovMap)
       .bindTooltip(r.name,{direction:'top',offset:[0,-sz/2]})
       .on('click',()=>location.href='/Sendero/'+encodeURIComponent(r.name));
-    ovMarkers.push(m);pts.push([r.start_lat,r.start_lon]);
+    ovMarkers.push(m);ovPts.push([r.start_lat,r.start_lon]);
   });
-  ovPts=pts;
-  fitMap();
+  if(!append)fitMap();
 }
 function fitMap(){
   if(!ovMap)return;
@@ -457,39 +505,149 @@ function clearFilters(){
 /* ── tarjetas ── */
 function makeCard(r){
   const act=activityOf(r.activity_type);
+  const sel=selectedIds.has(r.id);
   const c=document.createElement("div");
-  c.className="card";
+  c.className="card"+(editMode?" edit-mode":"")+(sel?" selected":"");
   c.style.borderLeftColor=act?act.color:"var(--line)";
-  c.onclick=()=>location.href='/Sendero/'+encodeURIComponent(r.name);
+  if(editMode){
+    c.onclick=()=>{
+      if(selectedIds.has(r.id))selectedIds.delete(r.id);
+      else selectedIds.add(r.id);
+      c.classList.toggle("selected",selectedIds.has(r.id));
+      c.querySelector(".card-check").textContent=selectedIds.has(r.id)?"✓":"";
+      updateSelCount();
+    };
+  } else {
+    c.onclick=()=>location.href='/Sendero/'+encodeURIComponent(r.name);
+  }
   c.innerHTML=`
-    ${act?`<div class="card-act">${iconSvg(act,26)}</div>`:""}
+    ${editMode
+      ? `<div class="card-check">${sel?"✓":""}</div>`
+      : (act?`<div class="card-act">${iconSvg(act,26)}</div>`:"")}
     <h3>${esc(r.name)}</h3>
     <div class="date">${fmtDate(r.started_at)}</div>`;
   return c;
 }
 
-/* ── render principal ── */
+/* ── modo edición ── */
+function toggleEdit(){
+  editMode=!editMode;
+  selectedIds.clear();
+  $("#edit-toggle-btn").classList.toggle("on",editMode);
+  $("#edit-bar").classList.toggle("on",editMode);
+  updateSelCount();
+  renderList();
+}
+function updateSelCount(){
+  $("#sel-count").textContent=selectedIds.size;
+  $("#delete-sel-btn").style.opacity=selectedIds.size?"1":"0.5";
+}
+function selectAllVisible(){
+  visibleRoutes.forEach(r=>selectedIds.add(r.id));
+  updateSelCount();
+  renderList();
+}
+function deselectAll(){
+  selectedIds.clear();
+  updateSelCount();
+  renderList();
+}
+async function deleteSelected(){
+  if(!selectedIds.size)return;
+  const n=selectedIds.size;
+  if(!confirm(`¿Eliminar ${n} ruta${n!==1?"s":""}? Esta acción no se puede deshacer.`))return;
+
+  const ids=[...selectedIds];
+  const total=ids.length;
+  let done=0,errors=0;
+
+  // modal de progreso
+  const loader=document.createElement("div");
+  loader.className="upload-loader";
+  loader.innerHTML=`
+    <div class="upload-loader-title">Eliminando rutas
+      <span class="upload-loader-count" id="del-count">0 / ${total}</span>
+    </div>
+    <div class="upload-bar-bg"><div class="upload-bar-fill del" id="del-bar"></div></div>
+    <div class="upload-filename" id="del-status">Iniciando…</div>`;
+  document.body.appendChild(loader);
+
+  function updateProgress(){
+    const pct=Math.round((done/total)*100);
+    document.getElementById("del-bar").style.width=`${pct}%`;
+    document.getElementById("del-count").textContent=`${done} / ${total}`;
+    document.getElementById("del-status").textContent=`${pct}% completado`;
+  }
+
+  // eliminación paralela con concurrencia máx 4
+  const CONCURRENCY=4;
+  let idx=0;
+  async function worker(){
+    while(idx<ids.length){
+      const id=ids[idx++];
+      try{
+        const res=await fetch(`/api/routes/${id}`,{method:"DELETE"});
+        if(!res.ok)errors++;
+      }catch{errors++;}
+      done++;
+      updateProgress();
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(CONCURRENCY,total)},worker));
+
+  document.getElementById("del-bar").style.width="100%";
+  document.getElementById("del-status").textContent=
+    errors?`Completado con ${errors} error(es)`:"Completado";
+
+  selectedIds.clear();
+  clearRouteCache();
+  const reload=await(await fetch(`/api/routes?limit=9999&offset=0`)).json();
+  allRoutes=reload.items;
+  saveRouteCache();
+  toggleEdit();
+  setTimeout(()=>loader.remove(),1800);
+  toast(errors?`${done-errors} eliminada(s), ${errors} error(es)`:`${total} ruta${total!==1?"s":""} eliminada${total!==1?"s":""}`);
+}
+
+/* ── filtro unitario (reutilizable) ── */
+function passesFilter(r){
+  const from=dpFrom?.value,to=dpTo?.value;
+  if(!allSelected()&&!activeActs.has(r.activity_type))return false;
+  if(from||to){
+    const d=r.started_at?r.started_at.slice(0,10):null;
+    if(!d)return false;
+    if(from&&d<from)return false;
+    if(to&&d>to)return false;
+  }
+  return true;
+}
+
+/* ── helpers de mes ── */
+function monthLabel(key){
+  if(key==="sin-fecha")return"Sin fecha";
+  const[y,m]=key.split('-');return`${MONTHS_LONG[+m-1]} ${y}`;
+}
+function createMonthSection(key){
+  const s=document.createElement("div");
+  s.className="month-group";
+  s.dataset.key=key;
+  s.innerHTML=`<div class="month-label">${monthLabel(key)}
+    <span class="month-count"></span></div><div class="grid"></div>`;
+  return s;
+}
+
+/* ── render principal (reconstruye desde cero) ── */
 function renderList(){
-  const from=dpFrom.value,to=dpTo.value;
+  monthDomMap.clear();
   const box=$("#routes");box.innerHTML="";
-  const filtered=[...allRoutes]
-    .filter(r=>{
-      if(!allSelected()&&!activeActs.has(r.activity_type))return false;
-      if(from||to){
-        const d=r.started_at?r.started_at.slice(0,10):null;
-        if(!d)return false;
-        if(from&&d<from)return false;
-        if(to&&d>to)return false;
-      }
-      return true;
-    })
+  const filtered=visibleRoutes=[...allRoutes]
+    .filter(passesFilter)
     .sort((a,b)=>{
       const da=a.started_at||"",db=b.started_at||"";
       return sortOrder==='asc'?(da>db?1:da<db?-1:0):(da<db?1:da>db?-1:0);
     });
-  const total=allRoutes.length,shown=filtered.length;
-  $("#count").textContent=total?(shown<total?`${shown} de ${total} ruta(s)`:`${total} ruta(s)`):"";
-  $("#no-routes").classList.toggle("hidden",shown>0);
+  updateCountDisplay(allRoutes.length,filtered.length);
+  $("#no-routes").classList.toggle("hidden",filtered.length>0);
   const groups=new Map();
   filtered.forEach(r=>{
     const key=r.started_at?r.started_at.slice(0,7):"sin-fecha";
@@ -497,17 +655,86 @@ function renderList(){
     groups.get(key).push(r);
   });
   groups.forEach((routes,key)=>{
-    let label="Sin fecha";
-    if(key!=="sin-fecha"){const[y,m]=key.split('-');label=`${MONTHS_LONG[+m-1]} ${y}`;}
-    const section=document.createElement("div");
-    section.className="month-group";
-    section.innerHTML=`<div class="month-label">${label}
-      <span class="month-count">${routes.length} ruta${routes.length!==1?'s':''}</span></div>
-      <div class="grid"></div>`;
-    routes.forEach(r=>section.querySelector(".grid").appendChild(makeCard(r)));
+    const section=createMonthSection(key);
+    const grid=section.querySelector(".grid");
+    routes.forEach(r=>grid.appendChild(makeCard(r)));
+    section.querySelector(".month-count").textContent=
+      `${routes.length} ruta${routes.length!==1?'s':''}`;
     box.appendChild(section);
+    monthDomMap.set(key,{section,grid,count:routes.length});
   });
-  renderOverviewMap(filtered);
+  renderOverviewMap(filtered,false);
+}
+
+/* ── append incremental (sin reconstruir) ── */
+function appendBatchToDOM(routes){
+  routes.forEach(r=>{
+    if(!passesFilter(r))return;
+    visibleRoutes.push(r);
+    const key=r.started_at?r.started_at.slice(0,7):"sin-fecha";
+    if(!monthDomMap.has(key)){
+      const section=createMonthSection(key);
+      $("#routes").appendChild(section);
+      monthDomMap.set(key,{section,grid:section.querySelector(".grid"),count:0});
+    }
+    const grp=monthDomMap.get(key);
+    grp.grid.appendChild(makeCard(r));
+    grp.count++;
+    grp.section.querySelector(".month-count").textContent=
+      `${grp.count} ruta${grp.count!==1?'s':''}`;
+  });
+  $("#no-routes").classList.toggle("hidden",visibleRoutes.length>0);
+}
+
+function updateCountDisplay(loaded,shown){
+  if(!loaded){$("#count").textContent="";return;}
+  $("#count").textContent=shown<loaded?`${shown} de ${loaded} ruta(s)`:`${loaded} ruta(s)`;
+}
+
+async function fetchAllInBackground(knownTotal){
+  const bgLoader=document.createElement("div");
+  bgLoader.className="upload-loader";
+  bgLoader.innerHTML=`
+    <div class="upload-loader-title">Cargando rutas
+      <span class="upload-loader-count" id="bg-count">${allRoutes.length} / ${knownTotal}</span>
+    </div>
+    <div class="upload-bar-bg"><div class="upload-bar-fill" id="bg-bar"
+      style="width:${Math.round(allRoutes.length/knownTotal*100)}%"></div></div>
+    <div class="upload-filename" id="bg-status">Cargando en segundo plano…</div>`;
+  document.body.appendChild(bgLoader);
+
+  let loaded=allRoutes.length;
+  while(loaded<knownTotal){
+    const batch=await(await fetch(`/api/routes?limit=${BATCH_SIZE}&offset=${loaded}`)).json();
+    if(!batch.items.length)break;
+    loaded+=batch.items.length;
+    allRoutes.push(...batch.items);
+    appendBatchToDOM(batch.items);
+    renderOverviewMap(batch.items.filter(r=>r.start_lat!=null),true);
+    const pct=Math.round(loaded/knownTotal*100);
+    document.getElementById("bg-bar").style.width=`${pct}%`;
+    document.getElementById("bg-count").textContent=`${loaded} / ${knownTotal}`;
+    document.getElementById("bg-status").textContent=`${pct}% cargado`;
+  }
+
+  document.getElementById("bg-bar").style.width="100%";
+  document.getElementById("bg-status").textContent="Listo";
+  updateCountDisplay(allRoutes.length,visibleRoutes.length);
+  saveRouteCache();
+  setTimeout(()=>bgLoader.remove(),1500);
+}
+
+async function silentRefresh(){
+  try{
+    const check=await(await fetch(`/api/routes?limit=1&offset=0`)).json();
+    if(check.total!==allRoutes.length){
+      clearRouteCache();
+      const all=await(await fetch(`/api/routes?limit=9999&offset=0`)).json();
+      allRoutes=all.items;
+      renderList();
+      saveRouteCache();
+    }
+  }catch(e){}
 }
 
 async function loadList(){
@@ -515,8 +742,25 @@ async function loadList(){
   dpTo  =new DatePicker($("#dp-to"),  "Hasta",()=>renderList());
   setSort('desc');
   setView('a');
-  allRoutes=await(await fetch("/api/routes")).json();
+
+  // ¿Hay caché de sesión? → render instantáneo
+  const cached=loadRouteCache();
+  if(cached){
+    allRoutes=cached;
+    buildPills();renderList();
+    silentRefresh(); // valida en silencio
+    return;
+  }
+
+  // Sin caché: primer lote inmediato
+  const first=await(await fetch(`/api/routes?limit=${FIRST_BATCH}&offset=0`)).json();
+  allRoutes=first.items;
   buildPills();renderList();
+
+  if(first.total<=FIRST_BATCH){saveRouteCache();return;}
+
+  // Resto en background
+  await fetchAllInBackground(first.total);
 }
 
 async function uploadFiles(files){
@@ -552,6 +796,7 @@ async function uploadFiles(files){
   document.getElementById("up-name").textContent=
     errors.length?`${errors.length} error(es)`:"Completado";
 
+  clearRouteCache();
   await loadList();
   setTimeout(()=>loader.remove(),1800);
   if(errors.length)toast(errors[0]);
