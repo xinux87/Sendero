@@ -35,6 +35,13 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 header .blaze{position:relative;display:inline-block;width:14px;height:34px;border-radius:2px;
   background:linear-gradient(var(--gr-red) 0 50%, #fff 50% 100%);transform:translateY(4px)}
 @media(max-width:560px){header .header-inner{flex-direction:column;align-items:flex-start}}
+.header-nav{display:flex;gap:4px;flex-shrink:0}
+.nav-link{padding:5px 12px;border-radius:20px;border:1px solid transparent;
+  background:transparent;color:var(--muted);font-size:12px;font-weight:600;
+  cursor:pointer;text-decoration:none;transition:all .15s;letter-spacing:.04em}
+.nav-link:hover{border-color:var(--muted);color:var(--ink)}
+.nav-link.on{background:var(--panel-2);border-color:var(--line);color:var(--ink)}
+@media(max-width:560px){.header-nav{display:none}}
 .wrap{max-width:1040px;margin:0 auto;padding:22px}
 .bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .btn{background:var(--gr-red);color:#fff;border:0;padding:10px 16px;border-radius:7px;
@@ -68,6 +75,7 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
       <h1>Sendero</h1>
       <span class="tag">Bitácora de montaña</span>
     </div>
+    {% block header_nav %}{% endblock %}
     {% block header_actions %}{% endblock %}
   </div>
 </header>

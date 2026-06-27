@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+{% block title %}Sendero – Plan{% endblock %}
+
+{% block head_libs %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block styles %}
+.detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+#map{height:380px;border-radius:11px;border:1px solid var(--line);z-index:0}
+.stats-row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.stat{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);
+  border-radius:9px;padding:12px 14px}
+.stat .v{font-family:var(--mono);font-size:23px;font-weight:700}
+.stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.stat .v small{font-size:13px;color:var(--muted)}
+.section{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:18px;margin-top:16px}
+.section h2{font-size:24px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.section h2::before{content:"";width:10px;height:24px;border-radius:2px;
+  background:linear-gradient(var(--pr-yellow) 0 50%,#fff 50% 100%)}
+textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:8px;padding:12px;font-family:inherit;font-size:14px;resize:vertical}
+.auto{color:var(--muted);font-style:italic;margin-bottom:12px;padding:10px 12px;
+  background:var(--bg);border-radius:8px;border-left:3px solid var(--pr-yellow)}
+/* Leaflet */
+.leaflet-popup-content-wrapper{background:var(--panel);color:var(--ink)}
+.leaflet-popup-tip{background:var(--panel)}
+.leaflet-control-layers{background:var(--panel)!important;border-color:var(--line)!important;color:var(--ink)!important}
+.leaflet-control-layers-expanded{padding:8px 14px 10px}
+.leaflet-control-layers label{color:var(--ink)!important;font-size:13px}
+.leaflet-control-layers-separator{border-top-color:var(--line)!important}
+.fit-btn{width:30px!important;height:30px!important;font-size:18px;line-height:28px;
+  background:var(--panel)!important;color:var(--ink)!important;border:none!important;cursor:pointer}
+@media(max-width:560px){.stat .v{font-size:19px}}
+/* badge actividad */
+.act-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 10px;
+  border-radius:20px;font-size:13px;font-weight:700;border:2px solid;cursor:pointer;
+  transition:filter .15s;letter-spacing:.03em;white-space:nowrap}
+.act-badge:hover{filter:brightness(1.18)}
+.act-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;padding-top:6px}
+.act-opt{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;
+  border-radius:11px;border:2px solid var(--line);cursor:pointer;
+  transition:border-color .15s,transform .15s;background:var(--bg)}
+.act-opt:hover{transform:translateY(-2px)}
+.act-opt.on{background:var(--panel-2)}
+.act-ico-lg{font-size:36px;line-height:1}
+.act-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:center}
+/* badge fuente */
+.source-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+  letter-spacing:.06em;padding:3px 10px;border-radius:10px;text-transform:uppercase}
+.source-gpx{background:#1e3a2a;color:#5ab87a;border:1px solid #2e5a3a}
+.source-wikiloc{background:#1a2e3e;color:#4aade8;border:1px solid #2a4e6e}
+/* modal actividad */
+.overlay{position:fixed;inset:0;background:rgba(8,14,11,.78);display:flex;align-items:center;
+  justify-content:center;padding:16px;z-index:1000}
+.overlay.hidden{display:none}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:100%;
+  max-width:500px;padding:18px;overflow:hidden}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+{% endblock %}
+
+{% block content %}
+<div class="bar">
+  <button class="btn ghost sm" onclick="location.href='/planificacion'">← Planificación</button>
+</div>
+
+<div class="detail-head">
+  <div>
+    <h1 id="d-name" style="font-size:34px"></h1>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+      <div id="d-date" class="mono" style="color:var(--muted);font-size:13px"></div>
+      <div id="d-source"></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+    <button class="btn sm" id="download-btn" onclick="downloadGpx()" style="display:none">
+      ⬇ Descargar GPX
+    </button>
+    <button class="btn ghost sm" onclick="renamePlan()">Renombrar</button>
+    <button class="btn ghost sm" onclick="removePlan()"
+      style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
+  </div>
+</div>
+
+<div id="map"></div>
+<div class="stats-row" id="stats"></div>
+
+<div class="section">
+  <h2>Perfil de elevación</h2>
+  <canvas id="elev" height="84"></canvas>
+</div>
+
+<div class="section">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <h2>Resumen</h2>
+    <div id="activity-badge-sm"></div>
+  </div>
+  <div id="auto" class="auto"></div>
+  <textarea id="notes" placeholder="Escribe aquí tus notas sobre esta ruta: descripción del terreno, puntos de agua, dificultad estimada…"></textarea>
+  <div style="margin-top:10px"><button class="btn sm" onclick="saveNotes()">Guardar notas</button></div>
+</div>
+
+<div id="source-section" class="section hidden">
+  <h2>Fuente</h2>
+  <div id="source-info"></div>
+</div>
+
+<!-- MODAL: selector de actividad -->
+<div id="activity-modal" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 style="font-family:'Saira Condensed';font-size:24px">Tipo de actividad</h2>
+      <button class="btn ghost sm" onclick="closeActivityPicker()">Cerrar</button>
+    </div>
+    <div id="act-picker-grid" class="act-picker-grid"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+let map, trackLayer, elevChart, current = {{ plan_json | safe }};
+
+const ACTIVITIES=[
+  {id:'senderismo',label:'Senderismo',color:'#c97a3a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'bicicleta',label:'Bicicleta',color:'#3a9ed8',symbol:`
+    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <path d="M9.5,17.5 L13,14 L16.5,17.5 M13,14 L11.5,17.5"
+      stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="15.5" cy="10" r="1.5" fill="white"/>
+    <line x1="15.5" y1="11.5" x2="13" y2="14"   stroke="white" stroke-width="1.7" stroke-linecap="round"/>
+    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+  `},
+  {id:'caminata',label:'Caminata',color:'#5ab87a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'correr',label:'Correr',color:'#e05252',symbol:`
+    <circle cx="14" cy="8" r="1.6" fill="white"/>
+    <line x1="14" y1="9.6"  x2="12" y2="15"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="16" y2="10"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="10" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="15.5" y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="9.5"  y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'esqui',label:'Esquí',color:'#9b6fd4',symbol:`
+    <circle cx="13" cy="8" r="1.6" fill="white"/>
+    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+  `},
+  {id:'otros',label:'Otros',color:'#e0559e',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="8.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="17.5" y2="11" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+];
+function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
+function iconSvg(a,size=26){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13" cy="13" r="11" fill="${a.color}" stroke="#101a14" stroke-width="2.5"/>
+    ${a.symbol}
+  </svg>`;}
+
+/* ── mapa ────────────────────────────────────────────────────────────────── */
+function initMap() {
+  map = L.map('map', {zoomControl:false});
+  L.control.zoom({position:'bottomright'}).addTo(map);
+
+  const layers = {
+    'Topográfico': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17}),
+    'Callejero':   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}),
+    'Satélite':    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}),
+    'Oscuro':      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}),
+  };
+  layers['Topográfico'].addTo(map);
+  L.control.layers(layers, {}, {position:'topright', collapsed:true}).addTo(map);
+
+  const FitBtn = L.Control.extend({
+    onAdd() {
+      const btn = L.DomUtil.create('button','fit-btn leaflet-bar');
+      btn.title = 'Centrar'; btn.innerHTML = '⊡';
+      btn.onclick = () => map.fitBounds(trackLayer.getBounds());
+      return btn;
+    }
+  });
+  new FitBtn({position:'topleft'}).addTo(map);
+}
+
+function drawTrack() {
+  if (!current || !current.geojson.length) return;
+  const latlngs = current.geojson.map(([lon,lat]) => [lat,lon]);
+  trackLayer = L.polyline(latlngs, {color:'#e8c44a', weight:3, opacity:.9}).addTo(map);
+
+  // Marcador de inicio y fin
+  const startIcon = L.divIcon({
+    html:`<div style="width:12px;height:12px;border-radius:50%;background:#5ab87a;border:2.5px solid #101a14;box-shadow:0 1px 4px #00000060"></div>`,
+    className:'', iconSize:[12,12], iconAnchor:[6,6]});
+  const endIcon = L.divIcon({
+    html:`<div style="width:12px;height:12px;border-radius:50%;background:#d24a3a;border:2.5px solid #101a14;box-shadow:0 1px 4px #00000060"></div>`,
+    className:'', iconSize:[12,12], iconAnchor:[6,6]});
+  L.marker(latlngs[0], {icon:startIcon}).addTo(map).bindTooltip('Inicio');
+  L.marker(latlngs[latlngs.length-1], {icon:endIcon}).addTo(map).bindTooltip('Final');
+
+  map.fitBounds(trackLayer.getBounds().pad(0.1));
+}
+
+/* ── gráfico de elevación ────────────────────────────────────────────────── */
+function drawElevation() {
+  const elev = current.elevation || [];
+  if (!elev.length) return;
+  const ctx = $('#elev').getContext('2d');
+  const labels = elev.map(p => p.d);
+  const data   = elev.map(p => p.e);
+  const grad = ctx.createLinearGradient(0,0,0,200);
+  grad.addColorStop(0,'rgba(232,196,74,.35)');
+  grad.addColorStop(1,'rgba(232,196,74,.02)');
+  elevChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[{
+        data, fill:true, backgroundColor:grad,
+        borderColor:'#e8c44a', borderWidth:2,
+        pointRadius:0, tension:.35,
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{display:false}, tooltip:{
+        callbacks:{
+          title: i => `${i[0].label} km`,
+          label: i => `${i.raw} m`,
+        }
+      }},
+      scales:{
+        x:{ticks:{color:'#8aa394',font:{size:10},
+          callback:(v,i)=>i%Math.ceil(labels.length/8)===0?labels[i].toFixed(1):''},
+          grid:{color:'#2c4435'}},
+        y:{ticks:{color:'#8aa394',font:{size:10},callback:v=>`${v}m`},
+          grid:{color:'#2c4435'}},
+      }
+    }
+  });
+}
+
+/* ── stats ───────────────────────────────────────────────────────────────── */
+function renderStats() {
+  const r = current;
+  const stats = [
+    {v: fmtKm(r.distance_m), l:'km'},
+    r.ascent_m  ? {v:`${Math.round(r.ascent_m)}<small> m</small>`, l:'↑ Desnivel'} : null,
+    r.descent_m ? {v:`${Math.round(r.descent_m)}<small> m</small>`, l:'↓ Bajada'} : null,
+    r.ele_max !== null ? {v:`${Math.round(r.ele_max)}<small> m</small>`, l:'Altitud máx.'} : null,
+    r.ele_min !== null ? {v:`${Math.round(r.ele_min)}<small> m</small>`, l:'Altitud mín.'} : null,
+  ].filter(Boolean);
+  $('#stats').innerHTML = stats.map(s =>
+    `<div class="stat"><div class="v">${s.v}</div><div class="l">${s.l}</div></div>`
+  ).join('');
+}
+
+/* ── header ──────────────────────────────────────────────────────────────── */
+function renderHead() {
+  document.title = `Sendero – ${current.name}`;
+  $('#d-name').textContent = current.name;
+  const d = current.created_at ? new Date(current.created_at) : null;
+  $('#d-date').textContent = d
+    ? d.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'})
+    : '';
+  const srcBadge = current.source === 'wikiloc'
+    ? `<span class="source-badge source-wikiloc">Wikiloc</span>`
+    : `<span class="source-badge source-gpx">GPX</span>`;
+  $('#d-source').innerHTML = srcBadge;
+
+  if (current.has_gpx) $('#download-btn').style.display = '';
+
+  if (current.source === 'wikiloc' && current.source_url) {
+    $('#source-section').classList.remove('hidden');
+    $('#source-info').innerHTML =
+      `Ruta importada de <a href="${esc(current.source_url)}" target="_blank" rel="noopener">Wikiloc</a>. ` +
+      `Consulta la página original para información adicional sobre el itinerario.`;
+  }
+}
+
+/* ── actividad ───────────────────────────────────────────────────────────── */
+function renderActivityBadge() {
+  const a = activityOf(current.activity_type);
+  const badge = document.getElementById('activity-badge-sm');
+  if (!badge) return;
+  if (a) {
+    badge.innerHTML = `<div class="act-badge" style="color:${a.color};border-color:${a.color}"
+      onclick="openActivityPicker()">
+      ${iconSvg(a,18)} ${esc(a.label)}
+    </div>`;
+  } else {
+    badge.innerHTML = `<div class="act-badge" style="color:var(--muted);border-color:var(--muted)"
+      onclick="openActivityPicker()">Sin tipo</div>`;
+  }
+}
+
+function openActivityPicker() {
+  const grid = $('#act-picker-grid');
+  grid.innerHTML = '';
+  ACTIVITIES.forEach(a => {
+    const d = document.createElement('div');
+    d.className = 'act-opt' + (current.activity_type === a.id ? ' on' : '');
+    d.style.borderColor = current.activity_type === a.id ? a.color : '';
+    d.innerHTML = `<div class="act-ico-lg">${iconSvg(a,36)}</div>
+      <div class="act-lbl" style="color:${a.color}">${esc(a.label)}</div>`;
+    d.onclick = () => pickActivity(a.id);
+    grid.appendChild(d);
+  });
+  $('#activity-modal').classList.remove('hidden');
+}
+
+function closeActivityPicker() { $('#activity-modal').classList.add('hidden'); }
+
+async function pickActivity(actId) {
+  closeActivityPicker();
+  await fetch(`/api/planned/${current.id}`, {
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({activity_type:actId}),
+  });
+  current.activity_type = actId;
+  renderActivityBadge();
+  toast('Actividad actualizada');
+}
+
+/* ── notas ───────────────────────────────────────────────────────────────── */
+async function saveNotes() {
+  const notes = $('#notes').value;
+  await fetch(`/api/planned/${current.id}`, {
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({notes}),
+  });
+  current.notes = notes;
+  toast('Notas guardadas');
+}
+
+/* ── acciones ────────────────────────────────────────────────────────────── */
+function downloadGpx() {
+  window.location = `/api/planned/${current.id}/gpx`;
+}
+
+async function renamePlan() {
+  const name = prompt('Nuevo nombre:', current.name);
+  if (!name || name === current.name) return;
+  const res = await fetch(`/api/planned/${current.id}`, {
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name}),
+  });
+  if (!res.ok) { toast('Error al renombrar'); return; }
+  current.name = name;
+  $('#d-name').textContent = name;
+  document.title = `Sendero – ${name}`;
+  history.replaceState(null, '', '/Plan/' + encodeURIComponent(name));
+  toast('Ruta renombrada');
+}
+
+async function removePlan() {
+  if (!confirm(`¿Eliminar "${current.name}"?`)) return;
+  const res = await fetch(`/api/planned/${current.id}`, {method:'DELETE'});
+  if (res.ok) location.href = '/planificacion';
+  else toast('Error al eliminar');
+}
+
+/* ── init ────────────────────────────────────────────────────────────────── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#activity-modal').classList.contains('hidden'))
+    closeActivityPicker();
+});
+$('#activity-modal').addEventListener('click', e => {
+  if (e.target === $('#activity-modal')) closeActivityPicker();
+});
+
+if (current) {
+  initMap();
+  renderHead();
+  renderStats();
+  drawTrack();
+  drawElevation();
+  renderActivityBadge();
+  $('#auto').textContent   = current.auto_summary || '';
+  $('#notes').value        = current.notes || '';
+} else {
+  document.body.innerHTML += '<p style="padding:40px;color:var(--muted)">Ruta no encontrada.</p>';
+}
+{% endblock %}

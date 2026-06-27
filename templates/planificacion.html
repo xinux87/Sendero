@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+{% block title %}Sendero – Planificación{% endblock %}
+
+{% block head_libs %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+{% endblock %}
+
+{% block header_nav %}
+<nav class="header-nav">
+  <a href="/" class="nav-link">Mis rutas</a>
+  <a href="/planificacion" class="nav-link on">Planificar</a>
+</nav>
+{% endblock %}
+
+{% block header_actions %}
+<button class="btn" onclick="openAddModal()">+ Planificar ruta</button>
+{% endblock %}
+
+{% block styles %}
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.plan-card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px}
+.plan-card:hover{filter:brightness(1.06);transform:translateY(-2px)}
+.plan-card h3{font-size:20px;font-weight:600;padding-right:34px;line-height:1.2;
+  height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.plan-card .date{color:var(--muted);font-size:12px;margin:2px 0 4px;text-transform:uppercase;letter-spacing:.08em}
+.plan-act{position:absolute;top:12px;right:12px;line-height:0}
+.plan-metrics{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
+.pm{display:flex;flex-direction:column}
+.pm .v{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--ink)}
+.pm .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.source-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
+  letter-spacing:.06em;padding:2px 8px;border-radius:10px;text-transform:uppercase;margin-top:4px}
+.source-gpx{background:#1e3a2a;color:#5ab87a;border:1px solid #2e5a3a}
+.source-wikiloc{background:#1a2e3e;color:#4aade8;border:1px solid #2a4e6e}
+
+/* modal añadir */
+.overlay{position:fixed;inset:0;background:rgba(8,14,11,.82);display:flex;align-items:center;
+  justify-content:center;padding:16px;z-index:1000}
+.overlay.hidden{display:none}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  width:100%;max-width:520px;padding:22px;overflow:hidden}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.tab-bar{display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:18px}
+.tab-btn{flex:1;padding:9px 0;background:transparent;border:none;color:var(--muted);
+  font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;letter-spacing:.04em}
+.tab-btn.on{background:var(--panel-2);color:var(--ink)}
+.tab-pane{display:none}
+.tab-pane.on{display:block}
+.field-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+  font-weight:600;display:block;margin-bottom:6px}
+input[type=text],input[type=url]{width:100%;background:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:7px;padding:9px 12px;font-family:inherit;font-size:14px}
+input[type=text]:focus,input[type=url]:focus{outline:none;border-color:var(--pr-yellow)}
+.drop-plan{border:1.5px dashed var(--line);border-radius:9px;padding:22px;text-align:center;
+  color:var(--muted);cursor:pointer;margin-bottom:12px;transition:border-color .15s}
+.drop-plan.over{border-color:var(--pr-yellow)}
+.drop-plan .chosen{color:var(--ink);font-size:13px}
+
+/* loader */
+.upload-loader{position:fixed;bottom:24px;right:24px;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:11px;padding:16px 20px;min-width:300px;
+  z-index:9999;box-shadow:0 6px 28px #00000070}
+.upload-loader-title{font-family:'Saira Condensed',sans-serif;font-size:18px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;
+  display:flex;justify-content:space-between;align-items:baseline}
+.upload-loader-count{font-family:var(--mono);font-size:13px;color:var(--pr-yellow)}
+.upload-bar-bg{background:var(--line);border-radius:4px;height:5px;margin-bottom:8px;overflow:hidden}
+.upload-bar-fill{background:var(--pr-yellow);height:100%;border-radius:4px;transition:width .25s ease;width:0%}
+.upload-filename{color:var(--muted);font-size:11px;font-family:var(--mono);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.leaflet-container{background:var(--bg)}
+#plan-map{height:320px;border-radius:11px;border:1px solid var(--line);margin-bottom:18px}
+{% endblock %}
+
+{% block content %}
+
+<!-- Modal añadir ruta planificada -->
+<div id="add-modal" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 style="font-family:'Saira Condensed';font-size:26px">Planificar ruta</h2>
+      <button class="btn ghost sm" onclick="closeAddModal()">Cerrar</button>
+    </div>
+    <div class="tab-bar">
+      <button class="tab-btn on" id="tab-gpx-btn"  onclick="setTab('gpx')">📎 Archivo GPX</button>
+      <button class="tab-btn"    id="tab-wiki-btn" onclick="setTab('wiki')">🔗 URL de Wikiloc</button>
+    </div>
+
+    <!-- Tab GPX -->
+    <div id="tab-gpx" class="tab-pane on">
+      <div id="drop-plan" class="drop-plan" onclick="$('#plan-file').click()">
+        Arrastra un archivo GPX aquí o pulsa para elegir
+        <div id="drop-chosen" class="chosen hidden"></div>
+        <input id="plan-file" type="file" accept=".gpx" class="hidden">
+      </div>
+      <button class="btn" style="width:100%" onclick="uploadPlanGpx()">Añadir ruta planificada</button>
+    </div>
+
+    <!-- Tab Wikiloc -->
+    <div id="tab-wiki" class="tab-pane">
+      <label class="field-label">URL de la ruta en Wikiloc</label>
+      <input id="wiki-url" type="url" placeholder="https://es.wikiloc.com/rutas-senderismo/…"
+        style="margin-bottom:14px" onkeydown="if(event.key==='Enter')importWikiloc()">
+      <div id="wiki-hint" style="color:var(--muted);font-size:12px;margin-bottom:14px">
+        Pega el enlace de cualquier ruta pública de Wikiloc.
+      </div>
+      <button class="btn" style="width:100%" onclick="importWikiloc()">Importar de Wikiloc</button>
+    </div>
+  </div>
+</div>
+
+<!-- Loader de progreso -->
+<div id="plan-loader" class="upload-loader hidden">
+  <div class="upload-loader-title">
+    <span id="loader-title">Procesando…</span>
+    <span id="loader-pct" class="upload-loader-count"></span>
+  </div>
+  <div class="upload-bar-bg"><div id="loader-bar" class="upload-bar-fill"></div></div>
+  <div id="loader-msg" class="upload-filename"></div>
+</div>
+
+<!-- Contenido principal -->
+<div id="plan-map"></div>
+
+<div id="plan-grid" class="plan-grid"></div>
+<div id="no-plans" class="empty hidden">No hay rutas planificadas todavía.</div>
+
+{% endblock %}
+
+{% block scripts %}
+const ACTIVITIES=[
+  {id:'senderismo',label:'Senderismo',color:'#c97a3a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'bicicleta',label:'Bicicleta',color:'#3a9ed8',symbol:`
+    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <path d="M9.5,17.5 L13,14 L16.5,17.5 M13,14 L11.5,17.5"
+      stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="15.5" cy="10" r="1.5" fill="white"/>
+    <line x1="15.5" y1="11.5" x2="13" y2="14"   stroke="white" stroke-width="1.7" stroke-linecap="round"/>
+    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+  `},
+  {id:'caminata',label:'Caminata',color:'#5ab87a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'correr',label:'Correr',color:'#e05252',symbol:`
+    <circle cx="14" cy="8" r="1.6" fill="white"/>
+    <line x1="14" y1="9.6"  x2="12" y2="15"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="16" y2="10"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="10" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="15.5" y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="9.5"  y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'esqui',label:'Esquí',color:'#9b6fd4',symbol:`
+    <circle cx="13" cy="8" r="1.6" fill="white"/>
+    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+  `},
+  {id:'otros',label:'Otros',color:'#e0559e',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="8.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="17.5" y2="11" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+];
+function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
+function iconSvg(a,size=26){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13" cy="13" r="11" fill="${a.color}" stroke="#101a14" stroke-width="2.5"/>
+    ${a.symbol}
+  </svg>`;}
+function genericIconSvg(size=26){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13" cy="13" r="11" fill="#2c4435" stroke="#101a14" stroke-width="2.5"/>
+    <circle cx="13" cy="10" r="2" fill="#8aa394"/>
+    <line x1="13" y1="12.5" x2="13" y2="17"   stroke="#8aa394" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="14"   x2="11" y2="15.5" stroke="#8aa394" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="13" y1="14"   x2="15" y2="15.5" stroke="#8aa394" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="13" y1="17"   x2="11.5" y2="19" stroke="#8aa394" stroke-width="1.6" stroke-linecap="round"/>
+    <line x1="13" y1="17"   x2="14.5" y2="19" stroke="#8aa394" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>`;}
+
+/* ── mapa de resumen ──────────────────────────────────────────────────────── */
+let planMap = null, planMarkers = {};
+
+function initPlanMap() {
+  planMap = L.map('plan-map', {zoomControl:true, scrollWheelZoom:false});
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    {attribution:'OpenTopoMap',maxZoom:17}).addTo(planMap);
+  planMap.setView([40.4, -3.7], 6);
+}
+
+function addMarkersToMap(plans) {
+  plans.forEach(p => {
+    if (planMarkers[p.id] || !p.start_lat) return;
+    const a = activityOf(p.activity_type);
+    const icon = L.divIcon({
+      html: a ? iconSvg(a, 26) : genericIconSvg(26),
+      className: '', iconSize:[26,26], iconAnchor:[13,13],
+    });
+    const mk = L.marker([p.start_lat, p.start_lon], {icon})
+      .addTo(planMap)
+      .bindTooltip(esc(p.name), {permanent:false, direction:'top'})
+      .on('click', () => location.href = '/Plan/' + encodeURIComponent(p.name));
+    planMarkers[p.id] = mk;
+  });
+  const pts = Object.values(planMarkers).map(m => m.getLatLng());
+  if (pts.length) {
+    try { planMap.fitBounds(L.latLngBounds(pts).pad(0.2)); } catch(e){}
+  }
+}
+
+/* ── listado ─────────────────────────────────────────────────────────────── */
+let allPlans = [];
+
+async function loadPlans() {
+  const res = await fetch('/api/planned');
+  const data = await res.json();
+  allPlans = data.items || [];
+  renderPlans(allPlans);
+  addMarkersToMap(allPlans);
+}
+
+function renderPlans(plans) {
+  const grid = $('#plan-grid');
+  const empty = $('#no-plans');
+  grid.innerHTML = '';
+  if (!plans.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  plans.forEach(p => grid.appendChild(makeCard(p)));
+}
+
+function makeCard(p) {
+  const a = activityOf(p.activity_type);
+  const color = a ? a.color : '#2c4435';
+  const div = document.createElement('div');
+  div.className = 'plan-card';
+  div.style.borderLeftColor = color;
+  div.onclick = () => location.href = '/Plan/' + encodeURIComponent(p.name);
+  const srcBadge = p.source === 'wikiloc'
+    ? `<span class="source-badge source-wikiloc">Wikiloc</span>`
+    : `<span class="source-badge source-gpx">GPX</span>`;
+  div.innerHTML = `
+    <div class="plan-act">${a ? iconSvg(a,26) : genericIconSvg(26)}</div>
+    <h3>${esc(p.name)}</h3>
+    <div class="date">${fmtDate(p.created_at)}</div>
+    ${srcBadge}
+    <div class="plan-metrics">
+      <div class="pm"><span class="v">${fmtKm(p.distance_m)}</span><span class="l">km</span></div>
+      ${p.ascent_m ? `<div class="pm"><span class="v">${Math.round(p.ascent_m)}<small> m</small></span><span class="l">↑ Desnivel</span></div>` : ''}
+    </div>`;
+  return div;
+}
+
+/* ── modal y tabs ────────────────────────────────────────────────────────── */
+function openAddModal() { $('#add-modal').classList.remove('hidden'); }
+function closeAddModal() { $('#add-modal').classList.add('hidden'); resetModal(); }
+function resetModal() {
+  $('#wiki-url').value = '';
+  $('#drop-chosen').classList.add('hidden');
+  $('#drop-chosen').textContent = '';
+  $('#plan-file').value = '';
+  $('#wiki-hint').style.color = 'var(--muted)';
+  $('#wiki-hint').textContent = 'Pega el enlace de cualquier ruta pública de Wikiloc.';
+}
+function setTab(t) {
+  $('#tab-gpx').classList.toggle('on', t==='gpx');
+  $('#tab-wiki').classList.toggle('on', t==='wiki');
+  $('#tab-gpx-btn').classList.toggle('on', t==='gpx');
+  $('#tab-wiki-btn').classList.toggle('on', t==='wiki');
+}
+
+$('#plan-file').addEventListener('change', () => {
+  const f = $('#plan-file').files[0];
+  if (f) {
+    $('#drop-chosen').textContent = f.name;
+    $('#drop-chosen').classList.remove('hidden');
+  }
+});
+['dragover','dragleave','drop'].forEach(ev => {
+  $('#drop-plan').addEventListener(ev, e => {
+    e.preventDefault();
+    if (ev === 'dragover') $('#drop-plan').classList.add('over');
+    else $('#drop-plan').classList.remove('over');
+    if (ev === 'drop' && e.dataTransfer.files[0]) {
+      const dt = new DataTransfer();
+      dt.items.add(e.dataTransfer.files[0]);
+      $('#plan-file').files = dt.files;
+      $('#drop-chosen').textContent = e.dataTransfer.files[0].name;
+      $('#drop-chosen').classList.remove('hidden');
+    }
+  });
+});
+
+/* ── subida GPX ──────────────────────────────────────────────────────────── */
+function showLoader(title, msg, pct) {
+  $('#plan-loader').classList.remove('hidden');
+  $('#loader-title').textContent = title;
+  $('#loader-msg').textContent = msg;
+  $('#loader-pct').textContent = pct !== null ? pct + '%' : '';
+  $('#loader-bar').style.width = (pct ?? 0) + '%';
+}
+function hideLoader() { $('#plan-loader').classList.add('hidden'); }
+
+async function uploadPlanGpx() {
+  const f = $('#plan-file').files[0];
+  if (!f) { toast('Elige un archivo GPX'); return; }
+  closeAddModal();
+  showLoader('Añadiendo ruta…', f.name, 30);
+  const fd = new FormData();
+  fd.append('gpx', f);
+  try {
+    const res = await fetch('/api/planned', {method:'POST', body:fd});
+    const data = await res.json();
+    if (!res.ok) { hideLoader(); toast(data.error || 'Error al subir el archivo'); return; }
+    showLoader('Listo', data.name, 100);
+    setTimeout(() => {
+      hideLoader();
+      location.href = '/Plan/' + encodeURIComponent(data.name);
+    }, 600);
+  } catch(e) { hideLoader(); toast('Error de red'); }
+}
+
+/* ── importar Wikiloc ────────────────────────────────────────────────────── */
+async function importWikiloc() {
+  const url = $('#wiki-url').value.trim();
+  if (!url) { toast('Pega la URL de Wikiloc'); return; }
+  closeAddModal();
+  showLoader('Obteniendo ruta de Wikiloc…', url, null);
+  $('#loader-bar').style.width = '0%';
+  // animate indeterminate
+  let fake = 0;
+  const ticker = setInterval(() => {
+    fake = Math.min(fake + 3, 85);
+    $('#loader-bar').style.width = fake + '%';
+  }, 400);
+  try {
+    const res = await fetch('/api/planned', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url}),
+    });
+    clearInterval(ticker);
+    const data = await res.json();
+    if (!res.ok) {
+      hideLoader();
+      // Reabrir modal con mensaje de error
+      setTab('wiki');
+      $('#wiki-url').value = url;
+      $('#wiki-hint').style.color = 'var(--gr-red)';
+      $('#wiki-hint').textContent = data.error || 'Error al importar';
+      openAddModal();
+      return;
+    }
+    showLoader('Importado', data.name, 100);
+    setTimeout(() => {
+      hideLoader();
+      location.href = '/Plan/' + encodeURIComponent(data.name);
+    }, 600);
+  } catch(e) {
+    clearInterval(ticker);
+    hideLoader();
+    toast('Error de red al conectar con Wikiloc');
+  }
+}
+
+/* ── init ────────────────────────────────────────────────────────────────── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeAddModal();
+});
+$('#add-modal').addEventListener('click', e => {
+  if (e.target === $('#add-modal')) closeAddModal();
+});
+
+initPlanMap();
+loadPlans();
+{% endblock %}
