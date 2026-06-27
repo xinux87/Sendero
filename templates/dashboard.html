@@ -283,8 +283,10 @@
     <span class="sort-label" style="color:var(--pr-yellow)">EDITAR</span>
     <button class="btn ghost sm" onclick="selectAllVisible()">Seleccionar todos</button>
     <button class="btn ghost sm" onclick="deselectAll()">Deseleccionar</button>
+    <button class="btn ghost sm" id="rescan-sel-btn" onclick="rescanSelected()"
+      style="margin-left:auto">↻ Re-escanear (<span id="rescan-count">0</span>)</button>
     <button class="btn sm" id="delete-sel-btn" onclick="deleteSelected()"
-      style="background:var(--gr-red);margin-left:auto">Eliminar (<span id="sel-count">0</span>)</button>
+      style="background:var(--gr-red)">Eliminar (<span id="sel-count">0</span>)</button>
     <button class="btn ghost sm" onclick="toggleEdit()">Cancelar</button>
   </div>
 
@@ -569,8 +571,11 @@ function toggleEdit(){
   renderList();
 }
 function updateSelCount(){
-  $("#sel-count").textContent=selectedIds.size;
-  $("#delete-sel-btn").style.opacity=selectedIds.size?"1":"0.5";
+  const n=selectedIds.size;
+  $("#sel-count").textContent=n;
+  $("#rescan-count").textContent=n;
+  $("#delete-sel-btn").style.opacity=n?"1":"0.5";
+  $("#rescan-sel-btn").style.opacity=n?"1":"0.5";
 }
 function selectAllVisible(){
   visibleRoutes.forEach(r=>selectedIds.add(r.id));
@@ -637,6 +642,60 @@ async function deleteSelected(){
   toggleEdit();
   setTimeout(()=>loader.remove(),1800);
   toast(errors?`${done-errors} eliminada(s), ${errors} error(es)`:`${total} ruta${total!==1?"s":""} eliminada${total!==1?"s":""}`);
+}
+
+async function rescanSelected(){
+  if(!selectedIds.size)return;
+  const ids=[...selectedIds];
+  const total=ids.length;
+  let ok=0,errors=[];
+
+  const loader=document.createElement("div");
+  loader.className="upload-loader";
+  loader.innerHTML=`
+    <div class="upload-loader-title">Re-escaneando rutas
+      <span class="upload-loader-count" id="rs-count">0 / ${total}</span>
+    </div>
+    <div class="upload-bar-bg"><div class="upload-bar-fill" id="rs-bar"></div></div>
+    <div class="upload-filename" id="rs-name">Iniciando…</div>`;
+  document.body.appendChild(loader);
+
+  for(let i=0;i<ids.length;i++){
+    const id=ids[i];
+    const route=allRoutes.find(r=>r.id===id);
+    document.getElementById("rs-count").textContent=`${i+1} / ${total}`;
+    document.getElementById("rs-bar").style.width=`${Math.round((i/total)*100)}%`;
+    document.getElementById("rs-name").textContent=route?route.name:String(id);
+    try{
+      const res=await fetch(`/api/routes/${id}/rescan`,{method:"POST"});
+      if(res.ok){
+        const updated=await res.json();
+        const idx=allRoutes.findIndex(r=>r.id===id);
+        if(idx!==-1)allRoutes[idx]={...allRoutes[idx],...updated,
+          activity_type:updated.activity_type,
+          started_at:updated.started_at,
+          distance_m:updated.distance_m};
+        ok++;
+      }else{
+        const j=await res.json().catch(()=>({}));
+        errors.push(`${route?route.name:id}: ${j.error||"Error"}`);
+      }
+    }catch{errors.push(`${route?route.name:id}: Error de red`);}
+  }
+
+  document.getElementById("rs-bar").style.width="100%";
+  document.getElementById("rs-count").textContent=`${ok} / ${total}`;
+  document.getElementById("rs-name").textContent=
+    errors.length?`${errors.length} error(es)`:"Completado";
+
+  selectedIds.clear();
+  clearRouteCache();
+  saveRouteCache();
+  toggleEdit();
+  renderList();
+  setTimeout(()=>loader.remove(),1800);
+  if(errors.length)toast(errors[0]);
+  else toast(`${ok} ruta${ok!==1?"s":""} re-escaneada${ok!==1?"s":""}`);
 }
 
 /* ── filtro unitario (reutilizable) ── */
