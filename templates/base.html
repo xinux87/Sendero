@@ -20,7 +20,9 @@
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
-  font-family:'Inter',system-ui,sans-serif;line-height:1.5}
+  font-family:'Inter',system-ui,sans-serif;line-height:1.5;
+  animation:pagein .12s ease}
+@keyframes pagein{from{opacity:0}to{opacity:1}}
 a{color:var(--pr-yellow)}
 h1,h2,h3{font-family:'Saira Condensed',sans-serif;letter-spacing:.02em;margin:0}
 button{font-family:inherit;cursor:pointer}
@@ -42,6 +44,36 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
 .nav-link:hover{border-color:var(--muted);color:var(--ink)}
 .nav-link.on{background:var(--panel-2);border-color:var(--line);color:var(--ink)}
 @media(max-width:560px){.header-nav{display:none}}
+/* ── botón de ajustes ── */
+.gear-btn{background:transparent;border:1px solid transparent;color:var(--muted);
+  border-radius:50%;width:32px;height:32px;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;transition:all .15s;flex-shrink:0}
+.gear-btn:hover{border-color:var(--line);color:var(--ink)}
+/* ── panel de ajustes ── */
+.cfg-overlay{position:fixed;inset:0;background:rgba(8,14,11,.82);
+  display:flex;align-items:center;justify-content:center;
+  padding:16px;z-index:9998}
+.cfg-overlay.hidden{display:none}
+.cfg-panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  width:100%;max-width:480px;padding:22px;overflow-y:auto;max-height:90vh}
+.cfg-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.cfg-section{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--line)}
+.cfg-section:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.cfg-section-title{font-family:'Saira Condensed',sans-serif;font-size:14px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px}
+.cfg-field{margin-bottom:10px}
+.cfg-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+  font-weight:600;display:block;margin-bottom:4px}
+.cfg-input{width:100%;background:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:7px;padding:8px 11px;
+  font-family:inherit;font-size:13px}
+.cfg-input:focus{outline:none;border-color:var(--pr-yellow)}
+.cfg-textarea{width:100%;background:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:7px;padding:8px 11px;
+  font-family:var(--mono);font-size:11px;resize:vertical;min-height:56px;max-height:110px}
+.cfg-textarea:focus{outline:none;border-color:var(--pr-yellow)}
+.cfg-hint{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.4}
 .wrap{max-width:1040px;margin:0 auto;padding:22px}
 .bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .btn{background:var(--gr-red);color:#fff;border:0;padding:10px 16px;border-radius:7px;
@@ -76,6 +108,21 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
       <span class="tag">Bitácora de montaña</span>
     </div>
     {% block header_nav %}{% endblock %}
+    <button class="gear-btn" onclick="openSettings()" title="Ajustes" aria-label="Ajustes">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
+                 a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
+                 A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83
+                 l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
+                 A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83
+                 l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
+                 a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83
+                 l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
+                 a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
     {% block header_actions %}{% endblock %}
   </div>
 </header>
@@ -86,8 +133,69 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
 
 <div id="toast" class="toast"></div>
 
+<!-- ── MODAL DE AJUSTES (disponible en todas las páginas) ────────────────── -->
+<div id="cfg-overlay" class="cfg-overlay hidden">
+  <div class="cfg-panel">
+    <div class="cfg-head">
+      <h2 style="font-family:'Saira Condensed';font-size:26px">Ajustes</h2>
+      <button class="btn ghost sm" onclick="closeSettings()">Cerrar</button>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-section-title">Immich</div>
+      <div class="cfg-field">
+        <label class="cfg-label" for="cfg-immich-url">URL del servidor</label>
+        <input id="cfg-immich-url" class="cfg-input" type="url"
+               placeholder="http://192.168.1.x:2283">
+      </div>
+      <div class="cfg-field">
+        <label class="cfg-label" for="cfg-immich-key">API Key</label>
+        <div style="display:flex;gap:6px">
+          <input id="cfg-immich-key" class="cfg-input" type="password"
+                 placeholder="tu_api_key" style="flex:1">
+          <button class="btn ghost sm" style="flex-shrink:0;padding:0 10px"
+            onclick="const i=$('#cfg-immich-key');i.type=i.type==='password'?'text':'password'">👁</button>
+        </div>
+      </div>
+      <div class="cfg-field">
+        <label class="cfg-label" for="cfg-immich-margin">Margen temporal (minutos)</label>
+        <input id="cfg-immich-margin" class="cfg-input" type="number"
+               min="0" max="1440" style="width:110px">
+        <div class="cfg-hint">Minutos extra antes y después del track para buscar fotos en Immich.</div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-section-title">Wikiloc</div>
+      <div class="cfg-field">
+        <label class="cfg-label" for="cfg-wiki-cookie">Cookie de sesión</label>
+        <textarea id="cfg-wiki-cookie" class="cfg-textarea"
+          placeholder="Pega aquí el valor completo de la cabecera Cookie de Wikiloc"></textarea>
+        <div class="cfg-hint">
+          Con sesión iniciada en Wikiloc: DevTools (F12) → Network →
+          cualquier petición a wikiloc.com → copia la cabecera <code style="font-size:10px;background:var(--bg);padding:1px 4px;border-radius:3px">Cookie</code>.
+        </div>
+      </div>
+    </div>
+
+    <button class="btn" style="width:100%;margin-top:6px" onclick="saveSettings()">
+      Guardar ajustes
+    </button>
+  </div>
+</div>
+
 <script>
 const $=s=>document.querySelector(s);
+// Transición suave entre páginas del nav
+document.addEventListener('click', e => {
+  const link = e.target.closest('a.nav-link');
+  if (!link || link.classList.contains('on')) return;
+  e.preventDefault();
+  const href = link.href;
+  document.body.style.transition = 'opacity .1s ease';
+  document.body.style.opacity = '0';
+  setTimeout(() => location.href = href, 100);
+});
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"),2200);}
 function fmtKm(m){return m?(m/1000).toFixed(2):"–";}
@@ -96,6 +204,41 @@ function fmtDur(s){if(!s)return"–";s=Math.round(s);const h=Math.floor(s/3600),
 function fmtDate(iso){if(!iso)return"Sin fecha";const d=new Date(iso);
   return d.toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"});}
 function esc(s){return(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+
+/* ── ajustes ─────────────────────────────────────────────────────────────── */
+async function openSettings(){
+  try{
+    const r=await fetch('/api/settings');
+    const c=await r.json();
+    $('#cfg-immich-url').value    = c.IMMICH_URL        || '';
+    $('#cfg-immich-key').value    = c.IMMICH_API_KEY    || '';
+    $('#cfg-immich-margin').value = c.IMMICH_MARGIN_MIN || '180';
+    $('#cfg-wiki-cookie').value   = c.WIKILOC_COOKIE    || '';
+  }catch(e){}
+  $('#cfg-overlay').classList.remove('hidden');
+}
+function closeSettings(){ $('#cfg-overlay').classList.add('hidden'); }
+async function saveSettings(){
+  const res=await fetch('/api/settings',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      IMMICH_URL:        $('#cfg-immich-url').value.trim(),
+      IMMICH_API_KEY:    $('#cfg-immich-key').value.trim(),
+      IMMICH_MARGIN_MIN: $('#cfg-immich-margin').value.trim(),
+      WIKILOC_COOKIE:    $('#cfg-wiki-cookie').value.trim(),
+    }),
+  });
+  if(res.ok){ closeSettings(); toast('Ajustes guardados'); }
+  else toast('Error al guardar los ajustes');
+}
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape' && !$('#cfg-overlay').classList.contains('hidden')) closeSettings();
+});
+$('#cfg-overlay').addEventListener('click', e=>{
+  if(e.target===$('#cfg-overlay')) closeSettings();
+});
+
 {% block scripts %}{% endblock %}
 </script>
 </body>

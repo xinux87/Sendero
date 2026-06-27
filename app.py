@@ -185,8 +185,39 @@ def init_db():
             created_at  TEXT
         );
     """)
+
+    # ── tabla de ajustes persistentes ────────────────────────────────────────
+    con.executescript("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        );
+    """)
     con.commit()
     con.close()
+
+
+# ── aplica los ajustes de la BD (tiene prioridad sobre os.environ) ───────────
+_SETTINGS_KEYS = {"IMMICH_URL", "IMMICH_API_KEY", "IMMICH_MARGIN_MIN", "WIKILOC_COOKIE"}
+
+def refresh_config():
+    global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_ENABLED, WIKILOC_COOKIE
+    try:
+        con = sqlite3.connect(DB_PATH)
+        rows = dict(con.execute("SELECT key, value FROM settings").fetchall())
+        con.close()
+    except Exception:
+        rows = {}
+    IMMICH_URL = (rows.get("IMMICH_URL") or os.environ.get("IMMICH_URL", "")).rstrip("/")
+    IMMICH_API_KEY = rows.get("IMMICH_API_KEY") or os.environ.get("IMMICH_API_KEY", "")
+    try:
+        IMMICH_MARGIN_MIN = int(
+            rows.get("IMMICH_MARGIN_MIN") or os.environ.get("IMMICH_MARGIN_MIN", "180")
+        )
+    except (ValueError, TypeError):
+        IMMICH_MARGIN_MIN = 180
+    IMMICH_ENABLED = bool(IMMICH_URL and IMMICH_API_KEY)
+    WIKILOC_COOKIE = rows.get("WIKILOC_COOKIE") or os.environ.get("WIKILOC_COOKIE", "")
 
 
 # ---------------------------------------------------------------- análisis GPX
@@ -1368,6 +1399,31 @@ def delete_planned(pid):
     return "", 204
 
 
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    return jsonify({
+        "IMMICH_URL":        IMMICH_URL,
+        "IMMICH_API_KEY":    IMMICH_API_KEY,
+        "IMMICH_MARGIN_MIN": str(IMMICH_MARGIN_MIN),
+        "WIKILOC_COOKIE":    WIKILOC_COOKIE,
+    })
+
+
+@app.route("/api/settings", methods=["POST"])
+def save_settings():
+    data = request.get_json(force=True) or {}
+    con = db()
+    for key in _SETTINGS_KEYS:
+        if key in data:
+            con.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                (key, str(data[key]).strip()),
+            )
+    con.commit()
+    refresh_config()
+    return "", 204
+
+
 @app.route("/api/planned/<int:pid>/gpx", methods=["GET"])
 def download_planned_gpx(pid):
     r = db().execute(
@@ -1384,6 +1440,7 @@ def download_planned_gpx(pid):
 
 
 init_db()
+refresh_config()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=False)
