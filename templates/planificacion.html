@@ -103,8 +103,12 @@ input[type=text]:focus,input[type=url]:focus{outline:none;border-color:var(--pr-
       <label class="field-label">URL de la ruta en Wikiloc</label>
       <input id="wiki-url" type="url" placeholder="https://es.wikiloc.com/rutas-senderismo/…"
         style="margin-bottom:14px" onkeydown="if(event.key==='Enter')importWikiloc()">
-      <div id="wiki-hint" style="color:var(--muted);font-size:12px;margin-bottom:14px">
-        Pega el enlace de cualquier ruta pública de Wikiloc.
+      <div id="wiki-hint" style="color:var(--muted);font-size:12px;margin-bottom:14px;line-height:1.5">
+        Pega el enlace de cualquier ruta de Wikiloc.<br>
+        Si Wikiloc bloquea el acceso, descarga el GPX manualmente desde Wikiloc
+        y usa la pestaña <strong>Archivo GPX</strong>, o configura
+        <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px">WIKILOC_COOKIE</code>
+        en el <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px">.env</code>.
       </div>
       <button class="btn" style="width:100%" onclick="importWikiloc()">Importar de Wikiloc</button>
     </div>

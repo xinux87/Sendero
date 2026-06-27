@@ -32,6 +32,12 @@ DB_PATH = DATA / "sendero.db"
 for d in (DATA, GPX_DIR, PHOTO_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
+# ---------------------------------------------------------------- Wikiloc
+# Cookie de sesión del navegador (opcional). Wikiloc aplica bot-detection;
+# sin cookies válidas el scraper puede recibir 403. Obtén el valor abriendo
+# DevTools → Network → cualquier petición a wikiloc.com → cabecera Cookie.
+WIKILOC_COOKIE = os.environ.get("WIKILOC_COOKIE", "")
+
 # ---------------------------------------------------------------- Immich
 IMMICH_URL = os.environ.get("IMMICH_URL", "").rstrip("/")
 IMMICH_API_KEY = os.environ.get("IMMICH_API_KEY", "")
@@ -951,7 +957,11 @@ def scrape_wikiloc(url: str) -> dict:
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "es-ES,es;q=0.9,en-US;q=0.8",
         "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://es.wikiloc.com/",
+        "DNT": "1",
     }
+    if WIKILOC_COOKIE:
+        headers["Cookie"] = WIKILOC_COOKIE
 
     result = {
         "name": None,
@@ -990,6 +1000,8 @@ def scrape_wikiloc(url: str) -> dict:
                     timeout=25,
                     allow_redirects=True,
                 )
+                if gr.status_code == 403:
+                    break  # no reintentar el otro endpoint, mismo resultado
                 body = gr.text.strip()
                 if gr.status_code == 200 and (
                     "xml" in gr.headers.get("content-type", "")
@@ -1016,13 +1028,19 @@ def scrape_wikiloc(url: str) -> dict:
     if need_html:
         # ── Estrategia 2: HTML de la página ──────────────────────────────────
         resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+        if resp.status_code == 403:
+            raise PermissionError(
+                "Wikiloc bloqueó el acceso (403). "
+                "Configura WIKILOC_COOKIE en tu .env con las cookies de tu sesión."
+            )
         resp.raise_for_status()
         html = resp.text
 
         # Detectar redirección a login
         if "/login" in resp.url or "/log-in" in resp.url:
             raise PermissionError(
-                "Esta ruta de Wikiloc requiere iniciar sesión"
+                "Esta ruta de Wikiloc requiere iniciar sesión. "
+                "Configura WIKILOC_COOKIE en tu .env."
             )
 
         soup = BeautifulSoup(html, "html.parser")
