@@ -6,21 +6,18 @@ Bitácora autoalojada de rutas de montaña. **Una sola app** que cubre lo que pe
 - **Estadísticas automáticas**: distancia, desnivel +/−, tiempo en movimiento, velocidad media, altitud máx/mín.
 - **Fotos por ruta**: súbelas y, si llevan GPS en el EXIF, se sitúan solas sobre el mapa.
 - **Resumen** de cada salida: uno automático con las cifras + tus notas libres.
+- **Planificación**: sube GPX de rutas que quieres hacer y tenlas en una lista separada.
 
 Sin Immich, sin Wanderer, sin AdventureLog. Backend Flask + SQLite, todo en un contenedor. **Immich es opcional**: si lo activas, al abrir una ruta puedes buscar en tu Immich las fotos tomadas durante esa salida y elegir cuáles asociar (no se copian: se enlazan por referencia, Immich sigue siendo tu fototeca).
 
 ## Conectar con Immich (opcional)
 
 1. En Immich: **Cuenta → Configuración de la cuenta → Claves de API** → crea una clave.
-2. Pon estas variables (en un archivo `.env` junto al `docker-compose.yml`, o exportadas):
+2. En Sendero: botón **Ajustes** (cabecera) → sección Immich → pega la URL y la API key → Guardar.
 
-```
-IMMICH_URL=http://IP-DE-TU-IMMICH:2283
-IMMICH_API_KEY=la-clave-que-creaste
-IMMICH_MARGIN_MIN=180     # margen, en minutos, antes y después del track
-```
+Con eso, en cada ruta aparece el botón **⛰ Buscar en Immich**. Sendero toma la hora de inicio y fin del GPX, añade el margen configurado, pregunta a Immich qué fotos se tomaron en esa ventana y te las muestra para seleccionar. Las que tienen GPS se marcan automáticamente si están a menos de la distancia configurada del track; las demás se muestran siempre (muchas fotos de montaña no llevan coordenadas). Las miniaturas se sirven a través de Sendero (proxy), así que tu navegador no necesita acceso directo a Immich ni la API key.
 
-Con eso, en cada ruta aparece el botón **⛰ Buscar en Immich**. Sendero toma la hora de inicio y fin del GPX, añade el margen, pregunta a Immich qué fotos se tomaron en esa ventana y te las muestra para seleccionar. Las que tienen GPS se marcan y aparecen sobre el mapa. Las miniaturas se sirven a través de Sendero (proxy), así que tu navegador no necesita acceso directo a Immich ni la API key.
+Los ajustes se guardan en la base de datos y persisten entre reinicios. Si prefieres configurarlos como variables de entorno (útil para despliegues automatizados), puedes usar `IMMICH_URL`, `IMMICH_API_KEY`, `IMMICH_MARGIN_MIN` e `IMMICH_DIST_M`; la BD tiene prioridad si el valor también está guardado ahí.
 
 > Cómo funciona el cruce: por **tiempo**, usando las marcas del track y el EXIF de las fotos en Immich. Por eso es importante que el reloj y el teléfono/cámara tengan la hora bien sincronizada.
 
@@ -29,7 +26,7 @@ Con eso, en cada ruta aparece el botón **⛰ Buscar en Immich**. Sendero toma l
 
 ```bash
 docker compose up -d --build
-# abre http://localhost:8080
+# abre http://localhost:8090   (el puerto host está en docker-compose.yml)
 ```
 
 Los datos (GPX, fotos y base de datos) se guardan en `./data`, montado como volumen. Para mover la instalación a otro equipo, copia esa carpeta.
@@ -62,7 +59,11 @@ sendero/
 ├── app.py              # API REST + parseo GPX (gpxpy) + EXIF (Pillow) + SQLite + Immich
 ├── watch.py            # importador automático de carpeta (Syncthing)
 ├── templates/
-│   └── index.html      # interfaz (Leaflet + Chart.js, autocontenida)
+│   ├── base.html           # cabecera, CSS compartido, modal de Ajustes
+│   ├── dashboard.html      # lista de rutas + subida GPX
+│   ├── sendero.html        # detalle de ruta: mapa, perfil, fotos, Immich
+│   ├── planificacion.html  # lista de rutas planificadas
+│   └── plan_detalle.html   # detalle de ruta planificada
 ├── requirements.txt
 ├── Dockerfile
 ├── docker-compose.yml
@@ -79,9 +80,13 @@ sendero/
 | `PATCH`| `/api/routes/{id}` | renombrar / guardar notas |
 | `DELETE`| `/api/routes/{id}` | borrar ruta |
 | `POST` | `/api/routes/{id}/photos` | subir fotos locales (campo `photos`) |
-| `GET`  | `/api/config` | indica si Immich está activo |
+| `GET`  | `/api/config` | indica si Immich está activo y la distancia de autoselección |
+| `GET`  | `/api/settings` | leer ajustes actuales |
+| `POST` | `/api/settings` | guardar ajustes (misma función que el modal Ajustes) |
 | `GET`  | `/api/routes/{id}/immich/candidates` | fotos de Immich en la ventana del track |
 | `POST` | `/api/routes/{id}/immich/select` | asocia los assets de Immich elegidos |
+| `GET`  | `/api/planned` | lista de rutas planificadas |
+| `POST` | `/api/planned` | añade una ruta planificada (campo `gpx`) |
 
 El endpoint `POST /api/routes` permite automatizar la importación: un script que vigile la carpeta de Syncthing puede hacer `curl -F "gpx=@ruta.gpx"` por cada archivo nuevo.
 
@@ -90,10 +95,3 @@ El endpoint `POST /api/routes` permite automatizar la importación: un script qu
 - **No es un gestor de fotos.** No hace miniaturas optimizadas, ni álbumes, ni reconocimiento, ni subida automática desde el carrete. Si quieres eso, usa Immich y conserva Sendero solo para las rutas.
 - **Sin usuarios ni login.** Pensado para uso personal en tu red. No lo expongas a internet sin poner delante un proxy con autenticación (p. ej. Authelia / Caddy con basic-auth).
 - **La correlación de fotos** usa el GPS del EXIF. Si tus fotos no llevan coordenadas, se muestran en la galería pero no en el mapa.
-
-## Próximos pasos posibles
-
-- Interpolar sobre el mapa la posición de las fotos sin GPS usando su hora contra el track.
-- Vista de calendario / estadísticas anuales (km y desnivel acumulados).
-
-Dime cuál te interesa y lo añado.
