@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Sendero{% endblock %}</title>
+{% block head_libs %}{% endblock %}
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#101a14;
+  --panel:#17241c;
+  --panel-2:#1f3327;
+  --line:#2c4435;
+  --ink:#e8efe6;
+  --muted:#8aa394;
+  --gr-red:#d24a3a;
+  --pr-yellow:#e8c44a;
+  --mono:'Space Mono',monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:'Inter',system-ui,sans-serif;line-height:1.5}
+a{color:var(--pr-yellow)}
+h1,h2,h3{font-family:'Saira Condensed',sans-serif;letter-spacing:.02em;margin:0}
+button{font-family:inherit;cursor:pointer}
+.mono{font-family:var(--mono)}
+header{position:relative;padding:10px 22px;border-bottom:1px solid var(--line);
+  overflow:hidden;background:var(--panel)}
+header svg{position:absolute;inset:0;width:100%;height:100%;opacity:.5;pointer-events:none}
+header .header-inner{position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px}
+header .brand{display:flex;align-items:baseline;gap:14px}
+header h1{font-size:40px;font-weight:700;text-transform:uppercase}
+header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transform:uppercase}
+header .blaze{position:relative;display:inline-block;width:14px;height:34px;border-radius:2px;
+  background:linear-gradient(var(--gr-red) 0 50%, #fff 50% 100%);transform:translateY(4px)}
+@media(max-width:560px){header .header-inner{flex-direction:column;align-items:flex-start}}
+.wrap{max-width:1040px;margin:0 auto;padding:22px}
+.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.btn{background:var(--gr-red);color:#fff;border:0;padding:10px 16px;border-radius:7px;
+  font-weight:600;font-size:14px}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.btn.sm{padding:6px 11px;font-size:13px}
+.empty{color:var(--muted);text-align:center;padding:48px 0}
+.hidden{display:none}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel-2);
+  border:1px solid var(--line);padding:11px 18px;border-radius:8px;font-size:14px;opacity:0;
+  transition:.2s;pointer-events:none;z-index:9999}
+.toast.show{opacity:1}
+@media(max-width:560px){header h1{font-size:30px}}
+{% block styles %}{% endblock %}
+</style>
+</head>
+<body>
+<header>
+  <svg viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true">
+    <g fill="none" stroke="#2c4435" stroke-width="1.2">
+      <path d="M0,150 Q150,90 320,120 T640,90 T980,130 T1200,100"/>
+      <path d="M0,170 Q150,120 320,145 T640,120 T980,155 T1200,130"/>
+      <path d="M0,120 Q150,60 320,95 T640,60 T980,100 T1200,70"/>
+      <path d="M0,95 Q150,40 320,70 T640,35 T980,75 T1200,45"/>
+    </g>
+  </svg>
+  <div class="header-inner">
+    <div class="brand">
+      <span class="blaze"></span>
+      <h1>Sendero</h1>
+      <span class="tag">Bitácora de montaña</span>
+    </div>
+    {% block header_actions %}{% endblock %}
+  </div>
+</header>
+
+<div class="wrap">
+{% block content %}{% endblock %}
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),2200);}
+function fmtKm(m){return m?(m/1000).toFixed(2):"–";}
+function fmtDur(s){if(!s)return"–";s=Math.round(s);const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);
+  return h?`${h}h ${m}m`:`${m}m`;}
+function fmtDate(iso){if(!iso)return"Sin fecha";const d=new Date(iso);
+  return d.toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"});}
+function esc(s){return(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+{% block scripts %}{% endblock %}
+</script>
+</body>
+</html>

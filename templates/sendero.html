@@ -1,0 +1,652 @@
+{% extends "base.html" %}
+{% block title %}Sendero{% endblock %}
+
+{% block head_libs %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block styles %}
+.detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+#map{height:380px;border-radius:11px;border:1px solid var(--line);z-index:0}
+.stats-row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.stat{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);
+  border-radius:9px;padding:12px 14px}
+.stat .v{font-family:var(--mono);font-size:23px;font-weight:700}
+.stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.stat .v small{font-size:13px;color:var(--muted)}
+.section{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:18px;margin-top:16px}
+.section h2{font-size:24px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.section h2::before{content:"";width:10px;height:24px;border-radius:2px;
+  background:linear-gradient(var(--pr-yellow) 0 50%,#fff 50% 100%)}
+textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:8px;padding:12px;font-family:inherit;font-size:14px;resize:vertical}
+.auto{color:var(--muted);font-style:italic;margin-bottom:12px;padding:10px 12px;
+  background:var(--bg);border-radius:8px;border-left:3px solid var(--pr-yellow)}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.thumb{position:relative;aspect-ratio:4/3;border-radius:8px;overflow:hidden;border:1px solid var(--line);cursor:pointer}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .geo{position:absolute;top:6px;left:6px;background:rgba(16,26,20,.8);
+  color:var(--pr-yellow);font-size:10px;padding:2px 6px;border-radius:4px;font-family:var(--mono)}
+.thumb .del{position:absolute;top:6px;right:6px;background:rgba(16,26,20,.8);
+  border:0;color:#fff;border-radius:4px;padding:2px 7px;opacity:0;transition:.15s}
+.thumb:hover .del{opacity:1}
+.drop{border:1.5px dashed var(--line);border-radius:9px;padding:22px;text-align:center;
+  color:var(--muted);cursor:pointer}
+.drop.over{border-color:var(--gr-red);color:var(--ink)}
+.photo-marker{width:26px;height:26px;border-radius:50%;background:#e8c44a;
+  border:2.5px solid #101a14;box-shadow:0 2px 6px rgba(0,0,0,.7);
+  display:flex;align-items:center;justify-content:center}
+/* Leaflet overrides */
+.leaflet-popup-content-wrapper{background:var(--panel);color:var(--ink)}
+.leaflet-popup-tip{background:var(--panel)}
+.leaflet-control-layers{background:var(--panel)!important;border-color:var(--line)!important;color:var(--ink)!important}
+.leaflet-control-layers-expanded{padding:8px 14px 10px}
+.leaflet-control-layers label{color:var(--ink)!important;font-size:13px}
+.leaflet-control-layers-separator{border-top-color:var(--line)!important}
+.fit-btn{width:30px!important;height:30px!important;font-size:18px;line-height:28px;
+  background:var(--panel)!important;color:var(--ink)!important;border:none!important;cursor:pointer}
+/* lightbox */
+.lb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;align-items:center;
+  justify-content:center;z-index:2000}
+.lb-overlay.hidden{display:none}
+.lb-img{max-width:calc(100vw - 140px);max-height:calc(100vh - 60px);border-radius:8px;object-fit:contain;display:block}
+.lb-close{position:fixed;top:14px;right:18px;background:none;border:none;color:#fff;
+  font-size:30px;cursor:pointer;opacity:.7;line-height:1;padding:4px}
+.lb-close:hover{opacity:1}
+.lb-nav{position:fixed;top:50%;transform:translateY(-50%);background:rgba(16,26,20,.65);
+  border:none;color:#fff;font-size:40px;width:52px;height:72px;cursor:pointer;border-radius:9px;
+  opacity:.7;display:flex;align-items:center;justify-content:center;transition:.15s}
+.lb-nav:hover{opacity:1;background:rgba(16,26,20,.95)}
+.lb-prev{left:10px}
+.lb-next{right:10px}
+.lb-counter{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+  color:rgba(255,255,255,.55);font-family:var(--mono);font-size:13px;pointer-events:none}
+/* modal Immich */
+.overlay{position:fixed;inset:0;background:rgba(8,14,11,.78);display:flex;align-items:center;
+  justify-content:center;padding:16px;z-index:1000}
+.overlay.hidden{display:none}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:100%;
+  max-width:760px;max-height:88vh;display:flex;flex-direction:column;padding:18px;overflow:hidden}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.modal-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.imgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
+  grid-auto-rows:minmax(110px,auto);align-content:start;gap:9px;
+  overflow-y:auto;padding:2px 6px 2px 2px;flex:1;min-height:0}
+.imgrid::-webkit-scrollbar{width:6px}
+.imgrid::-webkit-scrollbar-track{background:var(--bg);border-radius:3px}
+.imgrid::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.imgrid::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+.pick{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:2px solid transparent;cursor:pointer}
+.pick img{width:100%;height:100%;object-fit:cover;display:block}
+.pick.on{border-color:var(--gr-red)}
+.pick .check{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;
+  background:rgba(8,14,11,.7);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px}
+.pick.on .check{background:var(--gr-red)}
+.pick .gps{position:absolute;bottom:5px;left:5px;font-size:11px;background:rgba(8,14,11,.7);
+  color:var(--pr-yellow);padding:1px 5px;border-radius:4px;font-family:var(--mono)}
+@media(max-width:560px){.stat .v{font-size:19px}}
+/* actividad */
+.act-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 10px;
+  border-radius:20px;font-size:13px;font-weight:700;border:2px solid;cursor:pointer;
+  transition:filter .15s;letter-spacing:.03em;white-space:nowrap}
+.act-badge:hover{filter:brightness(1.18)}
+.act-badge .ico{font-size:17px;line-height:1}
+.act-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;padding-top:6px}
+.act-opt{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;
+  border-radius:11px;border:2px solid var(--line);cursor:pointer;
+  transition:border-color .15s,transform .15s;background:var(--bg)}
+.act-opt:hover{transform:translateY(-2px)}
+.act-opt.on{background:var(--panel-2)}
+.act-ico-lg{font-size:36px;line-height:1}
+.act-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:center}
+{% endblock %}
+
+{% block content %}
+<div class="bar">
+  <button class="btn ghost sm" onclick="location.href='/'">← Volver</button>
+</div>
+
+<div class="detail-head">
+  <div>
+    <h1 id="d-name" style="font-size:34px"></h1>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div id="d-date" class="mono" style="color:var(--muted);font-size:13px"></div>
+      <div id="d-device" class="mono" style="color:var(--muted);font-size:12px;opacity:.7"></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn ghost sm" onclick="renameRoute()">Renombrar</button>
+    <button class="btn ghost sm" onclick="removeRoute()" style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
+  </div>
+</div>
+
+<div id="map"></div>
+<div class="stats-row" id="stats"></div>
+
+<div class="section">
+  <h2>Perfil de elevación</h2>
+  <canvas id="elev" height="84"></canvas>
+</div>
+
+<div class="section">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <h2>Resumen</h2>
+    <div id="activity-badge-sm"></div>
+  </div>
+  <div id="auto" class="auto"></div>
+  <textarea id="notes" placeholder="Escribe aquí tus notas de la salida: compañía, tiempo, sensaciones, cumbre alcanzada…"></textarea>
+  <div style="margin-top:10px"><button class="btn sm" onclick="saveNotes()">Guardar resumen</button></div>
+</div>
+
+<div class="section">
+  <h2>Fotos</h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <button id="immich-btn" class="btn sm hidden" onclick="openImmich()">⛰ Buscar en Immich</button>
+  </div>
+  <div id="drop" class="drop">Arrastra fotos aquí o pulsa para elegir
+    <input id="photo-input" type="file" accept="image/*" multiple class="hidden">
+  </div>
+  <div id="gallery" class="gallery" style="margin-top:14px"></div>
+</div>
+
+<!-- MODAL: selector de actividad -->
+<div id="activity-modal" class="overlay hidden">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-head">
+      <h2 style="font-family:'Saira Condensed';font-size:24px">Tipo de actividad</h2>
+      <button class="btn ghost sm" onclick="closeActivityPicker()">Cerrar</button>
+    </div>
+    <div id="act-picker-grid" class="act-picker-grid"></div>
+  </div>
+</div>
+
+<!-- MODAL: candidatos de Immich -->
+<div id="immich-modal" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 style="font-family:'Saira Condensed';font-size:24px">Fotos en Immich durante esta ruta</h2>
+      <button class="btn ghost sm" onclick="closeImmich()">Cerrar</button>
+    </div>
+    <div id="immich-status" style="color:var(--muted);font-size:13px;margin-bottom:10px"></div>
+    <label id="near-wrap" class="hidden" style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin-bottom:10px;cursor:pointer">
+      <input type="checkbox" id="near-only" onchange="renderImmich()"> Solo fotos cerca de la ruta (las sin GPS se mantienen)
+    </label>
+    <div id="immich-grid" class="imgrid"></div>
+    <div class="modal-foot">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn ghost sm" onclick="selectAllImmich()">Seleccionar todas</button>
+        <span id="immich-count" class="mono" style="color:var(--muted)"></span>
+      </div>
+      <button class="btn" onclick="confirmImmich()">Añadir seleccionadas</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div id="lb-overlay" class="lb-overlay hidden">
+  <img id="lb-img" class="lb-img" src="" alt="">
+  <button class="lb-close" onclick="closeLightbox()">✕</button>
+  <button class="lb-nav lb-prev" onclick="lbNav(-1)">‹</button>
+  <button class="lb-nav lb-next" onclick="lbNav(1)">›</button>
+  <span id="lb-counter" class="lb-counter"></span>
+  <button id="lb-del" class="btn sm" onclick="lbDelete()"
+    style="position:fixed;bottom:18px;right:18px;background:var(--gr-red);border:none;z-index:2001">Eliminar foto</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+let map, trackLayer, elevChart, current=null;
+let IMMICH=false, immichCands=[], immichSel=new Set();
+let photoMarkers={}, lbIdx=0;
+const NEAR_M=500;
+
+const ACTIVITIES=[
+  {id:'senderismo',label:'Senderismo',color:'#c97a3a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'bicicleta',label:'Bicicleta',color:'#3a9ed8',symbol:`
+    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <path d="M9.5,17.5 L13,14 L16.5,17.5 M13,14 L11.5,17.5"
+      stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="15.5" cy="10" r="1.5" fill="white"/>
+    <line x1="15.5" y1="11.5" x2="13" y2="14"  stroke="white" stroke-width="1.7" stroke-linecap="round"/>
+    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+  `},
+  {id:'caminata',label:'Caminata',color:'#5ab87a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'correr',label:'Correr',color:'#e05252',symbol:`
+    <circle cx="14" cy="8" r="1.6" fill="white"/>
+    <line x1="14" y1="9.6"  x2="12" y2="15"    stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="16" y2="10"    stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="10" y2="13"    stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="9.5"  y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'esqui',label:'Esquí',color:'#9b6fd4',symbol:`
+    <circle cx="13" cy="8" r="1.6" fill="white"/>
+    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+  `},
+];
+function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
+function iconSvg(a,size=26){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13" cy="13" r="11" fill="${a.color}" stroke="#101a14" stroke-width="2.5"/>
+    ${a.symbol}
+  </svg>`;}
+
+// ---------- actividad ----------
+function renderActivity(){
+  const a=activityOf(current.activity_type);
+  const el=$("#activity-badge-sm");
+  if(!el)return;
+  if(a){
+    el.innerHTML=`<span class="act-badge" onclick="openActivityPicker()"
+      style="background:${a.color}1a;border-color:${a.color};color:${a.color}">
+      ${iconSvg(a,18)} ${a.label}</span>`;
+  } else {
+    el.innerHTML=`<span class="act-badge" onclick="openActivityPicker()"
+      style="background:var(--panel-2);border-color:var(--line);color:var(--muted)">
+      + Añadir tipo de actividad</span>`;
+  }
+}
+function openActivityPicker(){
+  const g=$("#act-picker-grid");g.innerHTML="";
+  ACTIVITIES.forEach(a=>{
+    const d=document.createElement("div");
+    d.className="act-opt"+(current.activity_type===a.id?" on":"");
+    d.style.borderColor=current.activity_type===a.id?a.color:"";
+    d.innerHTML=`${iconSvg(a,40)}
+      <span class="act-lbl" style="color:${a.color}">${a.label}</span>`;
+    d.onclick=()=>setActivity(a.id);
+    g.appendChild(d);
+  });
+  $("#activity-modal").classList.remove("hidden");
+}
+function closeActivityPicker(){$("#activity-modal").classList.add("hidden");}
+async function setActivity(id){
+  await fetch(`/api/routes/${current.id}`,{method:"PATCH",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({activity_type:id})});
+  current.activity_type=id;
+  const a=activityOf(id);
+  if(trackLayer&&a) trackLayer.setStyle({color:a.color});
+  renderActivity();
+  renderStats();
+  closeActivityPicker();
+  toast("Actividad guardada");
+  if(!current.photos.length&&IMMICH&&!current.immich_checked) autoSearchImmich();
+}
+
+// ---------- render ----------
+function renderStats(){
+  const r=current;
+  const a=activityOf(r.activity_type);
+  const actStat=a
+    ?`<div class="stat" style="border-color:${a.color}40;cursor:pointer" onclick="openActivityPicker()">
+        <div class="v" style="line-height:1">${iconSvg(a,26)}</div>
+        <div class="l" style="color:${a.color}">${a.label}</div></div>`
+    :`<div class="stat" style="border-style:dashed;cursor:pointer" onclick="openActivityPicker()">
+        <div class="v" style="font-size:20px;color:var(--muted)">＋</div>
+        <div class="l">Actividad</div></div>`;
+  const items=[
+    ["Distancia",fmtKm(r.distance_m),"km"],
+    ["Desnivel +",r.ascent_m?Math.round(r.ascent_m):"–","m"],
+    ["Desnivel −",r.descent_m?Math.round(r.descent_m):"–","m"],
+    ["En movimiento",fmtDur(r.moving_s||r.duration_s),""],
+    ["Vel. media",r.avg_speed?r.avg_speed.toFixed(1):"–","km/h"],
+    ["Altitud máx",r.ele_max!=null?Math.round(r.ele_max):"–","m"],
+  ];
+  $("#stats").innerHTML=actStat+items.map(([l,v,u])=>
+    `<div class="stat"><div class="v">${v} <small>${u}</small></div><div class="l">${l}</div></div>`).join("");
+}
+
+function renderMap(){
+  if(map){map.remove();}
+  map=L.map("map");
+  const capas={
+    "Topográfico":L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",{maxZoom:17,attribution:"© OpenTopoMap · OSM"}),
+    "Callejero":L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}),
+    "Satélite":L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:18,attribution:"© Esri"}),
+    "Oscuro":L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{maxZoom:19,attribution:"© CartoDB"}),
+  };
+  capas["Topográfico"].addTo(map);
+  L.control.layers(capas,null,{position:"topright"}).addTo(map);
+  const latlngs=current.geojson.map(([lon,lat])=>[lat,lon]);
+  if(latlngs.length){
+    const act=activityOf(current.activity_type);
+    trackLayer=L.polyline(latlngs,{color:act?act.color:"#d24a3a",weight:4}).addTo(map);
+    map.fitBounds(trackLayer.getBounds(),{padding:[20,20]});
+    L.circleMarker(latlngs[0],{radius:6,color:"#e8c44a",fillColor:"#e8c44a",fillOpacity:1}).addTo(map).bindPopup("Inicio");
+    L.circleMarker(latlngs[latlngs.length-1],{radius:6,color:"#fff",fillColor:"#fff",fillOpacity:1}).addTo(map).bindPopup("Fin");
+    const FitBtn=L.Control.extend({options:{position:'topleft'},onAdd(){
+      const b=L.DomUtil.create('button','leaflet-bar leaflet-control fit-btn');
+      b.innerHTML='⤢';b.title='Centrar en la ruta';
+      L.DomEvent.disableClickPropagation(b);
+      b.onclick=()=>map.fitBounds(trackLayer.getBounds(),{padding:[20,20]});
+      return b;
+    }});
+    new FitBtn().addTo(map);
+  } else { map.setView([42.5,-1.6],6); }
+  photoMarkers={};
+  current.photos.filter(p=>p.lat&&p.lon).forEach(p=>{
+    const idx=current.photos.findIndex(ph=>ph.id===p.id);
+    photoMarkers[p.id]=L.marker([p.lat,p.lon],{icon:L.divIcon({
+      className:"photo-marker",iconSize:[26,26],iconAnchor:[13,13],
+      html:'<svg width="13" height="11" viewBox="0 0 13 11" fill="#101a14"><rect x="0" y="2" width="13" height="9" rx="1.5"/><path d="M4 0h5l1 2H3z"/><circle cx="6.5" cy="6.5" r="2.3" fill="#e8c44a"/><circle cx="6.5" cy="6.5" r="1.1" fill="#101a14"/></svg>'
+    })}).addTo(map).on('click',()=>openLightbox(idx));
+  });
+  setTimeout(()=>map.invalidateSize(),200);
+}
+
+function haversineM(la1,lo1,la2,lo2){
+  const R=6371000,r=Math.PI/180,dLa=(la2-la1)*r,dLo=(lo2-lo1)*r;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function photoElevPoints(){
+  const tr=current.geojson,el=current.elevation;
+  if(!tr.length||!el.length)return[];
+  const cum=[0];
+  for(let i=1;i<tr.length;i++){
+    const[lo1,la1]=tr[i-1],[lo2,la2]=tr[i];
+    cum.push(cum[i-1]+haversineM(la1,lo1,la2,lo2));
+  }
+  const cos0=Math.cos(tr[0][1]*Math.PI/180);
+  return current.photos.filter(p=>p.lat&&p.lon).map(p=>{
+    let bi=0,bd=Infinity;
+    for(let i=0;i<tr.length;i++){
+      const dx=(tr[i][0]-p.lon)*cos0,dy=tr[i][1]-p.lat,d=dx*dx+dy*dy;
+      if(d<bd){bd=d;bi=i;}
+    }
+    const dKm=cum[bi]/1000;
+    const ep=el.reduce((a,b)=>Math.abs(b.d-dKm)<Math.abs(a.d-dKm)?b:a);
+    return{x:dKm,y:ep.e,photoId:p.id};
+  });
+}
+function renderElev(){
+  const ctx=$("#elev");if(elevChart)elevChart.destroy();
+  const data=current.elevation;
+  if(!data.length){ctx.parentElement.style.display="none";return;}
+  ctx.parentElement.style.display="";
+
+  const iconSvg=`<svg width="26" height="26" xmlns="http://www.w3.org/2000/svg"><circle cx="13" cy="13" r="11" fill="#e8c44a" stroke="#101a14" stroke-width="2.5"/><g transform="translate(6.5,7.5)"><rect x="0" y="2" width="13" height="9" rx="1.5" fill="#101a14"/><path d="M4 0h5l1 2H3z" fill="#101a14"/><circle cx="6.5" cy="6.5" r="2.3" fill="#e8c44a"/><circle cx="6.5" cy="6.5" r="1.1" fill="#101a14"/></g></svg>`;
+  const photoIcon=new Image(26,26);
+  photoIcon.src='data:image/svg+xml,'+encodeURIComponent(iconSvg);
+  const ppts=photoElevPoints();
+  const iconPlugin={id:'photoIcons',
+    afterDatasetsDraw(chart){
+      const meta=chart.getDatasetMeta(1);
+      if(!meta?.data?.length)return;
+      const c=chart.ctx;
+      meta.data.forEach(el=>c.drawImage(photoIcon,el.x-13,el.y-28,26,26));
+    }
+  };
+  const sets=[{
+    data:data.map(d=>({x:d.d,y:d.e})),fill:true,borderColor:"#d24a3a",
+    backgroundColor:"rgba(210,74,58,.15)",pointRadius:0,borderWidth:2,tension:.3
+  }];
+  if(ppts.length) sets.push({
+    type:"scatter",data:ppts.map(p=>({x:p.x,y:p.y})),
+    pointRadius:14,pointHoverRadius:14,backgroundColor:"transparent",borderColor:"transparent",
+  });
+  elevChart=new Chart(ctx,{type:"line",data:{datasets:sets},plugins:[iconPlugin],
+    options:{
+      onClick(e,els){
+        if(!els.length||els[0].datasetIndex!==1)return;
+        const idx=current.photos.findIndex(p=>p.id===ppts[els[0].index].photoId);
+        if(idx>=0)openLightbox(idx);
+      },
+      onHover(e,els){ctx.style.cursor=els.length&&els[0].datasetIndex===1?"pointer":"default";},
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        label(c){if(c.datasetIndex===1)return`📷 ${Math.round(ppts[c.dataIndex].y)} m`;
+                  return`${Math.round(c.raw.y)} m`;},
+        title(items){return`${Number(items[0].raw.x).toFixed(2)} km`;}
+      }}},
+      scales:{
+        x:{type:"linear",title:{display:true,text:"km",color:"#8aa394"},ticks:{color:"#8aa394",maxTicksLimit:8},grid:{color:"#2c4435"}},
+        y:{title:{display:true,text:"m",color:"#8aa394"},ticks:{color:"#8aa394"},grid:{color:"#2c4435"}}
+      }
+    }
+  });
+}
+
+function renderGallery(){
+  const g=$("#gallery");g.innerHTML="";
+  current.photos.forEach((p,i)=>{
+    const d=document.createElement("div");d.className="thumb";d.dataset.photoid=p.id;
+    d.onclick=()=>openLightbox(i);
+    d.innerHTML=`<img src="/api/photos/${p.id}/file" loading="lazy">
+      ${p.lat?'<span class="geo">GPS</span>':''}
+      <button class="del" onclick="delPhoto(${p.id},event)">✕</button>`;
+    g.appendChild(d);
+  });
+}
+
+function renderAll(){
+  $("#d-name").textContent=current.name;
+  document.title=`${current.name} – Sendero`;
+  $("#d-date").textContent=fmtDate(current.started_at);
+  const dev=$("#d-device");
+  if(current.device){dev.textContent="· "+current.device;dev.style.display="";}
+  else{dev.style.display="none";}
+  $("#auto").textContent=current.auto_summary;
+  $("#notes").value=current.notes||"";
+  $("#immich-btn").classList.toggle("hidden",!IMMICH);
+  renderActivity();
+  renderStats();renderMap();renderElev();renderGallery();
+  if(!current.activity_type) setTimeout(openActivityPicker,350);
+  window.scrollTo(0,0);
+}
+
+// ---------- acciones ----------
+async function saveNotes(){
+  await fetch(`/api/routes/${current.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({notes:$("#notes").value})});
+  current.notes=$("#notes").value;toast("Resumen guardado");
+}
+async function renameRoute(){
+  const n=prompt("Nuevo nombre:",current.name);if(!n)return;
+  await fetch(`/api/routes/${current.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name:n})});
+  current.name=n;
+  $("#d-name").textContent=n;
+  document.title=`${n} – Sendero`;
+  history.replaceState({},'','/Sendero/'+encodeURIComponent(n));
+  toast("Renombrada");
+}
+async function removeRoute(){
+  if(!confirm("¿Eliminar esta ruta y sus fotos?"))return;
+  await fetch(`/api/routes/${current.id}`,{method:"DELETE"});
+  location.href='/';
+}
+async function delPhoto(id,ev){
+  ev.stopPropagation();
+  await fetch(`/api/photos/${id}`,{method:"DELETE"});
+  const el=document.querySelector(`.thumb[data-photoid="${id}"]`);
+  if(el)el.remove();
+  const idx=current.photos.findIndex(p=>p.id===id);
+  if(idx!==-1)current.photos.splice(idx,1);
+  if(photoMarkers[id]){map.removeLayer(photoMarkers[id]);delete photoMarkers[id];}
+  if(!$("#lb-overlay").classList.contains("hidden"))closeLightbox();
+  toast("Foto eliminada");
+}
+
+// ---------- subida de fotos ----------
+const drop=$("#drop"),pin=$("#photo-input");
+drop.onclick=()=>pin.click();
+pin.onchange=()=>uploadPhotos(pin.files);
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
+drop.addEventListener("drop",e=>uploadPhotos(e.dataTransfer.files));
+async function uploadPhotos(files){
+  if(!files.length)return;
+  const fd=new FormData();[...files].forEach(f=>fd.append("photos",f));
+  toast("Subiendo fotos…");
+  await fetch(`/api/routes/${current.id}/photos`,{method:"POST",body:fd});
+  current=await(await fetch(`/api/routes/${current.id}`)).json();
+  renderMap();renderElev();renderGallery();
+  pin.value="";
+}
+
+// ---------- Immich ----------
+async function autoSearchImmich(){
+  try{
+    const res=await fetch(`/api/routes/${current.id}/immich/candidates`);
+    if(!res.ok)return;
+    const data=await res.json();
+    immichCands=data.candidates||[];
+    if(!immichCands.length)return;
+    // hay candidatos: autoseleccionar las que estén a ≤150 m
+    immichSel.clear();
+    immichCands.forEach((c,i)=>{
+      if(c.dist_m!=null&&c.dist_m<=150) immichSel.add(i);
+    });
+    // abrir modal
+    $("#immich-modal").classList.remove("hidden");
+    $("#immich-grid").innerHTML="";
+    const withGps=immichCands.filter(c=>c.dist_m!=null).length;
+    $("#immich-status").textContent=`${immichCands.length} foto(s) durante la ruta · ${withGps} con GPS. Toca para seleccionar.`;
+    $("#immich-count").textContent=immichSel.size?`${immichSel.size} seleccionada(s) (≤150 m)`:"";
+    $("#near-wrap").classList.toggle("hidden",withGps===0);
+    $("#near-only").checked=false;
+    renderImmich();
+  }catch(e){}
+}
+
+async function openImmich(){
+  immichSel.clear();
+  $("#immich-modal").classList.remove("hidden");
+  $("#immich-grid").innerHTML="";
+  $("#near-wrap").classList.add("hidden");
+  $("#immich-status").textContent="Buscando fotos en Immich…";
+  $("#immich-count").textContent="";
+  const res=await fetch(`/api/routes/${current.id}/immich/candidates`);
+  const data=await res.json();
+  if(!res.ok){$("#immich-status").textContent=data.error||"Error al consultar Immich";return;}
+  immichCands=data.candidates;
+  if(!immichCands.length){
+    $("#immich-status").textContent="No hay fotos en Immich dentro del horario de esta ruta.";return;
+  }
+  const withGps=immichCands.filter(c=>c.dist_m!=null).length;
+  $("#immich-status").textContent=`${immichCands.length} foto(s) durante la ruta · ${withGps} con GPS. Toca para seleccionar.`;
+  $("#near-wrap").classList.toggle("hidden",withGps===0);
+  $("#near-only").checked=false;
+  renderImmich();
+}
+function renderImmich(){
+  const onlyNear=$("#near-only").checked;
+  const g=$("#immich-grid");g.innerHTML="";
+  immichCands.forEach((c,i)=>{
+    if(onlyNear&&c.dist_m!=null&&c.dist_m>NEAR_M)return;
+    const d=document.createElement("div");d.className="pick"+(immichSel.has(i)?" on":"");d.dataset.i=i;
+    const label=c.dist_m==null?"sin GPS":c.dist_m<1000?`a ${c.dist_m} m`:`a ${(c.dist_m/1000).toFixed(1)} km`;
+    d.innerHTML=`<img loading="lazy" src="/api/immich/thumb/${c.immich_id}">
+      <span class="check">✓</span><span class="gps">${label}</span>`;
+    d.onclick=()=>togglePick(i,d);
+    g.appendChild(d);
+  });
+}
+function togglePick(i,el){
+  if(immichSel.has(i)){immichSel.delete(i);el.classList.remove("on");}
+  else{immichSel.add(i);el.classList.add("on");}
+  $("#immich-count").textContent=immichSel.size?`${immichSel.size} seleccionada(s)`:"";
+}
+async function confirmImmich(){
+  if(!immichSel.size){closeImmich();return;}
+  const items=[...immichSel].map(i=>immichCands[i]);
+  await fetch(`/api/routes/${current.id}/immich/select`,{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({items})});
+  closeImmich();toast(`${items.length} foto(s) añadidas`);
+  current=await(await fetch(`/api/routes/${current.id}`)).json();
+  renderMap();renderElev();renderGallery();
+}
+function closeImmich(){
+  $("#immich-modal").classList.add("hidden");
+  if(!current.immich_checked){
+    current.immich_checked=true;
+    fetch(`/api/routes/${current.id}`,{method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({immich_checked:1})});
+  }
+}
+function selectAllImmich(){
+  const onlyNear=$("#near-only").checked;
+  immichCands.forEach((c,i)=>{
+    if(onlyNear&&c.dist_m!=null&&c.dist_m>NEAR_M)return;
+    immichSel.add(i);
+  });
+  renderImmich();
+  $("#immich-count").textContent=immichSel.size?`${immichSel.size} seleccionada(s)`:"";
+}
+
+// ---------- lightbox ----------
+function openLightbox(idx){
+  lbIdx=idx;
+  const p=current.photos[lbIdx];
+  $("#lb-img").src=`/api/photos/${p.id}/file`;
+  $("#lb-counter").textContent=`${lbIdx+1} / ${current.photos.length}`;
+  const mul=current.photos.length>1;
+  document.querySelector(".lb-prev").style.display=mul?"":"none";
+  document.querySelector(".lb-next").style.display=mul?"":"none";
+  $("#lb-overlay").classList.remove("hidden");
+}
+function closeLightbox(){$("#lb-overlay").classList.add("hidden");}
+function lbNav(dir){lbIdx=(lbIdx+dir+current.photos.length)%current.photos.length;openLightbox(lbIdx);}
+async function lbDelete(){
+  const id=current.photos[lbIdx].id;
+  await fetch(`/api/photos/${id}`,{method:"DELETE"});
+  const el=document.querySelector(`.thumb[data-photoid="${id}"]`);
+  if(el)el.remove();
+  current.photos.splice(lbIdx,1);
+  if(photoMarkers[id]){map.removeLayer(photoMarkers[id]);delete photoMarkers[id];}
+  toast("Foto eliminada");
+  if(current.photos.length===0){closeLightbox();return;}
+  lbIdx=Math.min(lbIdx,current.photos.length-1);
+  openLightbox(lbIdx);
+}
+document.addEventListener("keydown",e=>{
+  if($("#lb-overlay").classList.contains("hidden"))return;
+  if(e.key==="ArrowLeft")lbNav(-1);
+  else if(e.key==="ArrowRight")lbNav(1);
+  else if(e.key==="Escape")closeLightbox();
+});
+
+// ---------- init ----------
+(async()=>{
+  current={{ route_json | safe }};
+  if(!current){location.href='/';return;}
+  renderAll();
+  // config: necesaria antes del flujo automático de Immich
+  try{const c=await(await fetch("/api/config")).json();
+    IMMICH=!!c.immich;$("#immich-btn").classList.toggle("hidden",!IMMICH);}catch(e){}
+  // flujo de incorporación automática
+  if(!current.activity_type){
+    openActivityPicker(); // tras cerrar el picker, setActivity() dispara autoSearchImmich si procede
+  } else if(!current.photos.length&&IMMICH&&!current.immich_checked){
+    autoSearchImmich();
+  }
+})();
+{% endblock %}

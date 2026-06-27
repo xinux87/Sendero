@@ -1,0 +1,569 @@
+{% extends "base.html" %}
+{% block title %}Sendero – Mis rutas{% endblock %}
+
+{% block head_libs %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endblock %}
+
+{% block styles %}
+/* ── tarjetas ── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px}
+.card:hover{filter:brightness(1.06);transform:translateY(-2px)}
+.card h3{font-size:22px;font-weight:600;padding-right:34px;line-height:1.2;
+  height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .date{color:var(--muted);font-size:12px;margin:2px 0 0;text-transform:uppercase;letter-spacing:.08em}
+.card-act{position:absolute;top:12px;right:12px;line-height:0}
+.metrics{display:flex;gap:16px;flex-wrap:wrap}
+.metric{display:flex;flex-direction:column}
+.metric .v{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--ink)}
+.metric .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+
+/* ── filtros ── */
+.filters{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;
+  background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:14px 16px;margin-bottom:18px;position:relative;z-index:10}
+.filter-group{display:flex;flex-direction:column;gap:6px}
+.filter-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+.act-pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{padding:5px 12px;border-radius:20px;border:1px solid var(--line);
+  background:transparent;color:var(--muted);font-size:12px;font-weight:600;
+  cursor:pointer;transition:all .15s;letter-spacing:.04em}
+.pill:hover{border-color:var(--ink);color:var(--ink)}
+.pill.on{color:#fff;border-color:transparent}
+.filter-clear{padding:5px 12px;border-radius:20px;border:1px solid var(--line);
+  background:transparent;color:var(--muted);font-size:12px;cursor:pointer;
+  transition:all .15s;align-self:flex-end}
+.filter-clear:hover{border-color:var(--gr-red);color:var(--gr-red)}
+
+/* ── mapa ── */
+#overview-map{height:340px;border-radius:11px;border:1px solid var(--line);
+  margin-bottom:18px;overflow:hidden}
+.leaflet-container{background:var(--bg)}
+.leaflet-control-zoom a{background:var(--panel)!important;color:var(--ink)!important;
+  border-color:var(--line)!important}
+.leaflet-control-zoom a:hover{background:var(--panel-2)!important}
+.ov-marker{cursor:pointer;filter:drop-shadow(0 2px 4px #00000080)}
+
+/* ── barra de orden + toggle de vista ── */
+.sort-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.sort-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+.sort-btn{padding:5px 14px;border-radius:20px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;letter-spacing:.04em}
+.sort-btn:hover{border-color:var(--ink);color:var(--ink)}
+.sort-btn.on{background:var(--panel-2);border-color:var(--pr-yellow);color:var(--pr-yellow)}
+.sort-sep{width:1px;height:18px;background:var(--line);margin:0 4px}
+.view-btn{padding:5px 12px;border-radius:20px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
+.view-btn:hover{border-color:var(--ink);color:var(--ink)}
+.view-btn.on{background:var(--panel-2);border-color:var(--ink);color:var(--ink)}
+
+/* ── grupos por mes ── */
+.month-group{margin-bottom:24px}
+.month-label{font-family:'Saira Condensed',sans-serif;font-size:20px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+  padding-bottom:8px;margin-bottom:12px;border-bottom:1px solid var(--line);
+  display:flex;align-items:baseline;gap:10px}
+.month-label .month-count{font-family:var(--mono);font-size:12px;color:var(--line)}
+
+/* ── date picker ── */
+.date-range{display:flex;gap:8px;align-items:center}
+.date-sep{color:var(--muted);font-size:12px}
+.dp-wrap{position:relative}
+.dp-btn{background:var(--bg);border:1px solid var(--line);color:var(--muted);
+  border-radius:7px;padding:5px 28px 5px 10px;font-size:13px;font-family:var(--mono);
+  cursor:pointer;min-width:118px;text-align:left;position:relative;transition:border-color .15s}
+.dp-btn.has-val{color:var(--ink)}
+.dp-btn:hover{border-color:var(--muted)}
+.dp-btn:focus{outline:none;border-color:var(--pr-yellow)}
+.dp-btn::after{content:"▾";position:absolute;right:9px;top:50%;transform:translateY(-50%);
+  color:var(--muted);font-size:11px;pointer-events:none}
+.dp-pop{position:fixed;z-index:9999;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:12px;width:230px;box-shadow:0 8px 28px #00000070}
+.dp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:4px}
+.dp-nav{background:none;border:1px solid var(--line);color:var(--muted);border-radius:5px;
+  width:26px;height:26px;cursor:pointer;font-size:15px;line-height:1;flex-shrink:0;transition:all .15s}
+.dp-nav:hover{border-color:var(--pr-yellow);color:var(--pr-yellow)}
+.dp-title{font-family:'Saira Condensed',sans-serif;font-size:15px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--ink);text-align:center;flex:1}
+.dp-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.dp-dow{font-size:9px;color:var(--muted);text-align:center;padding:2px 0;
+  text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.dp-day{background:none;border:none;color:var(--ink);border-radius:5px;padding:4px 0;
+  font-size:12px;font-family:var(--mono);cursor:pointer;text-align:center;transition:background .1s}
+.dp-day:hover:not(.empty){background:var(--panel-2)}
+.dp-day.sel{background:var(--pr-yellow);color:#101a14;font-weight:700}
+.dp-day.today{color:var(--gr-red);font-weight:700}
+.dp-day.today.sel{color:#101a14}
+.dp-day.empty{cursor:default;pointer-events:none}
+.dp-clear-btn{margin-top:8px;width:100%;background:none;border:1px solid var(--line);
+  color:var(--muted);border-radius:6px;padding:4px 0;font-size:11px;cursor:pointer;
+  font-family:inherit;transition:all .15s}
+.dp-clear-btn:hover{border-color:var(--gr-red);color:var(--gr-red)}
+
+/* ── loader de subida ── */
+.upload-loader{position:fixed;bottom:24px;right:24px;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:11px;padding:16px 20px;min-width:300px;
+  z-index:9999;box-shadow:0 6px 28px #00000070}
+.upload-loader-title{font-family:'Saira Condensed',sans-serif;font-size:18px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;
+  display:flex;justify-content:space-between;align-items:baseline}
+.upload-loader-count{font-family:var(--mono);font-size:13px;color:var(--pr-yellow)}
+.upload-bar-bg{background:var(--line);border-radius:4px;height:5px;margin-bottom:8px;overflow:hidden}
+.upload-bar-fill{background:var(--pr-yellow);height:100%;border-radius:4px;
+  transition:width .25s ease;width:0%}
+.upload-filename{color:var(--muted);font-size:11px;font-family:var(--mono);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+
+/* ══ VISTA B ══ */
+#dash-wrap.view-b{
+  display:grid;
+  grid-template-columns:260px 1fr 230px;
+  grid-template-rows:auto auto 1fr;
+  grid-template-areas:
+    "list map filters"
+    "list map sort"
+    "list map .";
+  gap:14px;
+  height:calc(100vh - 160px);
+  min-height:600px;
+}
+#dash-wrap.view-b .filters{
+  grid-area:filters;
+  flex-direction:column;
+  align-items:stretch;
+  margin-bottom:0;
+  overflow-y:auto;
+}
+#dash-wrap.view-b .filter-group{width:100%}
+#dash-wrap.view-b .date-range{flex-direction:column;align-items:stretch;gap:6px}
+#dash-wrap.view-b .date-sep{display:none}
+#dash-wrap.view-b .dp-btn{min-width:0;width:100%}
+#dash-wrap.view-b .filter-clear{align-self:flex-start}
+#dash-wrap.view-b #overview-map{
+  grid-area:map;
+  height:auto;
+  margin-bottom:0;
+}
+#dash-wrap.view-b .sort-bar{
+  grid-area:sort;
+  margin-bottom:0;
+  flex-direction:column;
+  align-items:stretch;
+  gap:6px;
+}
+#dash-wrap.view-b .sort-btn{text-align:left}
+#dash-wrap.view-b #routes{
+  grid-area:list;
+  overflow-y:auto;
+  padding-right:2px;
+  /* scrollbar fino */
+  scrollbar-width:thin;
+  scrollbar-color:var(--line) transparent;
+}
+#dash-wrap.view-b #no-routes{grid-area:list}
+/* tarjetas compactas en vista B */
+#dash-wrap.view-b .card{padding:10px 12px}
+#dash-wrap.view-b .card h3{font-size:15px;height:2.4em;padding-right:30px}
+#dash-wrap.view-b .card .date{font-size:11px;margin-bottom:0}
+#dash-wrap.view-b .card-act{top:10px;right:10px}
+#dash-wrap.view-b .grid{grid-template-columns:1fr}
+#dash-wrap.view-b .month-label{font-size:15px;padding-bottom:6px;margin-bottom:8px}
+#dash-wrap.view-b .month-group{margin-bottom:16px}
+
+@media(max-width:900px){
+  #dash-wrap.view-b{
+    grid-template-columns:1fr;
+    grid-template-rows:auto auto auto auto;
+    grid-template-areas:
+      "filters"
+      "map"
+      "sort"
+      "list";
+    height:auto;
+    min-height:0;
+  }
+  #dash-wrap.view-b #overview-map{height:280px}
+  #dash-wrap.view-b .filters{
+    flex-direction:row;
+    flex-wrap:wrap;
+    overflow-y:visible;
+  }
+  #dash-wrap.view-b .filter-group{width:auto;flex:1;min-width:160px}
+  #dash-wrap.view-b .date-range{flex-direction:row;align-items:center;gap:6px}
+  #dash-wrap.view-b .date-sep{display:inline}
+  #dash-wrap.view-b .dp-btn{width:auto}
+  #dash-wrap.view-b #routes{overflow-y:visible}
+  #dash-wrap.view-b .sort-bar{flex-direction:row;flex-wrap:wrap}
+  #dash-wrap.view-b .sort-btn{text-align:center}
+}
+{% endblock %}
+
+{% block header_actions %}
+<div style="display:flex;align-items:center;gap:12px">
+  <div style="display:flex;gap:6px">
+    <button class="view-btn" id="view-a" onclick="setView('a')">⊞ Cuadrícula</button>
+    <button class="view-btn" id="view-b" onclick="setView('b')">▤ Panel</button>
+  </div>
+  <span id="count" class="mono" style="color:var(--muted);font-size:13px"></span>
+  <label class="btn" style="margin:0;cursor:pointer">+ Añadir ruta
+    <input id="gpx-input" type="file" accept=".gpx,.fit" multiple class="hidden">
+  </label>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="dash-wrap" class="view-a">
+
+  <div class="filters" id="filters-panel">
+    <div class="filter-group">
+      <span class="filter-label">Actividad</span>
+      <div class="act-pills" id="act-pills"></div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Fecha</span>
+      <div class="date-range">
+        <div class="dp-wrap" id="dp-from"></div>
+        <span class="date-sep">→</span>
+        <div class="dp-wrap" id="dp-to"></div>
+      </div>
+    </div>
+    <button class="filter-clear" onclick="clearFilters()">✕ Limpiar</button>
+  </div>
+
+  <div id="overview-map"></div>
+
+  <div class="sort-bar">
+    <span class="sort-label">Orden</span>
+    <button class="sort-btn" id="sort-desc" onclick="setSort('desc')">↓ Más reciente</button>
+    <button class="sort-btn" id="sort-asc"  onclick="setSort('asc')">↑ Más antiguo</button>
+  </div>
+
+  <div id="routes"></div>
+  <div id="no-routes" class="empty hidden">No hay rutas que coincidan con los filtros.</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+const ACTIVITIES=[
+  {id:'senderismo',label:'Senderismo',color:'#c97a3a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'bicicleta',label:'Bicicleta',color:'#3a9ed8',symbol:`
+    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <path d="M9.5,17.5 L13,14 L16.5,17.5 M13,14 L11.5,17.5"
+      stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="15.5" cy="10" r="1.5" fill="white"/>
+    <line x1="15.5" y1="11.5" x2="13" y2="14"   stroke="white" stroke-width="1.7" stroke-linecap="round"/>
+    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+  `},
+  {id:'caminata',label:'Caminata',color:'#5ab87a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'correr',label:'Correr',color:'#e05252',symbol:`
+    <circle cx="14" cy="8" r="1.6" fill="white"/>
+    <line x1="14" y1="9.6"  x2="12" y2="15"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="16" y2="10"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="10" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="15.5" y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="9.5"  y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'esqui',label:'Esquí',color:'#9b6fd4',symbol:`
+    <circle cx="13" cy="8" r="1.6" fill="white"/>
+    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+  `},
+];
+function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
+function iconSvg(a,size=26){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13" cy="13" r="11" fill="${a.color}" stroke="#101a14" stroke-width="2.5"/>
+    ${a.symbol}
+  </svg>`;}
+function genericIconSvg(size=26){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13" cy="13" r="11" fill="#2c4435" stroke="#101a14" stroke-width="2.5"/>
+    <circle cx="13" cy="10" r="2" fill="#8aa394"/>
+    <line x1="13" y1="12.5" x2="13" y2="17"   stroke="#8aa394" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="14"   x2="11" y2="15.5" stroke="#8aa394" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="13" y1="14"   x2="15" y2="15.5" stroke="#8aa394" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="13" y1="17"   x2="11.5" y2="19" stroke="#8aa394" stroke-width="1.6" stroke-linecap="round"/>
+    <line x1="13" y1="17"   x2="14.5" y2="19" stroke="#8aa394" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>`;}
+
+/* ── date picker ── */
+const MONTHS_LONG=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MONTHS_SHORT=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+class DatePicker{
+  constructor(wrap,placeholder,onChange){
+    this.onChange=onChange;this.value=null;this.ph=placeholder;
+    const t=new Date().toISOString().slice(0,7).split('-');
+    this.viewY=+t[0];this.viewM=+t[1]-1;
+    wrap.innerHTML=`
+      <button class="dp-btn" type="button">${placeholder}</button>
+      <div class="dp-pop hidden">
+        <div class="dp-head">
+          <button class="dp-nav dp-prev" type="button">‹</button>
+          <span class="dp-title"></span>
+          <button class="dp-nav dp-next" type="button">›</button>
+        </div>
+        <div class="dp-grid"></div>
+        <button class="dp-clear-btn" type="button">Quitar fecha</button>
+      </div>`;
+    this.btn=wrap.querySelector('.dp-btn');
+    this.pop=wrap.querySelector('.dp-pop');
+    this.title=wrap.querySelector('.dp-title');
+    this.grid=wrap.querySelector('.dp-grid');
+    this.btn.onclick=e=>{e.stopPropagation();this.toggle();};
+    wrap.querySelector('.dp-prev').onclick=e=>{e.stopPropagation();this.viewM--;if(this.viewM<0){this.viewM=11;this.viewY--;}this.renderGrid();};
+    wrap.querySelector('.dp-next').onclick=e=>{e.stopPropagation();this.viewM++;if(this.viewM>11){this.viewM=0;this.viewY++;}this.renderGrid();};
+    wrap.querySelector('.dp-clear-btn').onclick=e=>{e.stopPropagation();this.set(null);this.close();};
+    document.addEventListener('click',e=>{if(!wrap.contains(e.target))this.close();});
+    this.renderGrid();
+  }
+  toggle(){
+    const was=this.pop.classList.contains('hidden');
+    this.pop.classList.toggle('hidden');
+    if(was){
+      const r=this.btn.getBoundingClientRect();
+      this.pop.style.top=(r.bottom+6)+'px';
+      this.pop.style.left=r.left+'px';
+      this.renderGrid();
+    }
+  }
+  close(){this.pop.classList.add('hidden');}
+  set(val){
+    this.value=val;
+    if(val){const[y,m,d]=val.split('-');this.btn.textContent=`${+d} ${MONTHS_SHORT[+m-1]} ${y}`;this.btn.classList.add('has-val');}
+    else{this.btn.textContent=this.ph;this.btn.classList.remove('has-val');}
+    this.onChange(val);
+  }
+  renderGrid(){
+    const today=new Date().toISOString().slice(0,10);
+    this.title.textContent=`${MONTHS_LONG[this.viewM]} ${this.viewY}`;
+    const firstDow=new Date(this.viewY,this.viewM,1).getDay();
+    const offset=(firstDow+6)%7;
+    const days=new Date(this.viewY,this.viewM+1,0).getDate();
+    let h=['L','M','X','J','V','S','D'].map(d=>`<div class="dp-dow">${d}</div>`).join('');
+    for(let i=0;i<offset;i++)h+=`<div class="dp-day empty"></div>`;
+    for(let d=1;d<=days;d++){
+      const ymd=`${this.viewY}-${String(this.viewM+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const cls='dp-day'+(ymd===this.value?' sel':'')+(ymd===today?' today':'');
+      h+=`<button class="${cls}" data-ymd="${ymd}" type="button">${d}</button>`;
+    }
+    this.grid.innerHTML=h;
+    this.grid.querySelectorAll('.dp-day[data-ymd]').forEach(b=>{
+      b.onclick=e=>{e.stopPropagation();const[y,m]=b.dataset.ymd.split('-');
+        this.viewY=+y;this.viewM=+m-1;this.set(b.dataset.ymd);this.close();};
+    });
+  }
+}
+
+/* ── estado ── */
+let dpFrom,dpTo,ovMap=null,ovMarkers=[],ovPts=[];
+let allRoutes=[],activeActs=new Set(ACTIVITIES.map(a=>a.id));
+let sortOrder='desc',viewMode='a';
+
+/* ── mapa ── */
+function renderOverviewMap(routes){
+  if(!ovMap){
+    ovMap=L.map("overview-map",{zoomControl:true});
+    L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+      {maxZoom:17,attribution:"© OpenTopoMap · OSM"}).addTo(ovMap);
+  }
+  ovMarkers.forEach(m=>m.remove());ovMarkers=[];ovPts=[];
+  const pts=[];
+  routes.forEach(r=>{
+    if(r.start_lat==null||r.start_lon==null)return;
+    const act=activityOf(r.activity_type);
+    const sz=32,html=act?iconSvg(act,sz):genericIconSvg(sz);
+    const icon=L.divIcon({html,iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],className:'ov-marker'});
+    const m=L.marker([r.start_lat,r.start_lon],{icon})
+      .addTo(ovMap)
+      .bindTooltip(r.name,{direction:'top',offset:[0,-sz/2]})
+      .on('click',()=>location.href='/Sendero/'+encodeURIComponent(r.name));
+    ovMarkers.push(m);pts.push([r.start_lat,r.start_lon]);
+  });
+  ovPts=pts;
+  fitMap();
+}
+function fitMap(){
+  if(!ovMap)return;
+  if(ovPts.length===1)ovMap.setView(ovPts[0],13);
+  else if(ovPts.length>1)ovMap.fitBounds(L.latLngBounds(ovPts),{padding:[32,32]});
+  else ovMap.setView([40.4,-3.7],6);
+}
+
+/* ── vista ── */
+function setView(v){
+  viewMode=v;
+  $("#dash-wrap").className='view-'+v;
+  $("#view-a").classList.toggle("on",v==='a');
+  $("#view-b").classList.toggle("on",v==='b');
+  if(ovMap)setTimeout(()=>{ovMap.invalidateSize();fitMap();},60);
+}
+
+/* ── orden ── */
+function setSort(order){
+  sortOrder=order;
+  $("#sort-desc").classList.toggle("on",order==='desc');
+  $("#sort-asc").classList.toggle("on",order==='asc');
+  renderList();
+}
+
+/* ── filtros ── */
+function allSelected(){return activeActs.size===ACTIVITIES.length;}
+function buildPills(){
+  const box=$("#act-pills");box.innerHTML="";
+  ACTIVITIES.forEach(a=>{
+    const p=document.createElement("button");
+    p.className="pill"+(activeActs.has(a.id)?" on":"");
+    if(activeActs.has(a.id))p.style.cssText=`background:${a.color};border-color:${a.color}`;
+    p.textContent=a.label;
+    p.onclick=()=>{if(activeActs.has(a.id))activeActs.delete(a.id);else activeActs.add(a.id);buildPills();renderList();};
+    box.appendChild(p);
+  });
+}
+function clearFilters(){
+  activeActs=new Set(ACTIVITIES.map(a=>a.id));
+  dpFrom.set(null);dpTo.set(null);
+  buildPills();renderList();
+}
+
+/* ── tarjetas ── */
+function makeCard(r){
+  const act=activityOf(r.activity_type);
+  const c=document.createElement("div");
+  c.className="card";
+  c.style.borderLeftColor=act?act.color:"var(--line)";
+  c.onclick=()=>location.href='/Sendero/'+encodeURIComponent(r.name);
+  c.innerHTML=`
+    ${act?`<div class="card-act">${iconSvg(act,26)}</div>`:""}
+    <h3>${esc(r.name)}</h3>
+    <div class="date">${fmtDate(r.started_at)}</div>`;
+  return c;
+}
+
+/* ── render principal ── */
+function renderList(){
+  const from=dpFrom.value,to=dpTo.value;
+  const box=$("#routes");box.innerHTML="";
+  const filtered=[...allRoutes]
+    .filter(r=>{
+      if(!allSelected()&&!activeActs.has(r.activity_type))return false;
+      if(from||to){
+        const d=r.started_at?r.started_at.slice(0,10):null;
+        if(!d)return false;
+        if(from&&d<from)return false;
+        if(to&&d>to)return false;
+      }
+      return true;
+    })
+    .sort((a,b)=>{
+      const da=a.started_at||"",db=b.started_at||"";
+      return sortOrder==='asc'?(da>db?1:da<db?-1:0):(da<db?1:da>db?-1:0);
+    });
+  const total=allRoutes.length,shown=filtered.length;
+  $("#count").textContent=total?(shown<total?`${shown} de ${total} ruta(s)`:`${total} ruta(s)`):"";
+  $("#no-routes").classList.toggle("hidden",shown>0);
+  const groups=new Map();
+  filtered.forEach(r=>{
+    const key=r.started_at?r.started_at.slice(0,7):"sin-fecha";
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(r);
+  });
+  groups.forEach((routes,key)=>{
+    let label="Sin fecha";
+    if(key!=="sin-fecha"){const[y,m]=key.split('-');label=`${MONTHS_LONG[+m-1]} ${y}`;}
+    const section=document.createElement("div");
+    section.className="month-group";
+    section.innerHTML=`<div class="month-label">${label}
+      <span class="month-count">${routes.length} ruta${routes.length!==1?'s':''}</span></div>
+      <div class="grid"></div>`;
+    routes.forEach(r=>section.querySelector(".grid").appendChild(makeCard(r)));
+    box.appendChild(section);
+  });
+  renderOverviewMap(filtered);
+}
+
+async function loadList(){
+  dpFrom=new DatePicker($("#dp-from"),"Desde",()=>renderList());
+  dpTo  =new DatePicker($("#dp-to"),  "Hasta",()=>renderList());
+  setSort('desc');
+  setView('a');
+  allRoutes=await(await fetch("/api/routes")).json();
+  buildPills();renderList();
+}
+
+async function uploadFiles(files){
+  const total=files.length;
+  let ok=0;const errors=[];
+
+  const loader=document.createElement("div");
+  loader.className="upload-loader";
+  loader.innerHTML=`
+    <div class="upload-loader-title">
+      Subiendo rutas
+      <span class="upload-loader-count" id="up-count">0 / ${total}</span>
+    </div>
+    <div class="upload-bar-bg"><div class="upload-bar-fill" id="up-bar"></div></div>
+    <div class="upload-filename" id="up-name"></div>`;
+  document.body.appendChild(loader);
+
+  for(let i=0;i<total;i++){
+    const f=files[i];
+    document.getElementById("up-count").textContent=`${i+1} / ${total}`;
+    document.getElementById("up-bar").style.width=`${Math.round((i/total)*100)}%`;
+    document.getElementById("up-name").textContent=f.name;
+    const fd=new FormData();fd.append("gpx",f);
+    try{
+      const res=await fetch("/api/routes",{method:"POST",body:fd});
+      if(res.ok)ok++;
+      else{const j=await res.json();errors.push(`${f.name}: ${j.error||"Error"}`);}
+    }catch{errors.push(`${f.name}: Error de red`);}
+  }
+
+  document.getElementById("up-bar").style.width="100%";
+  document.getElementById("up-count").textContent=`${ok} / ${total}`;
+  document.getElementById("up-name").textContent=
+    errors.length?`${errors.length} error(es)`:"Completado";
+
+  await loadList();
+  setTimeout(()=>loader.remove(),1800);
+  if(errors.length)toast(errors[0]);
+  else toast(`${ok} ruta${ok!==1?"s":""} añadida${ok!==1?"s":""}`);
+}
+
+$("#gpx-input").addEventListener("change",async e=>{
+  const files=[...e.target.files];
+  e.target.value="";
+  if(!files.length)return;
+  await uploadFiles(files);
+});
+
+loadList();
+{% endblock %}

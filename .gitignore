@@ -1,0 +1,28 @@
+# Secretos y configuración local
+.env
+
+# Datos de usuario (BD, GPX subidos, fotos)
+data/
+
+# GPX de ejemplo con datos reales
+examples/
+
+# Carpeta de importación automática (puede contener archivos personales)
+watch/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Claude Code
+.claude/
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
