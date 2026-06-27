@@ -88,6 +88,21 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 .pick .gps{position:absolute;bottom:5px;left:5px;font-size:11px;background:rgba(8,14,11,.7);
   color:var(--pr-yellow);padding:1px 5px;border-radius:4px;font-family:var(--mono)}
 @media(max-width:560px){.stat .v{font-size:19px}}
+/* modal GPX viewer */
+.gpx-modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  width:100%;max-width:820px;max-height:88vh;display:flex;flex-direction:column;padding:18px}
+.gpx-modal-head{display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:12px;gap:10px;flex-shrink:0}
+.gpx-modal-head h3{font-family:'Saira Condensed',sans-serif;font-size:22px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpx-pre{flex:1;overflow:auto;background:var(--bg);border:1px solid var(--line);
+  border-radius:8px;padding:14px;font-family:var(--mono);font-size:12px;
+  line-height:1.55;color:#c8e0d0;white-space:pre;tab-size:2;margin:0;
+  scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.gpx-pre .x-tag{color:#7ec8a4}
+.gpx-pre .x-attr{color:#e8c44a}
+.gpx-pre .x-val{color:#e08080}
+.gpx-pre .x-dec{color:var(--muted)}
 /* actividad */
 .act-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 10px;
   border-radius:20px;font-size:13px;font-weight:700;border:2px solid;cursor:pointer;
@@ -117,8 +132,10 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
       <div id="d-device" class="mono" style="color:var(--muted);font-size:12px;opacity:.7"></div>
     </div>
   </div>
-  <div style="display:flex;gap:8px">
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn ghost sm" id="rescan-btn" onclick="rescanRoute(this)">↺ Reescanear</button>
+    <button class="btn ghost sm" onclick="downloadGpx()">↓ GPX</button>
+    <button class="btn ghost sm" onclick="openGpxViewer()">‹/› Ver GPX</button>
     <button class="btn ghost sm" onclick="renameRoute()">Renombrar</button>
     <button class="btn ghost sm" onclick="removeRoute()" style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
   </div>
@@ -183,6 +200,21 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
       </div>
       <button class="btn" onclick="confirmImmich()">Añadir seleccionadas</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: visor GPX -->
+<div id="gpx-modal" class="overlay hidden">
+  <div class="gpx-modal">
+    <div class="gpx-modal-head">
+      <h3 id="gpx-modal-title">GPX</h3>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="btn ghost sm" onclick="copyGpx()">Copiar</button>
+        <a id="gpx-download-link" class="btn ghost sm" download>↓ Descargar</a>
+        <button class="btn ghost sm" onclick="closeGpxViewer()">Cerrar</button>
+      </div>
+    </div>
+    <pre id="gpx-pre" class="gpx-pre"></pre>
   </div>
 </div>
 
@@ -655,6 +687,67 @@ document.addEventListener("keydown",e=>{
   if(e.key==="ArrowLeft")lbNav(-1);
   else if(e.key==="ArrowRight")lbNav(1);
   else if(e.key==="Escape")closeLightbox();
+});
+
+/* ── descarga y visor GPX ────────────────────────────────────────────────── */
+function downloadGpx(){
+  const a=document.createElement("a");
+  a.href=`/api/routes/${current.id}/gpx?download=1`;
+  a.click();
+}
+
+function highlightXml(text){
+  return text
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    // declaración XML / DOCTYPE
+    .replace(/(&lt;\?[\s\S]*?\?&gt;)/g,'<span class="x-dec">$1</span>')
+    // etiquetas de cierre
+    .replace(/(&lt;\/[\w:.-]+&gt;)/g,'<span class="x-tag">$1</span>')
+    // etiquetas con atributos: colorea la etiqueta y sus atributos
+    .replace(/(&lt;[\w:.-]+)([\s\S]*?)(\/?&gt;)/g,(_,tag,attrs,close)=>{
+      const coloredAttrs=attrs.replace(
+        /([\w:.-]+)(=)(".*?"|'.*?')/g,
+        '<span class="x-attr">$1</span>$2<span class="x-val">$3</span>'
+      );
+      return `<span class="x-tag">${tag}</span>${coloredAttrs}<span class="x-tag">${close}</span>`;
+    });
+}
+
+let gpxRawText="";
+
+async function openGpxViewer(){
+  const pre=$("#gpx-pre");
+  pre.innerHTML='<span style="color:var(--muted)">Cargando…</span>';
+  $("#gpx-modal-title").textContent=current.name;
+  const link=$("#gpx-download-link");
+  link.href=`/api/routes/${current.id}/gpx?download=1`;
+  link.setAttribute("download","");
+  $("#gpx-modal").classList.remove("hidden");
+  try{
+    const res=await fetch(`/api/routes/${current.id}/gpx`);
+    if(!res.ok)throw new Error(res.status);
+    gpxRawText=await res.text();
+    pre.innerHTML=highlightXml(gpxRawText);
+  }catch(e){
+    pre.textContent=`Error al cargar el archivo: ${e.message}`;
+  }
+}
+function closeGpxViewer(){
+  $("#gpx-modal").classList.add("hidden");
+  gpxRawText="";
+}
+async function copyGpx(){
+  if(!gpxRawText){toast("Sin contenido");return;}
+  try{
+    await navigator.clipboard.writeText(gpxRawText);
+    toast("Copiado al portapapeles");
+  }catch{toast("No se pudo copiar");}
+}
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&!$("#gpx-modal").classList.contains("hidden"))closeGpxViewer();
+});
+$("#gpx-modal").addEventListener("click",e=>{
+  if(e.target===$("#gpx-modal"))closeGpxViewer();
 });
 
 // ---------- init ----------

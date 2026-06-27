@@ -753,6 +753,26 @@ def rescan_route(rid):
     return jsonify(_route_dict(rid))
 
 
+@app.route("/api/routes/<int:rid>/gpx", methods=["GET"])
+def download_route_gpx(rid):
+    r = db().execute("SELECT name, gpx_file FROM routes WHERE id=?", (rid,)).fetchone()
+    if not r:
+        abort(404)
+    fpath = GPX_DIR / r["gpx_file"]
+    if not fpath.exists():
+        abort(404)
+    safe = re.sub(r'[^\w\-]', '_', r["name"])[:80]
+    ext = fpath.suffix or ".gpx"
+    as_attachment = request.args.get("download", "0") != "0"
+    mime = "application/gpx+xml" if ext == ".gpx" else "application/octet-stream"
+    disposition = f'attachment; filename="{safe}{ext}"' if as_attachment else "inline"
+    return Response(
+        fpath.read_bytes(),
+        content_type=mime,
+        headers={"Content-Disposition": disposition},
+    )
+
+
 # ---------------------------------------------------------------- API: fotos
 @app.route("/api/routes/<int:rid>/photos", methods=["POST"])
 def add_photos(rid):
