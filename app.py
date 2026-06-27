@@ -11,6 +11,7 @@ import math
 import re
 import sqlite3
 import datetime as dt
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import gpxpy
@@ -314,6 +315,21 @@ def analyse_gpx(text):
             name = gpx.tracks[0].name
         if gpx.tracks[0].type:
             gpx_type = gpx.tracks[0].type.strip()
+
+    # gpxpy 1.6.x no lee <type> cuando hay namespace por defecto; fallback con ET
+    if not gpx_type:
+        try:
+            root = ET.fromstring(text)
+            ns = root.tag.split("}")[0].lstrip("{") if "}" in root.tag else ""
+            p = "{" + ns + "}" if ns else ""
+            trk = root.find(f"{p}trk")
+            if trk is not None:
+                t_el = trk.find(f"{p}type")
+                if t_el is not None and t_el.text:
+                    gpx_type = t_el.text.strip()
+        except Exception:
+            pass
+
     if gpx_type:
         stats["_gpx_type"] = gpx_type
     creator = (gpx.creator or "").strip() or None
