@@ -116,6 +116,21 @@
   font-family:inherit;transition:all .15s}
 .dp-clear-btn:hover{border-color:var(--gr-red);color:var(--gr-red)}
 
+/* ── zona de drop global ── */
+.drop-global{position:fixed;inset:0;z-index:9990;
+  background:rgba(8,14,11,.90);backdrop-filter:blur(3px);
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:none;opacity:0;transition:opacity .15s}
+.drop-global.visible{opacity:1;pointer-events:auto}
+.drop-box{border:2px dashed var(--pr-yellow);border-radius:18px;
+  padding:52px 80px;text-align:center;transition:background .15s}
+.drop-global.over .drop-box{background:rgba(232,196,74,.07)}
+.drop-arrow{font-size:52px;line-height:1;margin-bottom:14px;
+  font-family:'Saira Condensed',sans-serif;color:var(--pr-yellow)}
+.drop-text{font-family:'Saira Condensed',sans-serif;font-size:32px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--pr-yellow)}
+.drop-hint{font-size:13px;color:var(--muted);margin-top:8px}
+
 /* ── loader de subida / eliminación ── */
 .upload-loader{position:fixed;bottom:24px;right:24px;background:var(--panel-2);
   border:1px solid var(--line);border-radius:11px;padding:16px 20px;min-width:300px;
@@ -229,7 +244,7 @@
     <button class="view-btn" id="view-b" onclick="setView('b')">▤ Panel</button>
   </div>
   <span id="count" class="mono" style="color:var(--muted);font-size:13px"></span>
-  <label class="btn" style="margin:0;cursor:pointer">+ Añadir ruta
+  <label class="btn" style="margin:0;cursor:pointer" title="Pulsa para elegir archivos o arrastra GPX/FIT sobre la página">+ Añadir ruta
     <input id="gpx-input" type="file" accept=".gpx,.fit" multiple class="hidden">
   </label>
 </div>
@@ -276,6 +291,14 @@
   <div id="routes"></div>
   <div id="no-routes" class="empty hidden">No hay rutas que coincidan con los filtros.</div>
 
+</div>
+
+<div id="drop-global" class="drop-global">
+  <div class="drop-box">
+    <div class="drop-arrow">↓</div>
+    <div class="drop-text">Suelta los archivos aquí</div>
+    <div class="drop-hint">GPX y FIT · varios archivos a la vez</div>
+  </div>
 </div>
 {% endblock %}
 
@@ -815,6 +838,35 @@ $("#gpx-input").addEventListener("change",async e=>{
   e.target.value="";
   if(!files.length)return;
   await uploadFiles(files);
+});
+
+/* ── drag & drop global ──────────────────────────────────────────────────── */
+const dropGlobal=$("#drop-global");
+let dragDepth=0;
+
+window.addEventListener("dragenter",e=>{
+  if(!e.dataTransfer?.types?.includes("Files"))return;
+  e.preventDefault();
+  if(++dragDepth===1)dropGlobal.classList.add("visible");
+});
+window.addEventListener("dragleave",()=>{
+  if(--dragDepth<=0){
+    dragDepth=0;
+    dropGlobal.classList.remove("visible","over");
+  }
+});
+window.addEventListener("dragover",e=>{
+  if(!e.dataTransfer?.types?.includes("Files"))return;
+  e.preventDefault();
+  dropGlobal.classList.add("over");
+});
+window.addEventListener("drop",async e=>{
+  e.preventDefault();
+  dragDepth=0;
+  dropGlobal.classList.remove("visible","over");
+  const files=[...(e.dataTransfer?.files||[])].filter(f=>/\.(gpx|fit)$/i.test(f.name));
+  if(files.length)await uploadFiles(files);
+  else if(e.dataTransfer?.files?.length)toast("Solo se aceptan archivos GPX o FIT");
 });
 
 loadList();
