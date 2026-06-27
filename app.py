@@ -268,9 +268,9 @@ def analyse_gpx(text):
     coords = []           # [lon, lat] para geojson
     elev_profile = []     # {d: km acumulados, e: elevación}
     cum = 0.0
-    prev = None
     for track in gpx.tracks:
         for seg in track.segments:
+            prev = None   # no acumular el salto entre segmentos (GPS dropout)
             for p in seg.points:
                 coords.append([p.longitude, p.latitude])
                 if prev is not None:

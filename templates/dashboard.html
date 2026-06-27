@@ -455,6 +455,7 @@ let editMode=false,selectedIds=new Set(),visibleRoutes=[];
 let monthDomMap=new Map(); // "YYYY-MM" → {section, grid, count}
 const FIRST_BATCH=25,BATCH_SIZE=100;
 const ROUTE_CACHE='sendero_routes_v1';
+const FILTER_CACHE='sendero_filters_v1';
 
 function saveRouteCache(){
   try{sessionStorage.setItem(ROUTE_CACHE,JSON.stringify({ts:Date.now(),routes:allRoutes}));}
@@ -469,6 +470,20 @@ function loadRouteCache(){
   }catch(e){return null;}
 }
 function clearRouteCache(){sessionStorage.removeItem(ROUTE_CACHE);}
+
+function saveFilterState(){
+  try{sessionStorage.setItem(FILTER_CACHE,JSON.stringify({
+    acts:[...activeActs],
+    from:dpFrom?.value||null,
+    to:dpTo?.value||null,
+    sort:sortOrder,
+    view:viewMode,
+  }));}catch(e){}
+}
+function loadFilterState(){
+  try{const r=sessionStorage.getItem(FILTER_CACHE);return r?JSON.parse(r):null;}
+  catch(e){return null;}
+}
 
 /* ── mapa ── */
 function renderOverviewMap(routes,append=false){
@@ -505,6 +520,7 @@ function setView(v){
   $("#view-a").classList.toggle("on",v==='a');
   $("#view-b").classList.toggle("on",v==='b');
   if(ovMap)setTimeout(()=>{ovMap.invalidateSize();fitMap();},60);
+  saveFilterState();
 }
 
 /* ── orden ── */
@@ -512,6 +528,7 @@ function setSort(order){
   sortOrder=order;
   $("#sort-desc").classList.toggle("on",order==='desc');
   $("#sort-asc").classList.toggle("on",order==='asc');
+  saveFilterState();
   renderList();
 }
 
@@ -524,7 +541,7 @@ function buildPills(){
     p.className="pill"+(activeActs.has(a.id)?" on":"");
     if(activeActs.has(a.id))p.style.cssText=`background:${a.color};border-color:${a.color}`;
     p.textContent=a.label;
-    p.onclick=()=>{if(activeActs.has(a.id))activeActs.delete(a.id);else activeActs.add(a.id);buildPills();renderList();};
+    p.onclick=()=>{if(activeActs.has(a.id))activeActs.delete(a.id);else activeActs.add(a.id);buildPills();saveFilterState();renderList();};
     box.appendChild(p);
   });
 }
@@ -827,10 +844,23 @@ async function silentRefresh(){
 }
 
 async function loadList(){
-  dpFrom=new DatePicker($("#dp-from"),"Desde",()=>renderList());
-  dpTo  =new DatePicker($("#dp-to"),  "Hasta",()=>renderList());
-  setSort('desc');
-  setView('a');
+  // Restaurar filtros guardados antes de crear los pickers
+  const savedF=loadFilterState();
+  if(savedF){
+    if(savedF.acts) activeActs=new Set(savedF.acts);
+    if(savedF.sort) sortOrder=savedF.sort;
+    if(savedF.view) viewMode=savedF.view;
+  }
+
+  dpFrom=new DatePicker($("#dp-from"),"Desde",()=>{saveFilterState();renderList();});
+  dpTo  =new DatePicker($("#dp-to"),  "Hasta",()=>{saveFilterState();renderList();});
+
+  setSort(sortOrder);
+  setView(viewMode);
+
+  // Aplicar fechas guardadas (set() llama al onChange → saveFilterState+renderList con allRoutes vacío, inocuo)
+  if(savedF?.from) dpFrom.set(savedF.from);
+  if(savedF?.to)   dpTo.set(savedF.to);
 
   // ¿Hay caché de sesión? → render instantáneo
   const cached=loadRouteCache();
