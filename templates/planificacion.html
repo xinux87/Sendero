@@ -33,7 +33,6 @@
 .source-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
   letter-spacing:.06em;padding:2px 8px;border-radius:10px;text-transform:uppercase;margin-top:4px}
 .source-gpx{background:#1e3a2a;color:#5ab87a;border:1px solid #2e5a3a}
-.source-wikiloc{background:#1a2e3e;color:#4aade8;border:1px solid #2a4e6e}
 
 /* modal añadir */
 .overlay{position:fixed;inset:0;background:rgba(8,14,11,.82);display:flex;align-items:center;
@@ -83,35 +82,12 @@ input[type=text]:focus,input[type=url]:focus{outline:none;border-color:var(--pr-
       <h2 style="font-family:'Saira Condensed';font-size:26px">Planificar ruta</h2>
       <button class="btn ghost sm" onclick="closeAddModal()">Cerrar</button>
     </div>
-    <div class="tab-bar">
-      <button class="tab-btn on" id="tab-gpx-btn"  onclick="setTab('gpx')">📎 Archivo GPX</button>
-      <button class="tab-btn"    id="tab-wiki-btn" onclick="setTab('wiki')">🔗 URL de Wikiloc</button>
+    <div id="drop-plan" class="drop-plan" onclick="$('#plan-file').click()">
+      Arrastra un archivo GPX aquí o pulsa para elegir
+      <div id="drop-chosen" class="chosen hidden"></div>
+      <input id="plan-file" type="file" accept=".gpx" class="hidden">
     </div>
-
-    <!-- Tab GPX -->
-    <div id="tab-gpx" class="tab-pane on">
-      <div id="drop-plan" class="drop-plan" onclick="$('#plan-file').click()">
-        Arrastra un archivo GPX aquí o pulsa para elegir
-        <div id="drop-chosen" class="chosen hidden"></div>
-        <input id="plan-file" type="file" accept=".gpx" class="hidden">
-      </div>
-      <button class="btn" style="width:100%" onclick="uploadPlanGpx()">Añadir ruta planificada</button>
-    </div>
-
-    <!-- Tab Wikiloc -->
-    <div id="tab-wiki" class="tab-pane">
-      <label class="field-label">URL de la ruta en Wikiloc</label>
-      <input id="wiki-url" type="url" placeholder="https://es.wikiloc.com/rutas-senderismo/…"
-        style="margin-bottom:14px" onkeydown="if(event.key==='Enter')importWikiloc()">
-      <div id="wiki-hint" style="color:var(--muted);font-size:12px;margin-bottom:14px;line-height:1.5">
-        Pega el enlace de cualquier ruta de Wikiloc.<br>
-        Si Wikiloc bloquea el acceso, descarga el GPX manualmente desde Wikiloc
-        y usa la pestaña <strong>Archivo GPX</strong>, o configura
-        <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px">WIKILOC_COOKIE</code>
-        en el <code style="font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px">.env</code>.
-      </div>
-      <button class="btn" style="width:100%" onclick="importWikiloc()">Importar de Wikiloc</button>
-    </div>
+    <button class="btn" style="width:100%" onclick="uploadPlanGpx()">Añadir ruta planificada</button>
   </div>
 </div>
 
@@ -264,9 +240,7 @@ function makeCard(p) {
   div.className = 'plan-card';
   div.style.borderLeftColor = color;
   div.onclick = () => location.href = '/Plan/' + encodeURIComponent(p.name);
-  const srcBadge = p.source === 'wikiloc'
-    ? `<span class="source-badge source-wikiloc">Wikiloc</span>`
-    : `<span class="source-badge source-gpx">GPX</span>`;
+  const srcBadge = `<span class="source-badge source-gpx">GPX</span>`;
   div.innerHTML = `
     <div class="plan-act">${a ? iconSvg(a,26) : genericIconSvg(26)}</div>
     <h3>${esc(p.name)}</h3>
@@ -281,20 +255,11 @@ function makeCard(p) {
 
 /* ── modal y tabs ────────────────────────────────────────────────────────── */
 function openAddModal() { $('#add-modal').classList.remove('hidden'); }
-function closeAddModal() { $('#add-modal').classList.add('hidden'); resetModal(); }
-function resetModal() {
-  $('#wiki-url').value = '';
+function closeAddModal() {
+  $('#add-modal').classList.add('hidden');
   $('#drop-chosen').classList.add('hidden');
   $('#drop-chosen').textContent = '';
   $('#plan-file').value = '';
-  $('#wiki-hint').style.color = 'var(--muted)';
-  $('#wiki-hint').textContent = 'Pega el enlace de cualquier ruta pública de Wikiloc.';
-}
-function setTab(t) {
-  $('#tab-gpx').classList.toggle('on', t==='gpx');
-  $('#tab-wiki').classList.toggle('on', t==='wiki');
-  $('#tab-gpx-btn').classList.toggle('on', t==='gpx');
-  $('#tab-wiki-btn').classList.toggle('on', t==='wiki');
 }
 
 $('#plan-file').addEventListener('change', () => {
@@ -346,49 +311,6 @@ async function uploadPlanGpx() {
       location.href = '/Plan/' + encodeURIComponent(data.name);
     }, 600);
   } catch(e) { hideLoader(); toast('Error de red'); }
-}
-
-/* ── importar Wikiloc ────────────────────────────────────────────────────── */
-async function importWikiloc() {
-  const url = $('#wiki-url').value.trim();
-  if (!url) { toast('Pega la URL de Wikiloc'); return; }
-  closeAddModal();
-  showLoader('Obteniendo ruta de Wikiloc…', url, null);
-  $('#loader-bar').style.width = '0%';
-  // animate indeterminate
-  let fake = 0;
-  const ticker = setInterval(() => {
-    fake = Math.min(fake + 3, 85);
-    $('#loader-bar').style.width = fake + '%';
-  }, 400);
-  try {
-    const res = await fetch('/api/planned', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({url}),
-    });
-    clearInterval(ticker);
-    const data = await res.json();
-    if (!res.ok) {
-      hideLoader();
-      // Reabrir modal con mensaje de error
-      setTab('wiki');
-      $('#wiki-url').value = url;
-      $('#wiki-hint').style.color = 'var(--gr-red)';
-      $('#wiki-hint').textContent = data.error || 'Error al importar';
-      openAddModal();
-      return;
-    }
-    showLoader('Importado', data.name, 100);
-    setTimeout(() => {
-      hideLoader();
-      location.href = '/Plan/' + encodeURIComponent(data.name);
-    }, 600);
-  } catch(e) {
-    clearInterval(ticker);
-    hideLoader();
-    toast('Error de red al conectar con Wikiloc');
-  }
 }
 
 /* ── init ────────────────────────────────────────────────────────────────── */

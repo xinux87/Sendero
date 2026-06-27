@@ -203,6 +203,7 @@ let map, trackLayer, elevChart, current=null;
 let IMMICH=false, immichCands=[], immichSel=new Set();
 let photoMarkers={}, lbIdx=0;
 const NEAR_M=500;
+let IMMICH_DIST_M=100;
 
 const ACTIVITIES=[
   {id:'senderismo',label:'Senderismo',color:'#c97a3a',symbol:`
@@ -541,17 +542,17 @@ async function autoSearchImmich(){
     const data=await res.json();
     immichCands=data.candidates||[];
     if(!immichCands.length)return;
-    // hay candidatos: autoseleccionar las que estén a ≤150 m
+    // hay candidatos: autoseleccionar las que estén dentro de IMMICH_DIST_M
     immichSel.clear();
     immichCands.forEach((c,i)=>{
-      if(c.dist_m!=null&&c.dist_m<=150) immichSel.add(i);
+      if(c.dist_m!=null&&c.dist_m<=IMMICH_DIST_M) immichSel.add(i);
     });
     // abrir modal
     $("#immich-modal").classList.remove("hidden");
     $("#immich-grid").innerHTML="";
     const withGps=immichCands.filter(c=>c.dist_m!=null).length;
     $("#immich-status").textContent=`${immichCands.length} foto(s) durante la ruta · ${withGps} con GPS. Toca para seleccionar.`;
-    $("#immich-count").textContent=immichSel.size?`${immichSel.size} seleccionada(s) (≤150 m)`:"";
+    $("#immich-count").textContent=immichSel.size?`${immichSel.size} seleccionada(s) (≤${IMMICH_DIST_M} m)`:"";
     $("#near-wrap").classList.toggle("hidden",withGps===0);
     $("#near-only").checked=false;
     renderImmich();
@@ -663,7 +664,9 @@ document.addEventListener("keydown",e=>{
   renderAll();
   // config: necesaria antes del flujo automático de Immich
   try{const c=await(await fetch("/api/config")).json();
-    IMMICH=!!c.immich;$("#immich-btn").classList.toggle("hidden",!IMMICH);}catch(e){}
+    IMMICH=!!c.immich;
+    if(c.immich_dist_m!=null) IMMICH_DIST_M=c.immich_dist_m;
+    $("#immich-btn").classList.toggle("hidden",!IMMICH);}catch(e){}
   // flujo de incorporación automática
   if(!current.activity_type){
     openActivityPicker(); // tras cerrar el picker, setActivity() dispara autoSearchImmich si procede

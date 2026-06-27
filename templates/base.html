@@ -44,12 +44,6 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
 .nav-link:hover{border-color:var(--muted);color:var(--ink)}
 .nav-link.on{background:var(--panel-2);border-color:var(--line);color:var(--ink)}
 @media(max-width:560px){.header-nav{display:none}}
-/* ── botón de ajustes ── */
-.gear-btn{background:transparent;border:1px solid transparent;color:var(--muted);
-  border-radius:50%;width:32px;height:32px;padding:0;
-  display:flex;align-items:center;justify-content:center;
-  cursor:pointer;transition:all .15s;flex-shrink:0}
-.gear-btn:hover{border-color:var(--line);color:var(--ink)}
 /* ── panel de ajustes ── */
 .cfg-overlay{position:fixed;inset:0;background:rgba(8,14,11,.82);
   display:flex;align-items:center;justify-content:center;
@@ -107,22 +101,10 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
       <h1>Sendero</h1>
       <span class="tag">Bitácora de montaña</span>
     </div>
-    {% block header_nav %}{% endblock %}
-    <button class="gear-btn" onclick="openSettings()" title="Ajustes" aria-label="Ajustes">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
-                 a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
-                 A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83
-                 l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
-                 A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83
-                 l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
-                 a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83
-                 l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
-                 a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-    </button>
+    <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+      {% block header_nav %}{% endblock %}
+      <button class="nav-link" onclick="openSettings()">Ajustes</button>
+    </div>
     {% block header_actions %}{% endblock %}
   </div>
 </header>
@@ -163,18 +145,11 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
                min="0" max="1440" style="width:110px">
         <div class="cfg-hint">Minutos extra antes y después del track para buscar fotos en Immich.</div>
       </div>
-    </div>
-
-    <div class="cfg-section">
-      <div class="cfg-section-title">Wikiloc</div>
       <div class="cfg-field">
-        <label class="cfg-label" for="cfg-wiki-cookie">Cookie de sesión</label>
-        <textarea id="cfg-wiki-cookie" class="cfg-textarea"
-          placeholder="Pega aquí el valor completo de la cabecera Cookie de Wikiloc"></textarea>
-        <div class="cfg-hint">
-          Con sesión iniciada en Wikiloc: DevTools (F12) → Network →
-          cualquier petición a wikiloc.com → copia la cabecera <code style="font-size:10px;background:var(--bg);padding:1px 4px;border-radius:3px">Cookie</code>.
-        </div>
+        <label class="cfg-label" for="cfg-immich-dist">Distancia de autoselección (metros)</label>
+        <input id="cfg-immich-dist" class="cfg-input" type="number"
+               min="0" max="10000" style="width:110px">
+        <div class="cfg-hint">Las fotos con GPS a menos de esta distancia del track se marcan automáticamente al buscar en Immich.</div>
       </div>
     </div>
 
@@ -213,7 +188,7 @@ async function openSettings(){
     $('#cfg-immich-url').value    = c.IMMICH_URL        || '';
     $('#cfg-immich-key').value    = c.IMMICH_API_KEY    || '';
     $('#cfg-immich-margin').value = c.IMMICH_MARGIN_MIN || '180';
-    $('#cfg-wiki-cookie').value   = c.WIKILOC_COOKIE    || '';
+    $('#cfg-immich-dist').value   = c.IMMICH_DIST_M     || '100';
   }catch(e){}
   $('#cfg-overlay').classList.remove('hidden');
 }
@@ -226,7 +201,7 @@ async function saveSettings(){
       IMMICH_URL:        $('#cfg-immich-url').value.trim(),
       IMMICH_API_KEY:    $('#cfg-immich-key').value.trim(),
       IMMICH_MARGIN_MIN: $('#cfg-immich-margin').value.trim(),
-      WIKILOC_COOKIE:    $('#cfg-wiki-cookie').value.trim(),
+      IMMICH_DIST_M:     $('#cfg-immich-dist').value.trim(),
     }),
   });
   if(res.ok){ closeSettings(); toast('Ajustes guardados'); }

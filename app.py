@@ -32,17 +32,13 @@ DB_PATH = DATA / "sendero.db"
 for d in (DATA, GPX_DIR, PHOTO_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-# ---------------------------------------------------------------- Wikiloc
-# Cookie de sesión del navegador (opcional). Wikiloc aplica bot-detection;
-# sin cookies válidas el scraper puede recibir 403. Obtén el valor abriendo
-# DevTools → Network → cualquier petición a wikiloc.com → cabecera Cookie.
-WIKILOC_COOKIE = os.environ.get("WIKILOC_COOKIE", "")
-
 # ---------------------------------------------------------------- Immich
 IMMICH_URL = os.environ.get("IMMICH_URL", "").rstrip("/")
 IMMICH_API_KEY = os.environ.get("IMMICH_API_KEY", "")
 # margen, en minutos, que se añade antes y después del track al buscar fotos
 IMMICH_MARGIN_MIN = int(os.environ.get("IMMICH_MARGIN_MIN", "180"))
+# distancia máxima, en metros, para auto-seleccionar fotos Immich al abrir candidatos
+IMMICH_DIST_M = int(os.environ.get("IMMICH_DIST_M", "100"))
 IMMICH_ENABLED = bool(IMMICH_URL and IMMICH_API_KEY)
 
 
@@ -198,10 +194,10 @@ def init_db():
 
 
 # ── aplica los ajustes de la BD (tiene prioridad sobre os.environ) ───────────
-_SETTINGS_KEYS = {"IMMICH_URL", "IMMICH_API_KEY", "IMMICH_MARGIN_MIN", "WIKILOC_COOKIE"}
+_SETTINGS_KEYS = {"IMMICH_URL", "IMMICH_API_KEY", "IMMICH_MARGIN_MIN", "IMMICH_DIST_M"}
 
 def refresh_config():
-    global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_ENABLED, WIKILOC_COOKIE
+    global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_DIST_M, IMMICH_ENABLED
     try:
         con = sqlite3.connect(DB_PATH)
         rows = dict(con.execute("SELECT key, value FROM settings").fetchall())
@@ -216,8 +212,13 @@ def refresh_config():
         )
     except (ValueError, TypeError):
         IMMICH_MARGIN_MIN = 180
+    try:
+        IMMICH_DIST_M = int(
+            rows.get("IMMICH_DIST_M") or os.environ.get("IMMICH_DIST_M", "100")
+        )
+    except (ValueError, TypeError):
+        IMMICH_DIST_M = 100
     IMMICH_ENABLED = bool(IMMICH_URL and IMMICH_API_KEY)
-    WIKILOC_COOKIE = rows.get("WIKILOC_COOKIE") or os.environ.get("WIKILOC_COOKIE", "")
 
 
 # ---------------------------------------------------------------- análisis GPX
@@ -791,7 +792,7 @@ def delete_photo(pid):
 # ---------------------------------------------------------------- API: Immich
 @app.route("/api/config")
 def config():
-    return jsonify({"immich": IMMICH_ENABLED, "immich_margin_min": IMMICH_MARGIN_MIN})
+    return jsonify({"immich": IMMICH_ENABLED, "immich_margin_min": IMMICH_MARGIN_MIN, "immich_dist_m": IMMICH_DIST_M})
 
 
 @app.route("/api/routes/<int:rid>/immich/candidates")
@@ -884,358 +885,6 @@ def auto_summary_planned(r):
     return txt
 
 
-def _points_to_geodata(points):
-    """
-    Convierte [[lat, lon, ele|None], ...] en:
-      coords [[lon,lat],...], elevation [{d,e},...], distancia total en metros.
-    """
-    coords = []
-    profile = []
-    cum = 0.0
-    prev = None
-    for pt in points:
-        lat, lon = float(pt[0]), float(pt[1])
-        ele = float(pt[2]) if len(pt) > 2 and pt[2] is not None else None
-        coords.append([lon, lat])
-        if prev is not None:
-            dlat = math.radians(lat - prev[0])
-            dlon = math.radians(lon - prev[1])
-            a = (math.sin(dlat / 2) ** 2
-                 + math.cos(math.radians(prev[0])) * math.cos(math.radians(lat))
-                 * math.sin(dlon / 2) ** 2)
-            cum += 2 * 6371000 * math.asin(min(1.0, math.sqrt(a)))
-        if ele is not None:
-            profile.append({"d": round(cum / 1000, 3), "e": round(ele, 1)})
-        prev = (lat, lon)
-    return coords, profile, cum
-
-
-def _calc_ascent_descent(profile):
-    ascent = descent = 0.0
-    for i in range(1, len(profile)):
-        diff = profile[i]["e"] - profile[i - 1]["e"]
-        if diff > 0:
-            ascent += diff
-        else:
-            descent += abs(diff)
-    return round(ascent, 1), round(descent, 1)
-
-
-def _gpx_from_points(name, points):
-    """Genera GPX 1.1 mínimo desde [[lat, lon, ele|None], ...]."""
-    def ex(s):
-        return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    lines = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<gpx version="1.1" creator="Sendero" xmlns="http://www.topografix.com/GPX/1/1">',
-        f'  <trk><name>{ex(name)}</name><trkseg>',
-    ]
-    for pt in points:
-        lat, lon = float(pt[0]), float(pt[1])
-        ele = float(pt[2]) if len(pt) > 2 and pt[2] is not None else None
-        if ele is not None:
-            lines.append(f'    <trkpt lat="{lat:.7f}" lon="{lon:.7f}"><ele>{ele:.1f}</ele></trkpt>')
-        else:
-            lines.append(f'    <trkpt lat="{lat:.7f}" lon="{lon:.7f}"/>')
-    lines.extend(["  </trkseg></trk>", "</gpx>"])
-    return "\n".join(lines)
-
-
-# ── mapa de actividades Wikiloc → local ─────────────────────────────────────
-_WIKILOC_SLUG_ACT = {
-    "senderismo": "senderismo", "trekking": "senderismo",
-    "montanismo": "senderismo", "montañismo": "senderismo",
-    "trail": "senderismo", "raquetas": "senderismo",
-    "trail-running": "correr", "running": "correr",
-    "mtb": "bicicleta", "ciclismo": "bicicleta",
-    "mountain-bike": "bicicleta", "bicicleta": "bicicleta",
-    "caminata": "caminata", "marcha-nordica": "caminata",
-    "esqui": "esqui", "ski": "esqui", "nordic": "esqui",
-}
-_WIKILOC_TYPE_ACT = {
-    "hiking": "senderismo", "trail": "senderismo",
-    "running": "correr", "trail-running": "correr",
-    "cycling": "bicicleta", "mountain-biking": "bicicleta",
-    "walking": "caminata", "skiing": "esqui",
-}
-
-
-def scrape_wikiloc(url: str) -> dict:
-    """
-    Descarga y extrae los datos de una ruta pública de Wikiloc.
-    Devuelve un dict con coords, elevation, stats y gpx_bytes.
-    Lanza ValueError/PermissionError/requests.exceptions si falla.
-    """
-    from bs4 import BeautifulSoup
-
-    from urllib.parse import urlparse as _up
-    _host = _up(url).netloc.lower()
-    if not (_host == "wikiloc.com" or _host.endswith(".wikiloc.com")):
-        raise ValueError("La URL no parece ser de Wikiloc")
-
-    # Extraer ID numérico del final de la URL
-    trail_id = None
-    m = re.search(r"-(\d+)(?:\?|/?$)", url.rstrip("/"))
-    if m:
-        trail_id = m.group(1)
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "es-ES,es;q=0.9,en-US;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Referer": "https://es.wikiloc.com/",
-        "DNT": "1",
-    }
-    if WIKILOC_COOKIE:
-        headers["Cookie"] = WIKILOC_COOKIE
-
-    result = {
-        "name": None,
-        "activity_type": None,
-        "points": [],      # [[lat, lon, ele|None], ...]
-        "coords": [],      # [[lon, lat], ...]  (relleno tras parseo)
-        "elevation": [],   # [{d, e}, ...]
-        "distance_m": None,
-        "ascent_m": None,
-        "descent_m": None,
-        "ele_min": None,
-        "ele_max": None,
-        "gpx_bytes": None,
-        "source_url": url,
-    }
-
-    # Actividad desde el slug de la URL  (/rutas-senderismo/, /rutas-mtb/, …)
-    m_slug = re.search(r"/rutas?-([^/]+)/", url)
-    if m_slug:
-        slug = m_slug.group(1).lower()
-        for key, act in _WIKILOC_SLUG_ACT.items():
-            if key in slug:
-                result["activity_type"] = act
-                break
-
-    # ── Estrategia 1: descarga directa del GPX (funciona para rutas públicas)
-    if trail_id:
-        for gpx_endpoint in [
-            f"https://es.wikiloc.com/wikiloc/track.do?id={trail_id}",
-            f"https://www.wikiloc.com/wikiloc/track.do?id={trail_id}",
-        ]:
-            try:
-                gr = requests.get(
-                    gpx_endpoint,
-                    headers={**headers, "Accept": "application/xml,text/xml,*/*"},
-                    timeout=25,
-                    allow_redirects=True,
-                )
-                if gr.status_code == 403:
-                    break  # no reintentar el otro endpoint, mismo resultado
-                body = gr.text.strip()
-                if gr.status_code == 200 and (
-                    "xml" in gr.headers.get("content-type", "")
-                    or body.startswith("<?xml")
-                    or body.startswith("<gpx")
-                ):
-                    stats, coords, elev, gpx_name, _ = analyse_gpx(body)
-                    result["name"] = result["name"] or gpx_name or result["name"]
-                    result["coords"] = coords
-                    result["elevation"] = elev
-                    result["distance_m"] = stats["distance_m"]
-                    result["ascent_m"] = stats["ascent_m"]
-                    result["descent_m"] = stats["descent_m"]
-                    result["ele_min"] = stats["ele_min"]
-                    result["ele_max"] = stats["ele_max"]
-                    result["gpx_bytes"] = body.encode("utf-8")
-                    break
-            except Exception:
-                pass
-
-    # Si ya tenemos el GPX, solo nos falta el nombre de la página si está vacío
-    need_html = not result["coords"] or not result["name"]
-
-    if need_html:
-        # ── Estrategia 2: HTML de la página ──────────────────────────────────
-        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
-        if resp.status_code == 403:
-            raise PermissionError(
-                "Wikiloc bloqueó el acceso (403). "
-                "Configura WIKILOC_COOKIE en tu .env con las cookies de tu sesión."
-            )
-        resp.raise_for_status()
-        html = resp.text
-
-        # Detectar redirección a login
-        if "/login" in resp.url or "/log-in" in resp.url:
-            raise PermissionError(
-                "Esta ruta de Wikiloc requiere iniciar sesión. "
-                "Configura WIKILOC_COOKIE en tu .env."
-            )
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        # — Sub-estrategia A: __NEXT_DATA__ (Next.js) ————————────————————————
-        next_tag = soup.find("script", id="__NEXT_DATA__")
-        if next_tag:
-            try:
-                nd = json.loads(next_tag.string)
-                pp = nd.get("props", {}).get("pageProps", {})
-                trail = (
-                    pp.get("trail")
-                    or pp.get("trailDetail")
-                    or pp.get("data", {}).get("trail")
-                    or {}
-                )
-                if trail:
-                    result["name"] = result["name"] or trail.get("name")
-
-                    # Actividad
-                    act_raw = trail.get("type") or trail.get("trailType") or {}
-                    act_str = (
-                        (act_raw.get("slug") or act_raw.get("name") or "").lower()
-                        if isinstance(act_raw, dict)
-                        else str(act_raw).lower()
-                    )
-                    if act_str and not result["activity_type"]:
-                        for k, v in _WIKILOC_TYPE_ACT.items():
-                            if k in act_str:
-                                result["activity_type"] = v
-                                break
-
-                    # Stats
-                    stats = trail.get("stats") or {}
-                    result["distance_m"] = result["distance_m"] or stats.get("distance") or trail.get("totalDistance")
-                    result["ascent_m"]   = result["ascent_m"]   or stats.get("elevationGain") or stats.get("ascent")
-                    result["descent_m"]  = result["descent_m"]  or stats.get("elevationLoss") or stats.get("descent")
-                    result["ele_max"]    = result["ele_max"]     or stats.get("maxAltitude")
-                    result["ele_min"]    = result["ele_min"]     or stats.get("minAltitude")
-
-                    # Waypoints
-                    if not result["coords"]:
-                        for key in ("waypoints", "points", "trackpoints", "coordinates"):
-                            wps = trail.get(key) or []
-                            if not wps:
-                                continue
-                            pts = []
-                            for wp in wps:
-                                if isinstance(wp, (list, tuple)) and len(wp) >= 2:
-                                    try:
-                                        pts.append([float(wp[0]), float(wp[1]),
-                                                    float(wp[2]) if len(wp) > 2 else None])
-                                    except (TypeError, ValueError):
-                                        pass
-                                elif isinstance(wp, dict):
-                                    lat = wp.get("lat") or wp.get("latitude") or wp.get("y")
-                                    lon = wp.get("lng") or wp.get("lon") or wp.get("longitude") or wp.get("x")
-                                    ele = wp.get("alt") or wp.get("ele") or wp.get("elevation") or wp.get("z")
-                                    if lat is not None and lon is not None:
-                                        pts.append([float(lat), float(lon),
-                                                    float(ele) if ele is not None else None])
-                            if pts:
-                                result["points"] = pts
-                                break
-            except Exception:
-                pass
-
-        # — Sub-estrategia B: variables JS en <script> ────────────────────────
-        if not result["coords"] and not result["points"]:
-            for script_tag in soup.find_all("script"):
-                txt = script_tag.string or ""
-                if len(txt) < 50:
-                    continue
-                for pat in [
-                    r'(?:var\s+)?waypoints\s*[=:]\s*(\[[\s\S]*?\])\s*(?:;|}|,)',
-                    r'"waypoints"\s*:\s*(\[[\s\S]*?\])',
-                    r'(?:var\s+)?points\s*=\s*(\[[\s\S]*?\])\s*;',
-                    r'"coordinates"\s*:\s*(\[[\s\S]*?\])',
-                ]:
-                    m2 = re.search(pat, txt)
-                    if not m2:
-                        continue
-                    try:
-                        raw = json.loads(m2.group(1))
-                        pts = []
-                        for wp in raw:
-                            if isinstance(wp, (list, tuple)) and len(wp) >= 2:
-                                try:
-                                    pts.append([float(wp[0]), float(wp[1]),
-                                                float(wp[2]) if len(wp) > 2 else None])
-                                except (TypeError, ValueError):
-                                    pass
-                            elif isinstance(wp, dict):
-                                lat = wp.get("lat") or wp.get("latitude")
-                                lon = wp.get("lng") or wp.get("lon") or wp.get("longitude")
-                                ele = wp.get("alt") or wp.get("ele") or wp.get("elevation")
-                                if lat is not None and lon is not None:
-                                    pts.append([float(lat), float(lon),
-                                                float(ele) if ele is not None else None])
-                        if pts:
-                            result["points"] = pts
-                            break
-                    except Exception:
-                        pass
-                if result["points"]:
-                    break
-
-        # — Sub-estrategia C: nombre desde meta tags / title ──────────────────
-        if not result["name"]:
-            for ld in soup.find_all("script", type="application/ld+json"):
-                try:
-                    d = json.loads(ld.string)
-                    if isinstance(d, list):
-                        d = d[0]
-                    if d.get("name"):
-                        result["name"] = d["name"]
-                        break
-                except Exception:
-                    pass
-        if not result["name"]:
-            og = soup.find("meta", property="og:title")
-            if og:
-                result["name"] = og.get("content", "").split(" - ")[0].strip()
-        if not result["name"]:
-            t = soup.find("title")
-            if t:
-                result["name"] = t.text.split(" - ")[0].split("|")[0].strip()
-
-    # ── Convertir points scrapeados → coords + elevation si no vinieron del GPX
-    if not result["coords"] and result["points"]:
-        coords, profile, dist = _points_to_geodata(result["points"])
-        result["coords"] = coords
-        result["elevation"] = profile
-        if not result["distance_m"]:
-            result["distance_m"] = round(dist, 1)
-        if not result["ascent_m"] or not result["descent_m"]:
-            asc, desc = _calc_ascent_descent(profile)
-            result["ascent_m"] = result["ascent_m"] or asc
-            result["descent_m"] = result["descent_m"] or desc
-        if result["elevation"]:
-            eles = [p["e"] for p in result["elevation"]]
-            result["ele_min"] = result["ele_min"] or round(min(eles), 1)
-            result["ele_max"] = result["ele_max"] or round(max(eles), 1)
-        # Generar GPX desde los puntos scrapeados
-        name_for_gpx = result["name"] or "Ruta de Wikiloc"
-        result["gpx_bytes"] = _gpx_from_points(name_for_gpx, result["points"]).encode("utf-8")
-
-    # ── Nombre de fallback desde el slug de la URL ────────────────────────────
-    if not result["name"] and trail_id:
-        slug = url.rstrip("/").split("/")[-1]
-        slug = re.sub(r"-\d+$", "", slug)
-        result["name"] = slug.replace("-", " ").title()
-    elif not result["name"]:
-        result["name"] = "Ruta de Wikiloc"
-
-    if not result["coords"]:
-        raise ValueError(
-            "No se encontraron los datos del track. "
-            "La ruta puede ser privada o Wikiloc ha cambiado su formato."
-        )
-
-    return result
-
-
 # ── helper dict para respuesta JSON ─────────────────────────────────────────
 def _plan_dict(pid):
     r = db().execute("SELECT * FROM planned_routes WHERE id=?", (pid,)).fetchone()
@@ -1309,42 +958,8 @@ def create_planned():
         source_url = None
         gpx_bytes = raw
 
-    # ── modo B: URL de Wikiloc ───────────────────────────────────────────────
     else:
-        data = request.get_json(force=True) or {}
-        url = (data.get("url") or "").strip()
-        if not url:
-            return jsonify({"error": "Proporciona una URL de Wikiloc o un archivo GPX"}), 400
-        from urllib.parse import urlparse as _up
-        _host = _up(url).netloc.lower()
-        if not (_host == "wikiloc.com" or _host.endswith(".wikiloc.com")):
-            return jsonify({"error": "La URL debe ser de wikiloc.com"}), 400
-
-        try:
-            scraped = scrape_wikiloc(url)
-        except PermissionError as e:
-            return jsonify({"error": str(e)}), 403
-        except requests.exceptions.RequestException as e:
-            return jsonify({"error": f"No se pudo acceder a Wikiloc: {e}"}), 502
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 422
-        except Exception as e:
-            return jsonify({"error": f"Error al obtener la ruta: {e}"}), 500
-
-        name = scraped["name"]
-        activity_type = scraped["activity_type"] or _detect_activity(name)
-        coords = scraped["coords"]
-        elev   = scraped["elevation"]
-        stats  = {
-            "distance_m": scraped["distance_m"] or 0,
-            "ascent_m":   scraped["ascent_m"]   or 0,
-            "descent_m":  scraped["descent_m"]  or 0,
-            "ele_min":    scraped["ele_min"],
-            "ele_max":    scraped["ele_max"],
-        }
-        source     = "wikiloc"
-        source_url = url
-        gpx_bytes  = scraped["gpx_bytes"]
+        return jsonify({"error": "Se requiere un archivo GPX"}), 400
 
     start_lat = coords[0][1] if coords else None
     start_lon = coords[0][0] if coords else None
@@ -1405,7 +1020,7 @@ def get_settings():
         "IMMICH_URL":        IMMICH_URL,
         "IMMICH_API_KEY":    IMMICH_API_KEY,
         "IMMICH_MARGIN_MIN": str(IMMICH_MARGIN_MIN),
-        "WIKILOC_COOKIE":    WIKILOC_COOKIE,
+        "IMMICH_DIST_M":     str(IMMICH_DIST_M),
     })
 
 
