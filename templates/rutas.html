@@ -77,8 +77,14 @@
 .month-label{font-family:'Saira Condensed',sans-serif;font-size:20px;font-weight:600;
   text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
   padding-bottom:8px;margin-bottom:12px;border-bottom:1px solid var(--line);
-  display:flex;align-items:baseline;gap:10px}
+  display:flex;align-items:center;gap:10px}
 .month-label .month-count{font-family:var(--mono);font-size:12px;color:var(--line)}
+.month-sel-btn{margin-left:auto;padding:3px 11px;border-radius:14px;
+  border:1px solid var(--pr-yellow);background:transparent;color:var(--pr-yellow);
+  font-size:11px;font-weight:600;cursor:pointer;transition:all .12s;
+  letter-spacing:.04em;font-family:inherit;align-self:center;flex-shrink:0}
+.month-sel-btn:hover{background:rgba(232,196,74,.12)}
+.month-sel-btn.all-sel{background:rgba(232,196,74,.18)}
 
 /* ── date picker ── */
 .date-range{display:flex;gap:8px;align-items:center}
@@ -232,8 +238,9 @@
 
 {% block header_nav %}
 <nav class="header-nav">
-  <a href="/" class="nav-link on">Mis rutas</a>
-  <a href="/planificacion" class="nav-link">Planificar</a>
+  <a href="/dashboard" class="nav-link">Dashboard</a>
+  <a href="/rutas" class="nav-link on">Mis rutas</a>
+  <a href="/planificacion" class="nav-link">Mis Planes</a>
 </nav>
 {% endblock %}
 
@@ -737,9 +744,30 @@ function createMonthSection(key){
   const s=document.createElement("div");
   s.className="month-group";
   s.dataset.key=key;
+  let selBtn='';
+  if(editMode){
+    // Determinar si todas las rutas visibles de este mes ya están seleccionadas
+    // (aún no están en monthDomMap, así que comprobamos contra allRoutes filtrado)
+    const mRoutes=visibleRoutes.filter(r=>(r.started_at?r.started_at.slice(0,7):"sin-fecha")===key);
+    const allSel=mRoutes.length>0&&mRoutes.every(r=>selectedIds.has(r.id));
+    selBtn=`<button class="month-sel-btn${allSel?' all-sel':''}" onclick="selectMonth('${key}')">`
+      +(allSel?'✓ Mes seleccionado':'Selec. mes')+`</button>`;
+  }
   s.innerHTML=`<div class="month-label">${monthLabel(key)}
-    <span class="month-count"></span></div><div class="grid"></div>`;
+    <span class="month-count"></span>${selBtn}</div><div class="grid"></div>`;
   return s;
+}
+
+function selectMonth(key){
+  const monthRoutes=visibleRoutes.filter(r=>(r.started_at?r.started_at.slice(0,7):"sin-fecha")===key);
+  const allSel=monthRoutes.length>0&&monthRoutes.every(r=>selectedIds.has(r.id));
+  if(allSel){
+    monthRoutes.forEach(r=>selectedIds.delete(r.id));
+  }else{
+    monthRoutes.forEach(r=>selectedIds.add(r.id));
+  }
+  updateSelCount();
+  renderList();
 }
 
 /* ── render principal (reconstruye desde cero) ── */
@@ -861,6 +889,12 @@ async function loadList(){
   // Aplicar fechas guardadas (set() llama al onChange → saveFilterState+renderList con allRoutes vacío, inocuo)
   if(savedF?.from) dpFrom.set(savedF.from);
   if(savedF?.to)   dpTo.set(savedF.to);
+
+  // Si una ruta se modificó en el detalle, descartar caché para reflejar el cambio
+  if(sessionStorage.getItem('sendero_cache_dirty')){
+    sessionStorage.removeItem('sendero_cache_dirty');
+    clearRouteCache();
+  }
 
   // ¿Hay caché de sesión? → render instantáneo
   const cached=loadRouteCache();

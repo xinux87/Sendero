@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block title %}Sendero – Dashboard{% endblock %}
+
+{% block header_nav %}
+<nav class="header-nav">
+  <a href="/dashboard" class="nav-link on">Dashboard</a>
+  <a href="/rutas" class="nav-link">Mis rutas</a>
+  <a href="/planificacion" class="nav-link">Mis Planes</a>
+</nav>
+{% endblock %}
+
+{% block header_actions %}
+<button class="btn ghost sm" id="refresh-btn" onclick="refreshStats()" title="Recalcular estadísticas desde todos los GPX">↻ Actualizar</button>
+{% endblock %}
+
+{% block styles %}
+/* ── secciones ── */
+.ov-section{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:22px 24px;margin-bottom:18px}
+.ov-section-title{font-family:'Saira Condensed',sans-serif;font-size:13px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:16px}
+
+/* ── hero totales ── */
+.hero-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.hero-card{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
+  padding:16px 18px}
+.hero-card .v{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--ink);
+  line-height:1.1}
+.hero-card .v small{font-size:14px;font-weight:400;color:var(--muted)}
+.hero-card .l{font-size:10px;text-transform:uppercase;letter-spacing:.12em;
+  color:var(--muted);margin-top:4px;font-weight:600}
+
+/* ── por actividad ── */
+.act-rows{display:flex;flex-direction:column;gap:10px}
+.act-row{display:grid;grid-template-columns:110px 1fr 80px 80px;align-items:center;gap:12px}
+.act-label{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink)}
+.act-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.act-bar-bg{background:var(--line);border-radius:4px;height:8px;overflow:hidden}
+.act-bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
+.act-meta{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+.act-count{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+
+/* ── gráfico por año ── */
+.year-chart{display:flex;align-items:flex-end;gap:6px;height:120px;
+  border-bottom:1px solid var(--line);padding-bottom:0;overflow-x:auto}
+.year-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;min-width:36px}
+.year-bar{background:var(--pr-yellow);border-radius:3px 3px 0 0;width:28px;
+  transition:height .4s ease;min-height:2px}
+.year-bar:hover{filter:brightness(1.12)}
+.year-num{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;
+  margin-top:6px}
+.year-count{font-family:var(--mono);font-size:10px;color:var(--ink);font-weight:700}
+
+/* ── récords ── */
+.records-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.record-card{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
+  padding:14px 16px;cursor:pointer;transition:filter .15s,transform .15s}
+.record-card:hover{filter:brightness(1.06);transform:translateY(-2px)}
+.record-card .rv{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--pr-yellow)}
+.record-card .rv small{font-size:12px;color:var(--muted);font-weight:400}
+.record-card .rl{font-size:10px;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--muted);margin-bottom:6px;font-weight:600}
+.record-card .rn{font-size:13px;color:var(--ink);margin-top:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── estado vacío / cargando ── */
+.ov-loading{color:var(--muted);font-size:14px;padding:32px 0;text-align:center}
+{% endblock %}
+
+{% block content %}
+<div id="ov-loading" class="ov-loading">Cargando estadísticas…</div>
+<div id="ov-content" class="hidden">
+
+  <!-- Totales -->
+  <div class="ov-section">
+    <div class="ov-section-title">Totales</div>
+    <div class="hero-grid">
+      <div class="hero-card">
+        <div class="v" id="ov-total-routes">–</div>
+        <div class="l">Rutas</div>
+      </div>
+      <div class="hero-card">
+        <div class="v" id="ov-total-km">–<small> km</small></div>
+        <div class="l">Distancia total</div>
+      </div>
+      <div class="hero-card">
+        <div class="v" id="ov-total-asc">–<small> m</small></div>
+        <div class="l">Desnivel acumulado ↑</div>
+      </div>
+      <div class="hero-card">
+        <div class="v" id="ov-total-time">–</div>
+        <div class="l">Tiempo en movimiento</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Por actividad -->
+  <div class="ov-section">
+    <div class="ov-section-title">Por actividad</div>
+    <div class="act-rows" id="ov-act-rows"></div>
+  </div>
+
+  <!-- Por año -->
+  <div class="ov-section">
+    <div class="ov-section-title">Rutas por año</div>
+    <div class="year-chart" id="ov-year-chart"></div>
+  </div>
+
+  <!-- Récords -->
+  <div class="ov-section" id="ov-records-section">
+    <div class="ov-section-title">Récords personales</div>
+    <div class="records-grid" id="ov-records-grid"></div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+const ACTIVITIES=[
+  {id:'senderismo', label:'Senderismo', color:'#c97a3a'},
+  {id:'bicicleta',  label:'Bicicleta',  color:'#3a9ed8'},
+  {id:'caminata',   label:'Caminata',   color:'#5ab87a'},
+  {id:'correr',     label:'Correr',     color:'#e05252'},
+  {id:'esqui',      label:'Esquí',      color:'#9b6fd4'},
+  {id:'otros',      label:'Otros',      color:'#e0559e'},
+];
+
+function fmtMoving(s){
+  if(!s)return'–';
+  s=Math.round(s);
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);
+  return h?`${h}h ${m}m`:`${m}m`;
+}
+
+async function loadStats(){
+  let data;
+  try{
+    const res=await fetch('/api/stats');
+    if(!res.ok)throw new Error();
+    data=await res.json();
+  }catch(e){
+    document.getElementById('ov-loading').textContent='Error al cargar las estadísticas.';
+    return;
+  }
+
+  document.getElementById('ov-loading').classList.add('hidden');
+  document.getElementById('ov-content').classList.remove('hidden');
+
+  // Totales
+  document.getElementById('ov-total-routes').textContent=data.total_routes;
+  document.getElementById('ov-total-km').innerHTML=
+    `${data.total_km.toLocaleString('es-ES',{maximumFractionDigits:0})}<small> km</small>`;
+  document.getElementById('ov-total-asc').innerHTML=
+    `${data.total_ascent_m.toLocaleString('es-ES',{maximumFractionDigits:0})}<small> m</small>`;
+  document.getElementById('ov-total-time').textContent=fmtMoving(data.total_moving_s);
+
+  // Por actividad
+  const actBox=document.getElementById('ov-act-rows');
+  const totalR=data.total_routes||1;
+  ACTIVITIES.forEach(a=>{
+    const t=data.by_type[a.id];
+    if(!t)return;
+    const pct=Math.round((t.count/totalR)*100);
+    const row=document.createElement('div');
+    row.className='act-row';
+    row.innerHTML=`
+      <div class="act-label">
+        <div class="act-dot" style="background:${a.color}"></div>
+        ${a.label}
+      </div>
+      <div class="act-bar-bg">
+        <div class="act-bar-fill" style="width:${pct}%;background:${a.color}"></div>
+      </div>
+      <div class="act-meta">${t.km.toLocaleString('es-ES',{maximumFractionDigits:0})} km</div>
+      <div class="act-count">${t.count} ruta${t.count!==1?'s':''}</div>`;
+    actBox.appendChild(row);
+  });
+  // Actividades sin categoría en ACTIVITIES
+  Object.entries(data.by_type).forEach(([id,t])=>{
+    if(ACTIVITIES.find(a=>a.id===id))return;
+    const pct=Math.round((t.count/totalR)*100);
+    const row=document.createElement('div');
+    row.className='act-row';
+    row.innerHTML=`
+      <div class="act-label">
+        <div class="act-dot" style="background:var(--muted)"></div>
+        ${id}
+      </div>
+      <div class="act-bar-bg">
+        <div class="act-bar-fill" style="width:${pct}%;background:var(--muted)"></div>
+      </div>
+      <div class="act-meta">${t.km.toLocaleString('es-ES',{maximumFractionDigits:0})} km</div>
+      <div class="act-count">${t.count} ruta${t.count!==1?'s':''}</div>`;
+    actBox.appendChild(row);
+  });
+
+  // Por año
+  const yearBox=document.getElementById('ov-year-chart');
+  const years=Object.entries(data.by_year);
+  if(years.length===0){
+    yearBox.innerHTML='<span style="color:var(--muted);font-size:13px;padding:16px 0">Sin datos de fecha</span>';
+  } else {
+    const maxCount=Math.max(...years.map(([,c])=>c));
+    const BAR_MAX=100; // px
+    years.forEach(([year,count])=>{
+      const h=Math.max(4,Math.round((count/maxCount)*BAR_MAX));
+      const col=document.createElement('div');
+      col.className='year-col';
+      col.innerHTML=`
+        <div class="year-count">${count}</div>
+        <div class="year-bar" style="height:${h}px" title="${year}: ${count} ruta${count!==1?'s':''}"></div>
+        <div class="year-num">${year}</div>`;
+      yearBox.appendChild(col);
+    });
+  }
+
+  // Récords
+  const rec=data.records;
+  const recGrid=document.getElementById('ov-records-grid');
+  if(!rec.longest && !rec.highest && !rec.fastest){
+    document.getElementById('ov-records-section').classList.add('hidden');
+    return;
+  }
+  function makeRecord(label,value,unit,name){
+    if(!name)return;
+    const card=document.createElement('div');
+    card.className='record-card';
+    card.title=`Ir a ${name}`;
+    card.onclick=()=>location.href='/Sendero/'+encodeURIComponent(name);
+    card.innerHTML=`
+      <div class="rl">${label}</div>
+      <div class="rv">${value}<small> ${unit}</small></div>
+      <div class="rn">${name}</div>`;
+    recGrid.appendChild(card);
+  }
+  if(rec.longest)  makeRecord('Ruta más larga',   rec.longest.km.toLocaleString('es-ES',{maximumFractionDigits:1}),   'km',   rec.longest.name);
+  if(rec.highest)  makeRecord('Mayor desnivel ↑',  rec.highest.ascent_m.toLocaleString('es-ES',{maximumFractionDigits:0}), 'm↑',   rec.highest.name);
+  if(rec.fastest)  makeRecord('Vel. media más alta', rec.fastest.avg_speed.toFixed(1), 'km/h', rec.fastest.name);
+}
+
+async function refreshStats(){
+  const btn=document.getElementById('refresh-btn');
+  btn.disabled=true;
+  btn.textContent='↻ Calculando…';
+  try{
+    await fetch('/api/stats/refresh',{method:'POST'});
+    // Vaciar y recargar
+    document.getElementById('ov-content').classList.add('hidden');
+    document.getElementById('ov-loading').textContent='Cargando estadísticas…';
+    document.getElementById('ov-loading').classList.remove('hidden');
+    document.getElementById('ov-act-rows').innerHTML='';
+    document.getElementById('ov-year-chart').innerHTML='';
+    document.getElementById('ov-records-grid').innerHTML='';
+    await loadStats();
+  }finally{
+    btn.disabled=false;
+    btn.textContent='↻ Actualizar';
+  }
+}
+
+loadStats();
+{% endblock %}

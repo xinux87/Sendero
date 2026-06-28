@@ -1,0 +1,53 @@
+import json
+from flask import Blueprint, jsonify, request
+
+import core.config as cfg
+from core.database import db
+from core.config import refresh_config
+
+settings_bp = Blueprint("settings", __name__)
+
+
+@settings_bp.route("/api/settings", methods=["GET"])
+def get_settings():
+    return jsonify({
+        "IMMICH_URL":        cfg.IMMICH_URL,
+        "IMMICH_API_KEY":    cfg.IMMICH_API_KEY,
+        "IMMICH_MARGIN_MIN": str(cfg.IMMICH_MARGIN_MIN),
+        "IMMICH_DIST_M":     str(cfg.IMMICH_DIST_M),
+    })
+
+
+@settings_bp.route("/api/settings", methods=["POST"])
+def save_settings():
+    data = request.get_json(force=True) or {}
+    con = db()
+    for key in cfg._SETTINGS_KEYS:
+        if key in data:
+            con.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                (key, str(data[key]).strip()),
+            )
+    con.commit()
+    refresh_config()
+    return "", 204
+
+
+@settings_bp.route("/api/settings/gpx-types", methods=["GET"])
+def get_gpx_types():
+    return jsonify(cfg._CUSTOM_GPX_TYPES)
+
+
+@settings_bp.route("/api/settings/gpx-types", methods=["POST"])
+def save_gpx_types():
+    data = request.get_json(force=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "Se esperaba un objeto JSON"}), 400
+    con = db()
+    con.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        ("GPX_TYPE_CUSTOM", json.dumps({str(k).lower(): str(v) for k, v in data.items()})),
+    )
+    con.commit()
+    refresh_config()
+    return "", 204

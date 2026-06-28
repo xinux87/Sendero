@@ -106,7 +106,7 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 
 {% block content %}
 <div class="bar">
-  <button class="btn ghost sm" onclick="location.href='/'">← Volver</button>
+  <button class="btn ghost sm" onclick="location.href='/rutas'">← Volver</button>
 </div>
 
 <div class="detail-head">
@@ -131,6 +131,11 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 <div class="section">
   <h2>Perfil de elevación</h2>
   <canvas id="elev" height="84"></canvas>
+</div>
+
+<div class="section" id="hr-section" style="display:none">
+  <h2>Frecuencia cardíaca</h2>
+  <canvas id="hr-chart" height="84"></canvas>
 </div>
 
 <div class="section">
@@ -200,7 +205,7 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 {% endblock %}
 
 {% block scripts %}
-let map, trackLayer, elevChart, current=null;
+let map, trackLayer, elevChart, hrChart, current=null;
 let IMMICH=false, immichCands=[], immichSel=new Set();
 let photoMarkers={}, lbIdx=0;
 const NEAR_M=500;
@@ -307,6 +312,7 @@ async function setActivity(id){
   renderActivity();
   renderStats();
   closeActivityPicker();
+  markCacheDirty();
   toast("Actividad guardada");
   if(!current.photos.length&&IMMICH&&!current.immich_checked) autoSearchImmich();
 }
@@ -330,6 +336,8 @@ function renderStats(){
     ["Vel. media",r.avg_speed?r.avg_speed.toFixed(1):"–","km/h"],
     ["Altitud máx",r.ele_max!=null?Math.round(r.ele_max):"–","m"],
   ];
+  if(r.hr_avg) items.push(["FC media",r.hr_avg,"bpm"]);
+  if(r.hr_max) items.push(["FC máx",r.hr_max,"bpm"]);
   $("#stats").innerHTML=actStat+items.map(([l,v,u])=>
     `<div class="stat"><div class="v">${v} <small>${u}</small></div><div class="l">${l}</div></div>`).join("");
 }
@@ -444,6 +452,29 @@ function renderElev(){
   });
 }
 
+function renderHR(){
+  const section=$("#hr-section");
+  const data=current.heart_rate;
+  if(!data||!data.length){section.style.display="none";return;}
+  section.style.display="";
+  const ctx=$("#hr-chart");
+  if(hrChart)hrChart.destroy();
+  hrChart=new Chart(ctx,{type:"line",data:{datasets:[{
+    data:data.map(d=>({x:d.d,y:d.hr})),fill:true,
+    borderColor:"#e05252",backgroundColor:"rgba(224,82,82,.12)",
+    pointRadius:0,borderWidth:1.5,tension:.3
+  }]},options:{
+    plugins:{legend:{display:false},tooltip:{callbacks:{
+      label(c){return`${Math.round(c.raw.y)} bpm`;},
+      title(items){return`${Number(items[0].raw.x).toFixed(2)} km`;}
+    }}},
+    scales:{
+      x:{type:"linear",min:0,max:data[data.length-1].d,title:{display:true,text:"km",color:"#8aa394"},ticks:{color:"#8aa394",maxTicksLimit:8},grid:{color:"#2c4435"}},
+      y:{title:{display:true,text:"bpm",color:"#8aa394"},ticks:{color:"#8aa394"},grid:{color:"#2c4435"}}
+    }
+  }});
+}
+
 function renderGallery(){
   const g=$("#gallery");g.innerHTML="";
   current.photos.forEach((p,i)=>{
@@ -467,9 +498,13 @@ function renderAll(){
   $("#notes").value=current.notes||"";
   $("#immich-btn").classList.toggle("hidden",!IMMICH);
   renderActivity();
-  renderStats();renderMap();renderElev();renderGallery();
+  renderStats();renderMap();renderElev();renderHR();renderGallery();
   if(!current.activity_type) setTimeout(openActivityPicker,350);
   window.scrollTo(0,0);
+}
+
+function markCacheDirty(){
+  try{sessionStorage.setItem('sendero_cache_dirty','1');}catch(e){}
 }
 
 // ---------- acciones ----------
@@ -486,6 +521,7 @@ async function rescanRoute(btn){
     if(!res.ok){const j=await res.json();toast(j.error||"Error al reescanear");return;}
     current=await res.json();
     renderAll();
+    markCacheDirty();
     toast("Datos actualizados desde el archivo");
   }catch{toast("Error de red");}
   finally{btn.disabled=false;btn.textContent=orig;}
@@ -499,12 +535,13 @@ async function renameRoute(){
   $("#d-name").textContent=n;
   document.title=`${n} – Sendero`;
   history.replaceState({},'','/Sendero/'+encodeURIComponent(n));
+  markCacheDirty();
   toast("Renombrada");
 }
 async function removeRoute(){
   if(!confirm("¿Eliminar esta ruta y sus fotos?"))return;
   await fetch(`/api/routes/${current.id}`,{method:"DELETE"});
-  location.href='/';
+  location.href='/rutas';
 }
 async function delPhoto(id,ev){
   ev.stopPropagation();
@@ -667,7 +704,7 @@ function downloadGpx(){
 // ---------- init ----------
 (async()=>{
   current={{ route_json | safe }};
-  if(!current){location.href='/';return;}
+  if(!current){location.href='/rutas';return;}
   renderAll();
   // config: necesaria antes del flujo automático de Immich
   try{const c=await(await fetch("/api/config")).json();
