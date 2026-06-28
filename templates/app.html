@@ -256,6 +256,15 @@
 .drop-plan.over{border-color:var(--pr-yellow)}
 .drop-plan .chosen{color:var(--ink);font-size:13px}
 #plan-map{height:320px;border-radius:11px;border:1px solid var(--line);margin-bottom:18px}
+
+/* ══ ANIMACIONES DE SECCIÓN ══ */
+@keyframes _sec-in {
+  from { opacity:0; transform:translateY(-10px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.app-sec { transition: opacity .15s ease, transform .15s ease; }
+.app-sec._sec-leaving { opacity:0; transform:translateY(8px); pointer-events:none; }
+.app-sec._sec-entering { animation: _sec-in .22s ease both; }
 {% endblock %}
 
 {% block content %}
@@ -374,28 +383,54 @@ const _SEC_URLS  = {dashboard:'/dashboard', rutas:'/rutas', planes:'/planificaci
 const _URL_SEC   = {'/dashboard':'dashboard', '/rutas':'rutas', '/planificacion':'planes'};
 let _curSec      = '{{ initial_section }}';
 const _secInited = {dashboard:false, rutas:false, planes:false};
+const _ANIM_OUT  = 150; // ms fade-out
+let _spaReady    = false;
 
-function _showSec(name, push=true) {
-  document.querySelectorAll('.app-sec').forEach(s => s.classList.add('hidden'));
-  ['act-dashboard','act-rutas','act-planes'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.add('hidden');
-  });
-  document.getElementById('sec-'+name).classList.remove('hidden');
-  const actEl = document.getElementById('act-'+name);
-  if (actEl) actEl.classList.remove('hidden');
-  document.querySelectorAll('a.nav-link').forEach(a =>
-    a.classList.toggle('on', a.getAttribute('href') === _SEC_URLS[name]));
-  if (push) history.pushState({sec:name}, '', _SEC_URLS[name]);
-  _curSec = name;
+function _afterShow(name) {
   if (!_secInited[name]) {
     _secInited[name] = true;
     if (name === 'dashboard') loadStats();
     if (name === 'rutas')     loadList();
     if (name === 'planes')    { initPlanMap(); loadPlans(); }
   }
-  if (name === 'rutas'  && ovMap)   setTimeout(() => { ovMap.invalidateSize(); fitMap(); }, 60);
-  if (name === 'planes' && planMap) setTimeout(() => planMap.invalidateSize(), 60);
+  const mapDelay = _spaReady ? _ANIM_OUT + 20 : 20;
+  if (name === 'rutas'  && ovMap)   setTimeout(() => { ovMap.invalidateSize(); fitMap(); }, mapDelay);
+  if (name === 'planes' && planMap) setTimeout(() => planMap.invalidateSize(), mapDelay);
+}
+
+function _showSec(name, push=true) {
+  const prev = document.querySelector('.app-sec:not(.hidden)');
+  const next  = document.getElementById('sec-'+name);
+
+  // nav + history
+  document.querySelectorAll('a.nav-link').forEach(a =>
+    a.classList.toggle('on', a.getAttribute('href') === _SEC_URLS[name]));
+  ['act-dashboard','act-rutas','act-planes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  const actEl = document.getElementById('act-'+name);
+  if (actEl) actEl.classList.remove('hidden');
+  if (push) history.pushState({sec:name}, '', _SEC_URLS[name]);
+  _curSec = name;
+
+  if (prev && prev !== next && _spaReady) {
+    // ── animación: salida → entrada ──
+    prev.classList.add('_sec-leaving');
+    setTimeout(() => {
+      prev.classList.add('hidden');
+      prev.classList.remove('_sec-leaving');
+      next.classList.remove('hidden');
+      next.classList.add('_sec-entering');
+      setTimeout(() => next.classList.remove('_sec-entering'), 240);
+      _afterShow(name);
+    }, _ANIM_OUT);
+  } else {
+    // carga inicial: sin animación
+    document.querySelectorAll('.app-sec').forEach(s => s.classList.add('hidden'));
+    next.classList.remove('hidden');
+    _afterShow(name);
+  }
 }
 
 window._spaNavTo = href => { const s = _URL_SEC[href]; if (s) _showSec(s); };
@@ -1018,5 +1053,6 @@ $('#add-modal').addEventListener('click',e=>{if(e.target===$('#add-modal'))close
 
 /* ══ INIT ══ */
 _showSec(_curSec, false);
+setTimeout(() => { _spaReady = true; }, 80);
 
 {% endblock %}
