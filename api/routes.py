@@ -41,14 +41,14 @@ def index():
     return redirect("/dashboard")
 
 
-@routes_bp.route("/rutas")
-def dashboard():
-    return render_template("rutas.html")
-
-
 @routes_bp.route("/dashboard")
 def stats_page():
-    return render_template("overview.html")
+    return render_template("app.html", initial_section="dashboard")
+
+
+@routes_bp.route("/rutas")
+def dashboard():
+    return render_template("app.html", initial_section="rutas")
 
 
 def _recompute_stats(con):

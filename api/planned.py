@@ -26,7 +26,7 @@ def _build_plan_dict(pid):
 
 @planned_bp.route("/planificacion")
 def planificacion_page():
-    return render_template("planificacion.html")
+    return render_template("app.html", initial_section="planes")
 
 
 @planned_bp.route("/Plan/<path:name>")

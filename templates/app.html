@@ -1,0 +1,1022 @@
+{% extends "base.html" %}
+{% block title %}Sendero{% endblock %}
+
+{% block head_libs %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+{% endblock %}
+
+{% block header_nav %}
+<nav class="header-nav">
+  <a href="/dashboard"    class="nav-link" id="nav-dashboard">Dashboard</a>
+  <a href="/rutas"        class="nav-link" id="nav-rutas">Mis rutas</a>
+  <a href="/planificacion" class="nav-link" id="nav-planes">Mis Planes</a>
+</nav>
+{% endblock %}
+
+{% block header_actions %}
+<div id="act-dashboard"><button class="btn ghost sm" id="refresh-btn" onclick="refreshStats()">↻ Actualizar</button></div>
+<div id="act-rutas" class="hidden">
+  <div style="display:flex;align-items:center;gap:12px">
+    <div style="display:flex;gap:6px">
+      <button class="view-btn" id="view-a" onclick="setView('a')">⊞ Cuadrícula</button>
+      <button class="view-btn" id="view-b" onclick="setView('b')">▤ Panel</button>
+    </div>
+    <span id="count" class="mono" style="color:var(--muted);font-size:13px"></span>
+    <label class="btn" style="margin:0;cursor:pointer" title="Arrastra GPX/FIT o pulsa para elegir">+ Añadir ruta
+      <input id="gpx-input" type="file" accept=".gpx,.fit" multiple class="hidden">
+    </label>
+  </div>
+</div>
+<div id="act-planes" class="hidden">
+  <button class="btn" onclick="openAddModal()">+ Planificar ruta</button>
+</div>
+{% endblock %}
+
+{% block styles %}
+/* ══ SECCIÓN DASHBOARD ══ */
+.ov-section{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:22px 24px;margin-bottom:18px}
+.ov-section-title{font-family:'Saira Condensed',sans-serif;font-size:13px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:16px}
+.hero-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.hero-card{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:16px 18px}
+.hero-card .v{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--ink);line-height:1.1}
+.hero-card .v small{font-size:14px;font-weight:400;color:var(--muted)}
+.hero-card .l{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-top:4px;font-weight:600}
+.act-rows{display:flex;flex-direction:column;gap:10px}
+.act-row{display:grid;grid-template-columns:110px 1fr 80px 80px;align-items:center;gap:12px}
+.act-label{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink)}
+.act-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.act-bar-bg{background:var(--line);border-radius:4px;height:8px;overflow:hidden}
+.act-bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
+.act-meta{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+.act-count{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+.year-chart{display:flex;align-items:flex-end;gap:6px;height:120px;border-bottom:1px solid var(--line);overflow-x:auto}
+.year-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;min-width:36px}
+.year-bar{background:var(--pr-yellow);border-radius:3px 3px 0 0;width:28px;min-height:2px}
+.year-bar:hover{filter:brightness(1.12)}
+.year-num{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;margin-top:6px}
+.year-count{font-family:var(--mono);font-size:10px;color:var(--ink);font-weight:700}
+.records-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.record-card{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
+  padding:14px 16px;cursor:pointer;transition:filter .15s,transform .15s}
+.record-card:hover{filter:brightness(1.06);transform:translateY(-2px)}
+.record-card .rv{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--pr-yellow)}
+.record-card .rv small{font-size:12px;color:var(--muted);font-weight:400}
+.record-card .rl{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:6px;font-weight:600}
+.record-card .rn{font-size:13px;color:var(--ink);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov-loading{color:var(--muted);font-size:14px;padding:32px 0;text-align:center}
+
+/* ══ SECCIÓN RUTAS ══ */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px}
+.card:hover{filter:brightness(1.06);transform:translateY(-2px)}
+.card h3{font-size:22px;font-weight:600;padding-right:34px;line-height:1.2;
+  height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .date{color:var(--muted);font-size:12px;margin:2px 0 0;text-transform:uppercase;letter-spacing:.08em}
+.card-act{position:absolute;top:12px;right:12px;line-height:0}
+.metrics{display:flex;gap:16px;flex-wrap:wrap}
+.metric{display:flex;flex-direction:column}
+.metric .v{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--ink)}
+.metric .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.filters{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;
+  background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:14px 16px;margin-bottom:18px;position:relative;z-index:10}
+.filter-group{display:flex;flex-direction:column;gap:6px}
+.filter-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+.act-pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{padding:5px 12px;border-radius:20px;border:1px solid var(--line);
+  background:transparent;color:var(--muted);font-size:12px;font-weight:600;
+  cursor:pointer;transition:all .15s;letter-spacing:.04em}
+.pill:hover{border-color:var(--ink);color:var(--ink)}
+.pill.on{color:#fff;border-color:transparent}
+.filter-clear{padding:5px 12px;border-radius:20px;border:1px solid var(--line);
+  background:transparent;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s;align-self:flex-end}
+.filter-clear:hover{border-color:var(--gr-red);color:var(--gr-red)}
+#overview-map{height:340px;border-radius:11px;border:1px solid var(--line);margin-bottom:18px;overflow:hidden}
+.leaflet-container{background:var(--bg)}
+.leaflet-control-zoom a{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
+.leaflet-control-zoom a:hover{background:var(--panel-2)!important}
+.ov-marker{cursor:pointer;filter:drop-shadow(0 2px 4px #00000080)}
+.sort-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.sort-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+.sort-btn{padding:5px 14px;border-radius:20px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;letter-spacing:.04em}
+.sort-btn:hover{border-color:var(--ink);color:var(--ink)}
+.sort-btn.on{background:var(--panel-2);border-color:var(--pr-yellow);color:var(--pr-yellow)}
+.sort-sep{width:1px;height:18px;background:var(--line);margin:0 4px}
+.edit-bar{display:none;align-items:center;gap:8px;flex-wrap:wrap;
+  margin-bottom:14px;padding:8px 12px;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:8px}
+.edit-bar.on{display:flex}
+.card-check{position:absolute;top:12px;right:12px;width:22px;height:22px;
+  border-radius:50%;border:2px solid var(--muted);background:var(--panel);
+  display:flex;align-items:center;justify-content:center;font-size:13px;
+  color:var(--bg);transition:.15s;pointer-events:none}
+.card.selected{border-color:var(--pr-yellow)!important}
+.card.selected .card-check{background:var(--pr-yellow);border-color:var(--pr-yellow)}
+.card.edit-mode{cursor:default}
+.card.edit-mode:hover{transform:none}
+.view-btn{padding:5px 12px;border-radius:20px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
+.view-btn:hover{border-color:var(--ink);color:var(--ink)}
+.view-btn.on{background:var(--panel-2);border-color:var(--ink);color:var(--ink)}
+.month-group{margin-bottom:24px}
+.month-label{font-family:'Saira Condensed',sans-serif;font-size:20px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+  padding-bottom:8px;margin-bottom:12px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:10px}
+.month-label .month-count{font-family:var(--mono);font-size:12px;color:var(--line)}
+.month-sel-btn{margin-left:auto;padding:3px 11px;border-radius:14px;
+  border:1px solid var(--pr-yellow);background:transparent;color:var(--pr-yellow);
+  font-size:11px;font-weight:600;cursor:pointer;transition:all .12s;
+  letter-spacing:.04em;font-family:inherit;align-self:center;flex-shrink:0}
+.month-sel-btn:hover{background:rgba(232,196,74,.12)}
+.month-sel-btn.all-sel{background:rgba(232,196,74,.18)}
+.date-range{display:flex;gap:8px;align-items:center}
+.date-sep{color:var(--muted);font-size:12px}
+.dp-wrap{position:relative}
+.dp-btn{background:var(--bg);border:1px solid var(--line);color:var(--muted);
+  border-radius:7px;padding:5px 28px 5px 10px;font-size:13px;font-family:var(--mono);
+  cursor:pointer;min-width:118px;text-align:left;position:relative;transition:border-color .15s}
+.dp-btn.has-val{color:var(--ink)}
+.dp-btn:hover{border-color:var(--muted)}
+.dp-btn:focus{outline:none;border-color:var(--pr-yellow)}
+.dp-btn::after{content:"▾";position:absolute;right:9px;top:50%;transform:translateY(-50%);
+  color:var(--muted);font-size:11px;pointer-events:none}
+.dp-pop{position:fixed;z-index:9999;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:12px;width:230px;box-shadow:0 8px 28px #00000070}
+.dp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:4px}
+.dp-nav{background:none;border:1px solid var(--line);color:var(--muted);border-radius:5px;
+  width:26px;height:26px;cursor:pointer;font-size:15px;line-height:1;flex-shrink:0;transition:all .15s}
+.dp-nav:hover{border-color:var(--pr-yellow);color:var(--pr-yellow)}
+.dp-title{font-family:'Saira Condensed',sans-serif;font-size:15px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--ink);text-align:center;flex:1}
+.dp-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.dp-dow{font-size:9px;color:var(--muted);text-align:center;padding:2px 0;
+  text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.dp-day{background:none;border:none;color:var(--ink);border-radius:5px;padding:4px 0;
+  font-size:12px;font-family:var(--mono);cursor:pointer;text-align:center;transition:background .1s}
+.dp-day:hover:not(.empty){background:var(--panel-2)}
+.dp-day.sel{background:var(--pr-yellow);color:#101a14;font-weight:700}
+.dp-day.today{color:var(--gr-red);font-weight:700}
+.dp-day.today.sel{color:#101a14}
+.dp-day.empty{cursor:default;pointer-events:none}
+.dp-clear-btn{margin-top:8px;width:100%;background:none;border:1px solid var(--line);
+  color:var(--muted);border-radius:6px;padding:4px 0;font-size:11px;cursor:pointer;
+  font-family:inherit;transition:all .15s}
+.dp-clear-btn:hover{border-color:var(--gr-red);color:var(--gr-red)}
+.drop-global{position:fixed;inset:0;z-index:9990;
+  background:rgba(8,14,11,.90);backdrop-filter:blur(3px);
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:none;opacity:0;transition:opacity .15s}
+.drop-global.visible{opacity:1;pointer-events:auto}
+.drop-box{border:2px dashed var(--pr-yellow);border-radius:18px;
+  padding:52px 80px;text-align:center;transition:background .15s}
+.drop-global.over .drop-box{background:rgba(232,196,74,.07)}
+.drop-arrow{font-size:52px;line-height:1;margin-bottom:14px;
+  font-family:'Saira Condensed',sans-serif;color:var(--pr-yellow)}
+.drop-text{font-family:'Saira Condensed',sans-serif;font-size:32px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--pr-yellow)}
+.drop-hint{font-size:13px;color:var(--muted);margin-top:8px}
+.upload-loader{position:fixed;bottom:24px;right:24px;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:11px;padding:16px 20px;min-width:300px;
+  z-index:9999;box-shadow:0 6px 28px #00000070}
+.upload-loader-title{font-family:'Saira Condensed',sans-serif;font-size:18px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;
+  display:flex;justify-content:space-between;align-items:baseline}
+.upload-loader-count{font-family:var(--mono);font-size:13px;color:var(--pr-yellow)}
+.upload-bar-bg{background:var(--line);border-radius:4px;height:5px;margin-bottom:8px;overflow:hidden}
+.upload-bar-fill{background:var(--pr-yellow);height:100%;border-radius:4px;transition:width .25s ease;width:0%}
+.upload-bar-fill.del{background:var(--gr-red)}
+.upload-filename{color:var(--muted);font-size:11px;font-family:var(--mono);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+/* Vista B */
+#dash-wrap.view-b{display:grid;grid-template-columns:260px 1fr 230px;
+  grid-template-rows:auto auto 1fr;
+  grid-template-areas:"list map filters""list map sort""list map .";
+  gap:14px;height:calc(100vh - 160px);min-height:600px}
+#dash-wrap.view-b .filters{grid-area:filters;flex-direction:column;align-items:stretch;margin-bottom:0;overflow-y:auto}
+#dash-wrap.view-b .filter-group{width:100%}
+#dash-wrap.view-b .date-range{flex-direction:column;align-items:stretch;gap:6px}
+#dash-wrap.view-b .date-sep{display:none}
+#dash-wrap.view-b .dp-btn{min-width:0;width:100%}
+#dash-wrap.view-b .filter-clear{align-self:flex-start}
+#dash-wrap.view-b #overview-map{grid-area:map;height:auto;margin-bottom:0}
+#dash-wrap.view-b .sort-bar{grid-area:sort;margin-bottom:0;flex-direction:column;align-items:stretch;gap:6px}
+#dash-wrap.view-b .sort-btn{text-align:left}
+#dash-wrap.view-b #routes{grid-area:list;overflow-y:auto;padding-right:2px;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+#dash-wrap.view-b #no-routes{grid-area:list}
+#dash-wrap.view-b .card{padding:10px 12px}
+#dash-wrap.view-b .card h3{font-size:15px;height:2.4em;padding-right:30px}
+#dash-wrap.view-b .card .date{font-size:11px;margin-bottom:0}
+#dash-wrap.view-b .card-act{top:10px;right:10px}
+#dash-wrap.view-b .grid{grid-template-columns:1fr}
+#dash-wrap.view-b .month-label{font-size:15px;padding-bottom:6px;margin-bottom:8px}
+#dash-wrap.view-b .month-group{margin-bottom:16px}
+@media(max-width:900px){
+  #dash-wrap.view-b{grid-template-columns:1fr;grid-template-rows:auto auto auto auto;
+    grid-template-areas:"filters""map""sort""list";height:auto;min-height:0}
+  #dash-wrap.view-b #overview-map{height:280px}
+  #dash-wrap.view-b .filters{flex-direction:row;flex-wrap:wrap;overflow-y:visible}
+  #dash-wrap.view-b .filter-group{width:auto;flex:1;min-width:160px}
+  #dash-wrap.view-b .date-range{flex-direction:row;align-items:center;gap:6px}
+  #dash-wrap.view-b .date-sep{display:inline}
+  #dash-wrap.view-b .dp-btn{width:auto}
+  #dash-wrap.view-b #routes{overflow-y:visible}
+  #dash-wrap.view-b .sort-bar{flex-direction:row;flex-wrap:wrap}
+  #dash-wrap.view-b .sort-btn{text-align:center}
+}
+
+/* ══ SECCIÓN PLANES ══ */
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.plan-card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px}
+.plan-card:hover{filter:brightness(1.06);transform:translateY(-2px)}
+.plan-card h3{font-size:20px;font-weight:600;padding-right:34px;line-height:1.2;
+  height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.plan-card .date{color:var(--muted);font-size:12px;margin:2px 0 4px;text-transform:uppercase;letter-spacing:.08em}
+.plan-act{position:absolute;top:12px;right:12px;line-height:0}
+.plan-metrics{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
+.pm{display:flex;flex-direction:column}
+.pm .v{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--ink)}
+.pm .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.source-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
+  letter-spacing:.06em;padding:2px 8px;border-radius:10px;text-transform:uppercase;margin-top:4px}
+.source-gpx{background:#1e3a2a;color:#5ab87a;border:1px solid #2e5a3a}
+.overlay{position:fixed;inset:0;background:rgba(8,14,11,.82);display:flex;align-items:center;
+  justify-content:center;padding:16px;z-index:1000}
+.overlay.hidden{display:none}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  width:100%;max-width:520px;padding:22px;overflow:hidden}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.drop-plan{border:1.5px dashed var(--line);border-radius:9px;padding:22px;text-align:center;
+  color:var(--muted);cursor:pointer;margin-bottom:12px;transition:border-color .15s}
+.drop-plan.over{border-color:var(--pr-yellow)}
+.drop-plan .chosen{color:var(--ink);font-size:13px}
+#plan-map{height:320px;border-radius:11px;border:1px solid var(--line);margin-bottom:18px}
+{% endblock %}
+
+{% block content %}
+
+<!-- ══ SECCIÓN DASHBOARD ══ -->
+<div id="sec-dashboard" class="app-sec">
+  <div id="ov-loading" class="ov-loading">Cargando estadísticas…</div>
+  <div id="ov-content" class="hidden">
+    <div class="ov-section">
+      <div class="ov-section-title">Totales</div>
+      <div class="hero-grid">
+        <div class="hero-card"><div class="v" id="ov-total-routes">–</div><div class="l">Rutas</div></div>
+        <div class="hero-card"><div class="v" id="ov-total-km">–<small> km</small></div><div class="l">Distancia total</div></div>
+        <div class="hero-card"><div class="v" id="ov-total-asc">–<small> m</small></div><div class="l">Desnivel acumulado ↑</div></div>
+        <div class="hero-card"><div class="v" id="ov-total-time">–</div><div class="l">Tiempo en movimiento</div></div>
+      </div>
+    </div>
+    <div class="ov-section">
+      <div class="ov-section-title">Por actividad</div>
+      <div class="act-rows" id="ov-act-rows"></div>
+    </div>
+    <div class="ov-section">
+      <div class="ov-section-title">Rutas por año</div>
+      <div class="year-chart" id="ov-year-chart"></div>
+    </div>
+    <div class="ov-section" id="ov-records-section">
+      <div class="ov-section-title">Récords personales</div>
+      <div class="records-grid" id="ov-records-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SECCIÓN RUTAS ══ -->
+<div id="sec-rutas" class="app-sec hidden">
+  <div id="dash-wrap" class="view-a">
+    <div class="filters" id="filters-panel">
+      <div class="filter-group">
+        <span class="filter-label">Actividad</span>
+        <div class="act-pills" id="act-pills"></div>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Fecha</span>
+        <div class="date-range">
+          <div class="dp-wrap" id="dp-from"></div>
+          <span class="date-sep">→</span>
+          <div class="dp-wrap" id="dp-to"></div>
+        </div>
+      </div>
+      <button class="filter-clear" onclick="clearFilters()">✕ Limpiar</button>
+    </div>
+    <div id="overview-map"></div>
+    <div class="sort-bar">
+      <span class="sort-label">Orden</span>
+      <button class="sort-btn" id="sort-desc" onclick="setSort('desc')">↓ Más reciente</button>
+      <button class="sort-btn" id="sort-asc"  onclick="setSort('asc')">↑ Más antiguo</button>
+      <div class="sort-sep"></div>
+      <button class="sort-btn" id="edit-toggle-btn" onclick="toggleEdit()">✎ Editar</button>
+    </div>
+    <div class="edit-bar" id="edit-bar">
+      <span class="sort-label" style="color:var(--pr-yellow)">EDITAR</span>
+      <button class="btn ghost sm" onclick="selectAllVisible()">Seleccionar todos</button>
+      <button class="btn ghost sm" onclick="deselectAll()">Deseleccionar</button>
+      <button class="btn ghost sm" id="rescan-sel-btn" onclick="rescanSelected()" style="margin-left:auto">↻ Re-escanear (<span id="rescan-count">0</span>)</button>
+      <button class="btn sm" id="delete-sel-btn" onclick="deleteSelected()" style="background:var(--gr-red)">Eliminar (<span id="sel-count">0</span>)</button>
+      <button class="btn ghost sm" onclick="toggleEdit()">Cancelar</button>
+    </div>
+    <div id="routes"></div>
+    <div id="no-routes" class="empty hidden">No hay rutas que coincidan con los filtros.</div>
+  </div>
+</div>
+
+<!-- ══ SECCIÓN PLANES ══ -->
+<div id="sec-planes" class="app-sec hidden">
+  <div id="add-modal" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 style="font-family:'Saira Condensed';font-size:26px">Planificar ruta</h2>
+        <button class="btn ghost sm" onclick="closeAddModal()">Cerrar</button>
+      </div>
+      <div id="drop-plan" class="drop-plan" onclick="$('#plan-file').click()">
+        Arrastra un archivo GPX aquí o pulsa para elegir
+        <div id="drop-chosen" class="chosen hidden"></div>
+        <input id="plan-file" type="file" accept=".gpx" class="hidden">
+      </div>
+      <button class="btn" style="width:100%" onclick="uploadPlanGpx()">Añadir ruta planificada</button>
+    </div>
+  </div>
+  <div id="plan-loader" class="upload-loader hidden">
+    <div class="upload-loader-title">
+      <span id="loader-title">Procesando…</span>
+      <span id="loader-pct" class="upload-loader-count"></span>
+    </div>
+    <div class="upload-bar-bg"><div id="loader-bar" class="upload-bar-fill"></div></div>
+    <div id="loader-msg" class="upload-filename"></div>
+  </div>
+  <div id="plan-map"></div>
+  <div id="plan-grid" class="plan-grid"></div>
+  <div id="no-plans" class="empty hidden">No hay rutas planificadas todavía.</div>
+</div>
+
+<!-- Drop overlay global (sección rutas) -->
+<div id="drop-global" class="drop-global">
+  <div class="drop-box">
+    <div class="drop-arrow">↓</div>
+    <div class="drop-text">Suelta los archivos aquí</div>
+    <div class="drop-hint">GPX y FIT · varios archivos a la vez</div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+
+/* ══ ROUTER SPA ══ */
+const _SEC_URLS  = {dashboard:'/dashboard', rutas:'/rutas', planes:'/planificacion'};
+const _URL_SEC   = {'/dashboard':'dashboard', '/rutas':'rutas', '/planificacion':'planes'};
+let _curSec      = '{{ initial_section }}';
+const _secInited = {dashboard:false, rutas:false, planes:false};
+
+function _showSec(name, push=true) {
+  document.querySelectorAll('.app-sec').forEach(s => s.classList.add('hidden'));
+  ['act-dashboard','act-rutas','act-planes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  document.getElementById('sec-'+name).classList.remove('hidden');
+  const actEl = document.getElementById('act-'+name);
+  if (actEl) actEl.classList.remove('hidden');
+  document.querySelectorAll('a.nav-link').forEach(a =>
+    a.classList.toggle('on', a.getAttribute('href') === _SEC_URLS[name]));
+  if (push) history.pushState({sec:name}, '', _SEC_URLS[name]);
+  _curSec = name;
+  if (!_secInited[name]) {
+    _secInited[name] = true;
+    if (name === 'dashboard') loadStats();
+    if (name === 'rutas')     loadList();
+    if (name === 'planes')    { initPlanMap(); loadPlans(); }
+  }
+  if (name === 'rutas'  && ovMap)   setTimeout(() => { ovMap.invalidateSize(); fitMap(); }, 60);
+  if (name === 'planes' && planMap) setTimeout(() => planMap.invalidateSize(), 60);
+}
+
+window._spaNavTo = href => { const s = _URL_SEC[href]; if (s) _showSec(s); };
+window.addEventListener('popstate', e => _showSec(e.state?.sec || _curSec, false));
+
+/* ══ COMPARTIDO ══ */
+const ACTIVITIES=[
+  {id:'senderismo',label:'Senderismo',color:'#c97a3a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'bicicleta',label:'Bicicleta',color:'#3a9ed8',symbol:`
+    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+    <path d="M9.5,17.5 L13,14 L16.5,17.5 M13,14 L11.5,17.5"
+      stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="15.5" cy="10" r="1.5" fill="white"/>
+    <line x1="15.5" y1="11.5" x2="13" y2="14"   stroke="white" stroke-width="1.7" stroke-linecap="round"/>
+    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+  `},
+  {id:'caminata',label:'Caminata',color:'#5ab87a',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'correr',label:'Correr',color:'#e05252',symbol:`
+    <circle cx="14" cy="8" r="1.6" fill="white"/>
+    <line x1="14" y1="9.6"  x2="12" y2="15"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="16" y2="10"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="10" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="15.5" y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="9.5"  y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+  {id:'esqui',label:'Esquí',color:'#9b6fd4',symbol:`
+    <circle cx="13" cy="8" r="1.6" fill="white"/>
+    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+  `},
+  {id:'otros',label:'Otros',color:'#e0559e',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="8.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="17.5" y2="11" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  `},
+];
+function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
+function iconSvg(a,size=26){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13" cy="13" r="11" fill="${a.color}" stroke="#101a14" stroke-width="2.5"/>
+    ${a.symbol}
+  </svg>`;}
+function genericIconSvg(size=26){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13" cy="13" r="11" fill="#2c4435" stroke="#101a14" stroke-width="2.5"/>
+    <circle cx="13" cy="10" r="2" fill="#8aa394"/>
+    <line x1="13" y1="12.5" x2="13" y2="17"   stroke="#8aa394" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="14"   x2="11" y2="15.5" stroke="#8aa394" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="13" y1="14"   x2="15" y2="15.5" stroke="#8aa394" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="13" y1="17"   x2="11.5" y2="19" stroke="#8aa394" stroke-width="1.6" stroke-linecap="round"/>
+    <line x1="13" y1="17"   x2="14.5" y2="19" stroke="#8aa394" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>`;}
+
+/* ══ DASHBOARD ══ */
+function fmtMoving(s){
+  if(!s)return'–';s=Math.round(s);
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);
+  return h?`${h}h ${m}m`:`${m}m`;
+}
+async function loadStats(){
+  let data;
+  try{
+    const res=await fetch('/api/stats');
+    if(!res.ok)throw new Error();
+    data=await res.json();
+  }catch(e){
+    document.getElementById('ov-loading').textContent='Error al cargar las estadísticas.';
+    return;
+  }
+  document.getElementById('ov-loading').classList.add('hidden');
+  document.getElementById('ov-content').classList.remove('hidden');
+  document.getElementById('ov-total-routes').textContent=data.total_routes;
+  document.getElementById('ov-total-km').innerHTML=
+    `${data.total_km.toLocaleString('es-ES',{maximumFractionDigits:0})}<small> km</small>`;
+  document.getElementById('ov-total-asc').innerHTML=
+    `${data.total_ascent_m.toLocaleString('es-ES',{maximumFractionDigits:0})}<small> m</small>`;
+  document.getElementById('ov-total-time').textContent=fmtMoving(data.total_moving_s);
+  const actBox=document.getElementById('ov-act-rows');
+  const totalR=data.total_routes||1;
+  ACTIVITIES.forEach(a=>{
+    const t=data.by_type[a.id];if(!t)return;
+    const pct=Math.round((t.count/totalR)*100);
+    const row=document.createElement('div');row.className='act-row';
+    row.innerHTML=`<div class="act-label"><div class="act-dot" style="background:${a.color}"></div>${a.label}</div>
+      <div class="act-bar-bg"><div class="act-bar-fill" style="width:${pct}%;background:${a.color}"></div></div>
+      <div class="act-meta">${t.km.toLocaleString('es-ES',{maximumFractionDigits:0})} km</div>
+      <div class="act-count">${t.count} ruta${t.count!==1?'s':''}</div>`;
+    actBox.appendChild(row);
+  });
+  const yearBox=document.getElementById('ov-year-chart');
+  const years=Object.entries(data.by_year);
+  if(!years.length){
+    yearBox.innerHTML='<span style="color:var(--muted);font-size:13px;padding:16px 0">Sin datos de fecha</span>';
+  } else {
+    const maxC=Math.max(...years.map(([,c])=>c));
+    years.forEach(([year,count])=>{
+      const h=Math.max(4,Math.round((count/maxC)*100));
+      const col=document.createElement('div');col.className='year-col';
+      col.innerHTML=`<div class="year-count">${count}</div>
+        <div class="year-bar" style="height:${h}px" title="${year}: ${count} ruta${count!==1?'s':''}"></div>
+        <div class="year-num">${year}</div>`;
+      yearBox.appendChild(col);
+    });
+  }
+  const rec=data.records;
+  const recGrid=document.getElementById('ov-records-grid');
+  if(!rec.longest&&!rec.highest&&!rec.fastest){
+    document.getElementById('ov-records-section').classList.add('hidden');return;
+  }
+  function makeRecordCard(label,value,unit,name){
+    if(!name)return;
+    const card=document.createElement('div');card.className='record-card';
+    card.onclick=()=>location.href='/Sendero/'+encodeURIComponent(name);
+    card.innerHTML=`<div class="rl">${label}</div>
+      <div class="rv">${value}<small> ${unit}</small></div>
+      <div class="rn">${name}</div>`;
+    recGrid.appendChild(card);
+  }
+  if(rec.longest) makeRecordCard('Ruta más larga',rec.longest.km.toLocaleString('es-ES',{maximumFractionDigits:1}),'km',rec.longest.name);
+  if(rec.highest) makeRecordCard('Mayor desnivel ↑',rec.highest.ascent_m.toLocaleString('es-ES',{maximumFractionDigits:0}),'m↑',rec.highest.name);
+  if(rec.fastest) makeRecordCard('Vel. media más alta',rec.fastest.avg_speed.toFixed(1),'km/h',rec.fastest.name);
+}
+async function refreshStats(){
+  const btn=document.getElementById('refresh-btn');
+  btn.disabled=true;btn.textContent='↻ Calculando…';
+  try{
+    await fetch('/api/stats/refresh',{method:'POST'});
+    document.getElementById('ov-content').classList.add('hidden');
+    document.getElementById('ov-loading').textContent='Cargando estadísticas…';
+    document.getElementById('ov-loading').classList.remove('hidden');
+    document.getElementById('ov-act-rows').innerHTML='';
+    document.getElementById('ov-year-chart').innerHTML='';
+    document.getElementById('ov-records-grid').innerHTML='';
+    await loadStats();
+  }finally{btn.disabled=false;btn.textContent='↻ Actualizar';}
+}
+
+/* ══ RUTAS ══ */
+const MONTHS_LONG=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MONTHS_SHORT=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+class DatePicker{
+  constructor(wrap,placeholder,onChange){
+    this.onChange=onChange;this.value=null;this.ph=placeholder;
+    const t=new Date().toISOString().slice(0,7).split('-');
+    this.viewY=+t[0];this.viewM=+t[1]-1;
+    wrap.innerHTML=`<button class="dp-btn" type="button">${placeholder}</button>
+      <div class="dp-pop hidden">
+        <div class="dp-head">
+          <button class="dp-nav dp-prev" type="button">‹</button>
+          <span class="dp-title"></span>
+          <button class="dp-nav dp-next" type="button">›</button>
+        </div>
+        <div class="dp-grid"></div>
+        <button class="dp-clear-btn" type="button">Quitar fecha</button>
+      </div>`;
+    this.btn=wrap.querySelector('.dp-btn');this.pop=wrap.querySelector('.dp-pop');
+    this.title=wrap.querySelector('.dp-title');this.grid=wrap.querySelector('.dp-grid');
+    this.btn.onclick=e=>{e.stopPropagation();this.toggle();};
+    wrap.querySelector('.dp-prev').onclick=e=>{e.stopPropagation();this.viewM--;if(this.viewM<0){this.viewM=11;this.viewY--;}this.renderGrid();};
+    wrap.querySelector('.dp-next').onclick=e=>{e.stopPropagation();this.viewM++;if(this.viewM>11){this.viewM=0;this.viewY++;}this.renderGrid();};
+    wrap.querySelector('.dp-clear-btn').onclick=e=>{e.stopPropagation();this.set(null);this.close();};
+    document.addEventListener('click',e=>{if(!wrap.contains(e.target))this.close();});
+    this.renderGrid();
+  }
+  toggle(){const was=this.pop.classList.contains('hidden');this.pop.classList.toggle('hidden');
+    if(was){const r=this.btn.getBoundingClientRect();this.pop.style.top=(r.bottom+6)+'px';this.pop.style.left=r.left+'px';this.renderGrid();}}
+  close(){this.pop.classList.add('hidden');}
+  set(val){
+    this.value=val;
+    if(val){const[y,m,d]=val.split('-');this.btn.textContent=`${+d} ${MONTHS_SHORT[+m-1]} ${y}`;this.btn.classList.add('has-val');}
+    else{this.btn.textContent=this.ph;this.btn.classList.remove('has-val');}
+    this.onChange(val);
+  }
+  renderGrid(){
+    const today=new Date().toISOString().slice(0,10);
+    this.title.textContent=`${MONTHS_LONG[this.viewM]} ${this.viewY}`;
+    const firstDow=new Date(this.viewY,this.viewM,1).getDay();
+    const offset=(firstDow+6)%7;const days=new Date(this.viewY,this.viewM+1,0).getDate();
+    let h=['L','M','X','J','V','S','D'].map(d=>`<div class="dp-dow">${d}</div>`).join('');
+    for(let i=0;i<offset;i++)h+=`<div class="dp-day empty"></div>`;
+    for(let d=1;d<=days;d++){
+      const ymd=`${this.viewY}-${String(this.viewM+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const cls='dp-day'+(ymd===this.value?' sel':'')+(ymd===today?' today':'');
+      h+=`<button class="${cls}" data-ymd="${ymd}" type="button">${d}</button>`;
+    }
+    this.grid.innerHTML=h;
+    this.grid.querySelectorAll('.dp-day[data-ymd]').forEach(b=>{
+      b.onclick=e=>{e.stopPropagation();const[y,m]=b.dataset.ymd.split('-');
+        this.viewY=+y;this.viewM=+m-1;this.set(b.dataset.ymd);this.close();};
+    });
+  }
+}
+
+let dpFrom,dpTo,ovMap=null,ovMarkers=[],ovPts=[];
+let allRoutes=[],activeActs=new Set(ACTIVITIES.map(a=>a.id));
+let sortOrder='desc',viewMode='a';
+let editMode=false,selectedIds=new Set(),visibleRoutes=[];
+let monthDomMap=new Map();
+const FIRST_BATCH=25,BATCH_SIZE=100;
+const ROUTE_CACHE='sendero_routes_v1',FILTER_CACHE='sendero_filters_v1';
+
+function saveRouteCache(){try{sessionStorage.setItem(ROUTE_CACHE,JSON.stringify({ts:Date.now(),routes:allRoutes}));}catch(e){}}
+function loadRouteCache(){
+  try{const raw=sessionStorage.getItem(ROUTE_CACHE);if(!raw)return null;
+    const{ts,routes}=JSON.parse(raw);if(Date.now()-ts>10*60*1000)return null;return routes;}
+  catch(e){return null;}}
+function clearRouteCache(){sessionStorage.removeItem(ROUTE_CACHE);}
+function saveFilterState(){
+  try{sessionStorage.setItem(FILTER_CACHE,JSON.stringify({acts:[...activeActs],from:dpFrom?.value||null,to:dpTo?.value||null,sort:sortOrder,view:viewMode}));}catch(e){}}
+function loadFilterState(){try{const r=sessionStorage.getItem(FILTER_CACHE);return r?JSON.parse(r):null;}catch(e){return null;}}
+
+function renderOverviewMap(routes,append=false){
+  if(!ovMap){
+    ovMap=L.map("overview-map",{zoomControl:true});
+    L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+      {maxZoom:17,attribution:"© OpenTopoMap · OSM"}).addTo(ovMap);
+  }
+  if(!append){ovMarkers.forEach(m=>m.remove());ovMarkers=[];ovPts=[];}
+  routes.forEach(r=>{
+    if(r.start_lat==null||r.start_lon==null)return;
+    const act=activityOf(r.activity_type);
+    const sz=32,html=act?iconSvg(act,sz):genericIconSvg(sz);
+    const icon=L.divIcon({html,iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],className:'ov-marker'});
+    const m=L.marker([r.start_lat,r.start_lon],{icon}).addTo(ovMap)
+      .bindTooltip(r.name,{direction:'top',offset:[0,-sz/2]})
+      .on('click',()=>location.href='/Sendero/'+encodeURIComponent(r.name));
+    ovMarkers.push(m);ovPts.push([r.start_lat,r.start_lon]);
+  });
+  if(!append)fitMap();
+}
+function fitMap(){
+  if(!ovMap)return;
+  if(ovPts.length===1)ovMap.setView(ovPts[0],13);
+  else if(ovPts.length>1)ovMap.fitBounds(L.latLngBounds(ovPts),{padding:[32,32]});
+  else ovMap.setView([40.4,-3.7],6);
+}
+function setView(v){
+  viewMode=v;$("#dash-wrap").className='view-'+v;
+  $("#view-a").classList.toggle("on",v==='a');
+  $("#view-b").classList.toggle("on",v==='b');
+  if(ovMap)setTimeout(()=>{ovMap.invalidateSize();fitMap();},60);
+  saveFilterState();
+}
+function setSort(order){
+  sortOrder=order;
+  $("#sort-desc").classList.toggle("on",order==='desc');
+  $("#sort-asc").classList.toggle("on",order==='asc');
+  saveFilterState();renderList();
+}
+function allSelected(){return activeActs.size===ACTIVITIES.length;}
+function buildPills(){
+  const box=$("#act-pills");box.innerHTML="";
+  ACTIVITIES.forEach(a=>{
+    const p=document.createElement("button");
+    p.className="pill"+(activeActs.has(a.id)?" on":"");
+    if(activeActs.has(a.id))p.style.cssText=`background:${a.color};border-color:${a.color}`;
+    p.textContent=a.label;
+    p.onclick=()=>{if(activeActs.has(a.id))activeActs.delete(a.id);else activeActs.add(a.id);buildPills();saveFilterState();renderList();};
+    box.appendChild(p);
+  });
+}
+function clearFilters(){activeActs=new Set(ACTIVITIES.map(a=>a.id));dpFrom.set(null);dpTo.set(null);buildPills();renderList();}
+function makeCard(r){
+  const act=activityOf(r.activity_type);const sel=selectedIds.has(r.id);
+  const c=document.createElement("div");
+  c.className="card"+(editMode?" edit-mode":"")+(sel?" selected":"");
+  c.style.borderLeftColor=act?act.color:"var(--line)";
+  if(editMode){
+    c.onclick=()=>{
+      if(selectedIds.has(r.id))selectedIds.delete(r.id);else selectedIds.add(r.id);
+      c.classList.toggle("selected",selectedIds.has(r.id));
+      c.querySelector(".card-check").textContent=selectedIds.has(r.id)?"✓":"";
+      updateSelCount();
+    };
+  }else{c.onclick=()=>location.href='/Sendero/'+encodeURIComponent(r.name);}
+  c.innerHTML=`${editMode?`<div class="card-check">${sel?"✓":""}</div>`:(act?`<div class="card-act">${iconSvg(act,26)}</div>`:"")}
+    <h3>${esc(r.name)}</h3><div class="date">${fmtDate(r.started_at)}</div>`;
+  return c;
+}
+function toggleEdit(){
+  editMode=!editMode;selectedIds.clear();
+  $("#edit-toggle-btn").classList.toggle("on",editMode);
+  $("#edit-bar").classList.toggle("on",editMode);
+  updateSelCount();renderList();
+}
+function updateSelCount(){
+  const n=selectedIds.size;
+  $("#sel-count").textContent=n;$("#rescan-count").textContent=n;
+  $("#delete-sel-btn").style.opacity=n?"1":"0.5";
+  $("#rescan-sel-btn").style.opacity=n?"1":"0.5";
+}
+function selectAllVisible(){visibleRoutes.forEach(r=>selectedIds.add(r.id));updateSelCount();renderList();}
+function deselectAll(){selectedIds.clear();updateSelCount();renderList();}
+async function deleteSelected(){
+  if(!selectedIds.size)return;
+  const n=selectedIds.size;
+  if(!confirm(`¿Eliminar ${n} ruta${n!==1?"s":""}? Esta acción no se puede deshacer.`))return;
+  const ids=[...selectedIds];const total=ids.length;let done=0,errors=0;
+  const loader=document.createElement("div");loader.className="upload-loader";
+  loader.innerHTML=`<div class="upload-loader-title">Eliminando rutas <span class="upload-loader-count" id="del-count">0 / ${total}</span></div>
+    <div class="upload-bar-bg"><div class="upload-bar-fill del" id="del-bar"></div></div>
+    <div class="upload-filename" id="del-status">Iniciando…</div>`;
+  document.body.appendChild(loader);
+  function updProg(){const pct=Math.round((done/total)*100);
+    document.getElementById("del-bar").style.width=`${pct}%`;
+    document.getElementById("del-count").textContent=`${done} / ${total}`;
+    document.getElementById("del-status").textContent=`${pct}% completado`;}
+  const CONCURRENCY=4;let idx=0;
+  async function worker(){while(idx<ids.length){const id=ids[idx++];
+    try{const res=await fetch(`/api/routes/${id}`,{method:"DELETE"});if(!res.ok)errors++;}catch{errors++;}
+    done++;updProg();}}
+  await Promise.all(Array.from({length:Math.min(CONCURRENCY,total)},worker));
+  document.getElementById("del-bar").style.width="100%";
+  document.getElementById("del-status").textContent=errors?`Completado con ${errors} error(es)`:"Completado";
+  selectedIds.clear();clearRouteCache();
+  const reload=await(await fetch(`/api/routes?limit=9999&offset=0`)).json();
+  allRoutes=reload.items;saveRouteCache();toggleEdit();
+  setTimeout(()=>loader.remove(),1800);
+  toast(errors?`${done-errors} eliminada(s), ${errors} error(es)`:`${total} ruta${total!==1?"s":""} eliminada${total!==1?"s":""}`);
+}
+async function rescanSelected(){
+  if(!selectedIds.size)return;
+  const ids=[...selectedIds];const total=ids.length;let ok=0,errors=[];
+  const loader=document.createElement("div");loader.className="upload-loader";
+  loader.innerHTML=`<div class="upload-loader-title">Re-escaneando rutas <span class="upload-loader-count" id="rs-count">0 / ${total}</span></div>
+    <div class="upload-bar-bg"><div class="upload-bar-fill" id="rs-bar"></div></div>
+    <div class="upload-filename" id="rs-name">Iniciando…</div>`;
+  document.body.appendChild(loader);
+  for(let i=0;i<ids.length;i++){
+    const id=ids[i];const route=allRoutes.find(r=>r.id===id);
+    document.getElementById("rs-count").textContent=`${i+1} / ${total}`;
+    document.getElementById("rs-bar").style.width=`${Math.round((i/total)*100)}%`;
+    document.getElementById("rs-name").textContent=route?route.name:String(id);
+    try{const res=await fetch(`/api/routes/${id}/rescan`,{method:"POST"});
+      if(res.ok){const updated=await res.json();
+        const idx=allRoutes.findIndex(r=>r.id===id);
+        if(idx!==-1)allRoutes[idx]={...allRoutes[idx],...updated};ok++;}
+      else{const j=await res.json().catch(()=>({}));errors.push(`${route?route.name:id}: ${j.error||"Error"}`);}
+    }catch{errors.push(`${route?route.name:id}: Error de red`);}
+  }
+  document.getElementById("rs-bar").style.width="100%";
+  document.getElementById("rs-count").textContent=`${ok} / ${total}`;
+  document.getElementById("rs-name").textContent=errors.length?`${errors.length} error(es)`:"Completado";
+  selectedIds.clear();clearRouteCache();saveRouteCache();toggleEdit();renderList();
+  setTimeout(()=>loader.remove(),1800);
+  if(errors.length)toast(errors[0]);else toast(`${ok} ruta${ok!==1?"s":""} re-escaneada${ok!==1?"s":""}`);
+}
+function passesFilter(r){
+  const from=dpFrom?.value,to=dpTo?.value;
+  if(!allSelected()&&!activeActs.has(r.activity_type))return false;
+  if(from||to){const d=r.started_at?r.started_at.slice(0,10):null;
+    if(!d)return false;if(from&&d<from)return false;if(to&&d>to)return false;}
+  return true;
+}
+function monthLabel(key){
+  if(key==="sin-fecha")return"Sin fecha";
+  const[y,m]=key.split('-');return`${MONTHS_LONG[+m-1]} ${y}`;
+}
+function createMonthSection(key){
+  const s=document.createElement("div");s.className="month-group";s.dataset.key=key;
+  let selBtn='';
+  if(editMode){
+    const mRoutes=visibleRoutes.filter(r=>(r.started_at?r.started_at.slice(0,7):"sin-fecha")===key);
+    const allSel=mRoutes.length>0&&mRoutes.every(r=>selectedIds.has(r.id));
+    selBtn=`<button class="month-sel-btn${allSel?' all-sel':''}" onclick="selectMonth('${key}')">`+(allSel?'✓ Mes seleccionado':'Selec. mes')+`</button>`;
+  }
+  s.innerHTML=`<div class="month-label">${monthLabel(key)}<span class="month-count"></span>${selBtn}</div><div class="grid"></div>`;
+  return s;
+}
+function selectMonth(key){
+  const mr=visibleRoutes.filter(r=>(r.started_at?r.started_at.slice(0,7):"sin-fecha")===key);
+  const allSel=mr.length>0&&mr.every(r=>selectedIds.has(r.id));
+  if(allSel)mr.forEach(r=>selectedIds.delete(r.id));else mr.forEach(r=>selectedIds.add(r.id));
+  updateSelCount();renderList();
+}
+function renderList(){
+  monthDomMap.clear();const box=$("#routes");box.innerHTML="";
+  const filtered=visibleRoutes=[...allRoutes].filter(passesFilter).sort((a,b)=>{
+    const da=a.started_at||"",db=b.started_at||"";
+    return sortOrder==='asc'?(da>db?1:da<db?-1:0):(da<db?1:da>db?-1:0);
+  });
+  updateCountDisplay(allRoutes.length,filtered.length);
+  $("#no-routes").classList.toggle("hidden",filtered.length>0);
+  const groups=new Map();
+  filtered.forEach(r=>{const key=r.started_at?r.started_at.slice(0,7):"sin-fecha";
+    if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);});
+  groups.forEach((routes,key)=>{
+    const section=createMonthSection(key);const grid=section.querySelector(".grid");
+    routes.forEach(r=>grid.appendChild(makeCard(r)));
+    section.querySelector(".month-count").textContent=`${routes.length} ruta${routes.length!==1?'s':''}`;
+    box.appendChild(section);monthDomMap.set(key,{section,grid,count:routes.length});
+  });
+  renderOverviewMap(filtered,false);
+}
+function appendBatchToDOM(routes){
+  routes.forEach(r=>{
+    if(!passesFilter(r))return;
+    visibleRoutes.push(r);
+    const key=r.started_at?r.started_at.slice(0,7):"sin-fecha";
+    if(!monthDomMap.has(key)){const section=createMonthSection(key);
+      $("#routes").appendChild(section);monthDomMap.set(key,{section,grid:section.querySelector(".grid"),count:0});}
+    const grp=monthDomMap.get(key);grp.grid.appendChild(makeCard(r));grp.count++;
+    grp.section.querySelector(".month-count").textContent=`${grp.count} ruta${grp.count!==1?'s':''}`;
+  });
+  $("#no-routes").classList.toggle("hidden",visibleRoutes.length>0);
+}
+function updateCountDisplay(loaded,shown){
+  if(!loaded){$("#count").textContent="";return;}
+  $("#count").textContent=shown<loaded?`${shown} de ${loaded} ruta(s)`:`${loaded} ruta(s)`;
+}
+async function fetchAllInBackground(knownTotal){
+  const bgLoader=document.createElement("div");bgLoader.className="upload-loader";
+  bgLoader.innerHTML=`<div class="upload-loader-title">Cargando rutas <span class="upload-loader-count" id="bg-count">${allRoutes.length} / ${knownTotal}</span></div>
+    <div class="upload-bar-bg"><div class="upload-bar-fill" id="bg-bar" style="width:${Math.round(allRoutes.length/knownTotal*100)}%"></div></div>
+    <div class="upload-filename" id="bg-status">Cargando en segundo plano…</div>`;
+  document.body.appendChild(bgLoader);
+  let loaded=allRoutes.length;
+  while(loaded<knownTotal){
+    const batch=await(await fetch(`/api/routes?limit=${BATCH_SIZE}&offset=${loaded}`)).json();
+    if(!batch.items.length)break;
+    loaded+=batch.items.length;allRoutes.push(...batch.items);
+    appendBatchToDOM(batch.items);
+    renderOverviewMap(batch.items.filter(r=>r.start_lat!=null),true);
+    const pct=Math.round(loaded/knownTotal*100);
+    document.getElementById("bg-bar").style.width=`${pct}%`;
+    document.getElementById("bg-count").textContent=`${loaded} / ${knownTotal}`;
+    document.getElementById("bg-status").textContent=`${pct}% cargado`;
+  }
+  document.getElementById("bg-bar").style.width="100%";
+  document.getElementById("bg-status").textContent="Listo";
+  updateCountDisplay(allRoutes.length,visibleRoutes.length);
+  saveRouteCache();setTimeout(()=>bgLoader.remove(),1500);
+}
+async function silentRefresh(){
+  try{const check=await(await fetch(`/api/routes?limit=1&offset=0`)).json();
+    if(check.total!==allRoutes.length){clearRouteCache();
+      const all=await(await fetch(`/api/routes?limit=9999&offset=0`)).json();
+      allRoutes=all.items;renderList();saveRouteCache();}}catch(e){}
+}
+async function loadList(){
+  const savedF=loadFilterState();
+  if(savedF){if(savedF.acts)activeActs=new Set(savedF.acts);if(savedF.sort)sortOrder=savedF.sort;if(savedF.view)viewMode=savedF.view;}
+  dpFrom=new DatePicker($("#dp-from"),"Desde",()=>{saveFilterState();renderList();});
+  dpTo  =new DatePicker($("#dp-to"),  "Hasta",()=>{saveFilterState();renderList();});
+  setSort(sortOrder);setView(viewMode);
+  if(savedF?.from)dpFrom.set(savedF.from);if(savedF?.to)dpTo.set(savedF.to);
+  if(sessionStorage.getItem('sendero_cache_dirty')){sessionStorage.removeItem('sendero_cache_dirty');clearRouteCache();}
+  const cached=loadRouteCache();
+  if(cached){allRoutes=cached;buildPills();renderList();silentRefresh();return;}
+  const first=await(await fetch(`/api/routes?limit=${FIRST_BATCH}&offset=0`)).json();
+  allRoutes=first.items;buildPills();renderList();
+  if(first.total<=FIRST_BATCH){saveRouteCache();return;}
+  await fetchAllInBackground(first.total);
+}
+async function uploadFiles(files){
+  const total=files.length;let ok=0;const errors=[];
+  const loader=document.createElement("div");loader.className="upload-loader";
+  loader.innerHTML=`<div class="upload-loader-title">Subiendo rutas <span class="upload-loader-count" id="up-count">0 / ${total}</span></div>
+    <div class="upload-bar-bg"><div class="upload-bar-fill" id="up-bar"></div></div>
+    <div class="upload-filename" id="up-name"></div>`;
+  document.body.appendChild(loader);
+  for(let i=0;i<total;i++){
+    const f=files[i];
+    document.getElementById("up-count").textContent=`${i+1} / ${total}`;
+    document.getElementById("up-bar").style.width=`${Math.round((i/total)*100)}%`;
+    document.getElementById("up-name").textContent=f.name;
+    const fd=new FormData();fd.append("gpx",f);
+    try{const res=await fetch("/api/routes",{method:"POST",body:fd});
+      if(res.ok)ok++;else{const j=await res.json();errors.push(`${f.name}: ${j.error||"Error"}`);}}
+    catch{errors.push(`${f.name}: Error de red`);}
+  }
+  document.getElementById("up-bar").style.width="100%";
+  document.getElementById("up-count").textContent=`${ok} / ${total}`;
+  document.getElementById("up-name").textContent=errors.length?`${errors.length} error(es)`:"Completado";
+  clearRouteCache();await loadList();
+  setTimeout(()=>loader.remove(),1800);
+  if(errors.length)toast(errors[0]);else toast(`${ok} ruta${ok!==1?"s":""} añadida${ok!==1?"s":""}`);
+}
+
+/* ══ PLANES ══ */
+let planMap=null,planMarkers={},allPlans=[];
+
+function initPlanMap(){
+  planMap=L.map('plan-map',{zoomControl:true,scrollWheelZoom:false});
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    {attribution:'OpenTopoMap',maxZoom:17}).addTo(planMap);
+  planMap.setView([40.4,-3.7],6);
+}
+function addMarkersToMap(plans){
+  plans.forEach(p=>{
+    if(planMarkers[p.id]||!p.start_lat)return;
+    const a=activityOf(p.activity_type);
+    const icon=L.divIcon({html:a?iconSvg(a,26):genericIconSvg(26),className:'',iconSize:[26,26],iconAnchor:[13,13]});
+    const mk=L.marker([p.start_lat,p.start_lon],{icon}).addTo(planMap)
+      .bindTooltip(esc(p.name),{permanent:false,direction:'top'})
+      .on('click',()=>location.href='/Plan/'+encodeURIComponent(p.name));
+    planMarkers[p.id]=mk;
+  });
+  const pts=Object.values(planMarkers).map(m=>m.getLatLng());
+  if(pts.length)try{planMap.fitBounds(L.latLngBounds(pts).pad(0.2));}catch(e){}
+}
+async function loadPlans(){
+  const res=await fetch('/api/planned');const data=await res.json();
+  allPlans=data.items||[];renderPlans(allPlans);addMarkersToMap(allPlans);
+}
+function renderPlans(plans){
+  const grid=$('#plan-grid'),empty=$('#no-plans');
+  grid.innerHTML='';
+  if(!plans.length){empty.classList.remove('hidden');return;}
+  empty.classList.add('hidden');
+  plans.forEach(p=>grid.appendChild(makePlanCard(p)));
+}
+function makePlanCard(p){
+  const a=activityOf(p.activity_type);
+  const div=document.createElement('div');div.className='plan-card';
+  div.style.borderLeftColor=a?a.color:'#2c4435';
+  div.onclick=()=>location.href='/Plan/'+encodeURIComponent(p.name);
+  div.innerHTML=`<div class="plan-act">${a?iconSvg(a,26):genericIconSvg(26)}</div>
+    <h3>${esc(p.name)}</h3><div class="date">${fmtDate(p.created_at)}</div>
+    <span class="source-badge source-gpx">GPX</span>
+    <div class="plan-metrics">
+      <div class="pm"><span class="v">${fmtKm(p.distance_m)}</span><span class="l">km</span></div>
+      ${p.ascent_m?`<div class="pm"><span class="v">${Math.round(p.ascent_m)}<small> m</small></span><span class="l">↑ Desnivel</span></div>`:''}
+    </div>`;
+  return div;
+}
+function openAddModal(){$('#add-modal').classList.remove('hidden');}
+function closeAddModal(){
+  $('#add-modal').classList.add('hidden');
+  $('#drop-chosen').classList.add('hidden');$('#drop-chosen').textContent='';$('#plan-file').value='';
+}
+function showLoader(title,msg,pct){
+  $('#plan-loader').classList.remove('hidden');
+  $('#loader-title').textContent=title;$('#loader-msg').textContent=msg;
+  $('#loader-pct').textContent=pct!==null?pct+'%':'';$('#loader-bar').style.width=(pct??0)+'%';
+}
+function hideLoader(){$('#plan-loader').classList.add('hidden');}
+async function uploadPlanGpx(){
+  const f=$('#plan-file').files[0];if(!f){toast('Elige un archivo GPX');return;}
+  closeAddModal();showLoader('Añadiendo ruta…',f.name,30);
+  const fd=new FormData();fd.append('gpx',f);
+  try{const res=await fetch('/api/planned',{method:'POST',body:fd});
+    const data=await res.json();
+    if(!res.ok){hideLoader();toast(data.error||'Error al subir el archivo');return;}
+    showLoader('Listo',data.name,100);
+    setTimeout(()=>{hideLoader();location.href='/Plan/'+encodeURIComponent(data.name);},600);
+  }catch(e){hideLoader();toast('Error de red');}
+}
+
+/* ══ EVENTOS ══ */
+$("#gpx-input").addEventListener("change",async e=>{
+  const files=[...e.target.files];e.target.value="";
+  if(!files.length)return;await uploadFiles(files);
+});
+const dropGlobal=$("#drop-global");let dragDepth=0;
+window.addEventListener("dragenter",e=>{
+  if(!e.dataTransfer?.types?.includes("Files")||_curSec!=='rutas')return;
+  e.preventDefault();if(++dragDepth===1)dropGlobal.classList.add("visible");
+});
+window.addEventListener("dragleave",()=>{
+  if(--dragDepth<=0){dragDepth=0;dropGlobal.classList.remove("visible","over");}
+});
+window.addEventListener("dragover",e=>{
+  if(!e.dataTransfer?.types?.includes("Files")||_curSec!=='rutas')return;
+  e.preventDefault();dropGlobal.classList.add("over");
+});
+window.addEventListener("drop",async e=>{
+  e.preventDefault();dragDepth=0;dropGlobal.classList.remove("visible","over");
+  if(_curSec!=='rutas')return;
+  const files=[...(e.dataTransfer?.files||[])].filter(f=>/\.(gpx|fit)$/i.test(f.name));
+  if(files.length)await uploadFiles(files);
+  else if(e.dataTransfer?.files?.length)toast("Solo se aceptan archivos GPX o FIT");
+});
+$('#plan-file').addEventListener('change',()=>{
+  const f=$('#plan-file').files[0];
+  if(f){$('#drop-chosen').textContent=f.name;$('#drop-chosen').classList.remove('hidden');}
+});
+['dragover','dragleave','drop'].forEach(ev=>{
+  $('#drop-plan').addEventListener(ev,e=>{
+    e.preventDefault();
+    if(ev==='dragover')$('#drop-plan').classList.add('over');
+    else $('#drop-plan').classList.remove('over');
+    if(ev==='drop'&&e.dataTransfer.files[0]){
+      const dt=new DataTransfer();dt.items.add(e.dataTransfer.files[0]);
+      $('#plan-file').files=dt.files;
+      $('#drop-chosen').textContent=e.dataTransfer.files[0].name;
+      $('#drop-chosen').classList.remove('hidden');
+    }
+  });
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAddModal();});
+$('#add-modal').addEventListener('click',e=>{if(e.target===$('#add-modal'))closeAddModal();});
+
+/* ══ INIT ══ */
+_showSec(_curSec, false);
+
+{% endblock %}

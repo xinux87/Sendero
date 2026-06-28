@@ -44,19 +44,41 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
 .nav-link:hover{border-color:var(--muted);color:var(--ink)}
 .nav-link.on{background:var(--panel-2);border-color:var(--line);color:var(--ink)}
 @media(max-width:560px){.header-nav{display:none}}
-/* ── panel de ajustes ── */
-.cfg-overlay{position:fixed;inset:0;background:rgba(8,14,11,.82);
+
+/* ── modal de ajustes a pantalla completa ── */
+.cfg-overlay{position:fixed;inset:0;background:rgba(8,14,11,.88);
   display:flex;align-items:center;justify-content:center;
-  padding:16px;z-index:9998}
+  padding:20px;z-index:9998}
 .cfg-overlay.hidden{display:none}
-.cfg-panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;
-  width:100%;max-width:480px;padding:22px;overflow-y:auto;max-height:90vh}
-.cfg-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
-.cfg-section{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--line)}
-.cfg-section:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0}
-.cfg-section-title{font-family:'Saira Condensed',sans-serif;font-size:14px;font-weight:600;
-  text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px}
-.cfg-field{margin-bottom:10px}
+.cfg-fullscreen{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  width:100%;max-width:860px;height:min(640px,calc(100vh - 40px));
+  display:flex;overflow:hidden}
+
+/* sidebar */
+.cfg-sidebar{width:176px;flex-shrink:0;background:var(--panel-2);
+  border-right:1px solid var(--line);display:flex;flex-direction:column}
+.cfg-sidebar-head{padding:20px 16px 14px;
+  font-family:'Saira Condensed',sans-serif;font-size:22px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.04em;
+  border-bottom:1px solid var(--line);color:var(--ink)}
+.cfg-nav{padding:6px 0;flex:1}
+.cfg-nav-item{display:block;width:100%;text-align:left;padding:10px 16px;
+  background:transparent;border:none;color:var(--muted);font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .12s;letter-spacing:.03em;border-radius:0}
+.cfg-nav-item:hover{color:var(--ink);background:rgba(255,255,255,.04)}
+.cfg-nav-item.on{color:var(--ink);background:rgba(255,255,255,.06);
+  box-shadow:inset 3px 0 0 var(--pr-yellow)}
+
+/* área de contenido */
+.cfg-body{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.cfg-topbar{display:flex;justify-content:space-between;align-items:center;
+  padding:16px 22px;border-bottom:1px solid var(--line);flex-shrink:0}
+.cfg-topbar h2{font-size:24px}
+.cfg-sec-content{flex:1;overflow-y:auto;padding:22px 24px}
+.cfg-sec-content.hidden{display:none!important}
+
+/* campos de formulario */
+.cfg-field{margin-bottom:12px}
 .cfg-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
   font-weight:600;display:block;margin-bottom:4px}
 .cfg-input{width:100%;background:var(--bg);color:var(--ink);
@@ -68,6 +90,17 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
   font-family:var(--mono);font-size:11px;resize:vertical;min-height:56px;max-height:110px}
 .cfg-textarea:focus{outline:none;border-color:var(--pr-yellow)}
 .cfg-hint{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.4}
+
+/* tabla de ingesta */
+.gpx-types-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px}
+.gpx-types-table th{text-align:left;font-size:11px;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--muted);font-weight:600;
+  padding:0 8px 8px 0;border-bottom:1px solid var(--line)}
+.gpx-types-table td{padding:5px 8px 5px 0;vertical-align:middle;
+  border-bottom:1px solid rgba(44,68,53,.5)}
+.gpx-types-table td:last-child{width:40px;text-align:center;padding-right:0}
+.gpx-types-table .cfg-input{padding:5px 8px}
+
 .wrap{max-width:1040px;margin:0 auto;padding:22px}
 .bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .btn{background:var(--gr-red);color:#fff;border:0;padding:10px 16px;border-radius:7px;
@@ -115,48 +148,85 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
 
 <div id="toast" class="toast"></div>
 
-<!-- ── MODAL DE AJUSTES (disponible en todas las páginas) ────────────────── -->
+<!-- ── MODAL DE AJUSTES A PANTALLA COMPLETA ────────────────────────────────── -->
 <div id="cfg-overlay" class="cfg-overlay hidden">
-  <div class="cfg-panel">
-    <div class="cfg-head">
-      <h2 style="font-family:'Saira Condensed';font-size:26px">Ajustes</h2>
-      <button class="btn ghost sm" onclick="closeSettings()">Cerrar</button>
+  <div class="cfg-fullscreen">
+
+    <!-- sidebar de navegación -->
+    <div class="cfg-sidebar">
+      <div class="cfg-sidebar-head">Ajustes</div>
+      <nav class="cfg-nav">
+        <button id="cfg-nav-immich" class="cfg-nav-item on"
+                onclick="cfgSection('immich',this)">Immich</button>
+        <button id="cfg-nav-ingesta" class="cfg-nav-item"
+                onclick="cfgSection('ingesta',this)">Ingesta</button>
+      </nav>
     </div>
 
-    <div class="cfg-section">
-      <div class="cfg-section-title">Immich</div>
-      <div class="cfg-field">
-        <label class="cfg-label" for="cfg-immich-url">URL del servidor</label>
-        <input id="cfg-immich-url" class="cfg-input" type="url"
-               placeholder="http://192.168.1.x:2283">
+    <!-- área de contenido -->
+    <div class="cfg-body">
+      <div class="cfg-topbar">
+        <h2 id="cfg-topbar-title">Immich</h2>
+        <button class="btn ghost sm" onclick="closeSettings()">✕ Cerrar</button>
       </div>
-      <div class="cfg-field">
-        <label class="cfg-label" for="cfg-immich-key">API Key</label>
-        <div style="display:flex;gap:6px">
-          <input id="cfg-immich-key" class="cfg-input" type="password"
-                 placeholder="tu_api_key" style="flex:1">
-          <button class="btn ghost sm" style="flex-shrink:0;padding:0 10px"
-            onclick="const i=$('#cfg-immich-key');i.type=i.type==='password'?'text':'password'">👁</button>
+
+      <!-- sección Immich -->
+      <div id="cfg-sec-immich" class="cfg-sec-content">
+        <div class="cfg-field">
+          <label class="cfg-label" for="cfg-immich-url">URL del servidor</label>
+          <input id="cfg-immich-url" class="cfg-input" type="url"
+                 placeholder="http://192.168.1.x:2283">
+        </div>
+        <div class="cfg-field">
+          <label class="cfg-label" for="cfg-immich-key">API Key</label>
+          <div style="display:flex;gap:6px">
+            <input id="cfg-immich-key" class="cfg-input" type="password"
+                   placeholder="tu_api_key" style="flex:1">
+            <button class="btn ghost sm" style="flex-shrink:0;padding:0 10px"
+              onclick="const i=$('#cfg-immich-key');i.type=i.type==='password'?'text':'password'">👁</button>
+          </div>
+        </div>
+        <div class="cfg-field">
+          <label class="cfg-label" for="cfg-immich-margin">Margen temporal (minutos)</label>
+          <input id="cfg-immich-margin" class="cfg-input" type="number"
+                 min="0" max="1440" style="width:110px">
+          <div class="cfg-hint">Minutos extra antes y después del track para buscar fotos en Immich.</div>
+        </div>
+        <div class="cfg-field" style="margin-bottom:24px">
+          <label class="cfg-label" for="cfg-immich-dist">Distancia de autoselección (metros)</label>
+          <input id="cfg-immich-dist" class="cfg-input" type="number"
+                 min="0" max="10000" style="width:110px">
+          <div class="cfg-hint">Las fotos con GPS a menos de esta distancia del track se marcan automáticamente al buscar en Immich.</div>
+        </div>
+        <button class="btn" onclick="saveSettings()">Guardar ajustes</button>
+      </div>
+
+      <!-- sección Ingesta -->
+      <div id="cfg-sec-ingesta" class="cfg-sec-content hidden">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.6">
+          Añade palabras clave que el sistema buscará tanto en el <strong style="color:var(--ink)">nombre de la ruta</strong>
+          como en el campo <code style="font-size:11px;background:var(--bg);padding:1px 6px;border-radius:4px;border:1px solid var(--line)">&lt;type&gt;</code>
+          del GPX para clasificarla automáticamente.
+          Las entradas predefinidas (hiking, cycling, running…) siguen activas.
+        </p>
+        <table class="gpx-types-table">
+          <thead>
+            <tr>
+              <th>Tipo / keyword en el GPX</th>
+              <th style="width:160px">Actividad</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="gpx-types-tbody"></tbody>
+        </table>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn ghost sm" onclick="addGpxTypeRow()">+ Añadir fila</button>
+          <button class="btn sm" onclick="saveGpxTypes()">Guardar mapeos</button>
         </div>
       </div>
-      <div class="cfg-field">
-        <label class="cfg-label" for="cfg-immich-margin">Margen temporal (minutos)</label>
-        <input id="cfg-immich-margin" class="cfg-input" type="number"
-               min="0" max="1440" style="width:110px">
-        <div class="cfg-hint">Minutos extra antes y después del track para buscar fotos en Immich.</div>
-      </div>
-      <div class="cfg-field">
-        <label class="cfg-label" for="cfg-immich-dist">Distancia de autoselección (metros)</label>
-        <input id="cfg-immich-dist" class="cfg-input" type="number"
-               min="0" max="10000" style="width:110px">
-        <div class="cfg-hint">Las fotos con GPS a menos de esta distancia del track se marcan automáticamente al buscar en Immich.</div>
-      </div>
-    </div>
 
-    <button class="btn" style="width:100%;margin-top:6px" onclick="saveSettings()">
-      Guardar ajustes
-    </button>
-  </div>
+    </div><!-- /cfg-body -->
+  </div><!-- /cfg-fullscreen -->
 </div>
 
 <script>
@@ -166,6 +236,7 @@ document.addEventListener('click', e => {
   const link = e.target.closest('a.nav-link');
   if (!link || link.classList.contains('on')) return;
   e.preventDefault();
+  if (window._spaNavTo) { window._spaNavTo(link.getAttribute('href')); return; }
   const href = link.href;
   document.body.style.transition = 'opacity .1s ease';
   document.body.style.opacity = '0';
@@ -181,6 +252,9 @@ function fmtDate(iso){if(!iso)return"Sin fecha";const d=new Date(iso);
 function esc(s){return(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
 
 /* ── ajustes ─────────────────────────────────────────────────────────────── */
+const _CFG_ACTIVITIES=['senderismo','bicicleta','caminata','correr','esqui','otros'];
+let _gpxTypesCustom={};
+
 async function openSettings(){
   try{
     const r=await fetch('/api/settings');
@@ -190,9 +264,25 @@ async function openSettings(){
     $('#cfg-immich-margin').value = c.IMMICH_MARGIN_MIN || '180';
     $('#cfg-immich-dist').value   = c.IMMICH_DIST_M     || '100';
   }catch(e){}
+  try{
+    const r=await fetch('/api/settings/gpx-types');
+    _gpxTypesCustom=await r.json();
+  }catch(e){_gpxTypesCustom={};}
+  renderGpxTypesTable();
+  cfgSection('immich',$('#cfg-nav-immich'));
   $('#cfg-overlay').classList.remove('hidden');
 }
+
 function closeSettings(){ $('#cfg-overlay').classList.add('hidden'); }
+
+function cfgSection(name,btn){
+  document.querySelectorAll('.cfg-nav-item').forEach(b=>b.classList.remove('on'));
+  document.querySelectorAll('.cfg-sec-content').forEach(s=>s.classList.add('hidden'));
+  btn.classList.add('on');
+  $(`#cfg-sec-${name}`).classList.remove('hidden');
+  $('#cfg-topbar-title').textContent=btn.textContent.trim();
+}
+
 async function saveSettings(){
   const res=await fetch('/api/settings',{
     method:'POST',
@@ -207,6 +297,51 @@ async function saveSettings(){
   if(res.ok){ closeSettings(); toast('Ajustes guardados'); }
   else toast('Error al guardar los ajustes');
 }
+
+/* ── ingesta ─────────────────────────────────────────────────────────────── */
+function _actOpts(sel){
+  return _CFG_ACTIVITIES.map(a=>`<option value="${a}"${a===sel?' selected':''}>${a}</option>`).join('');
+}
+
+function renderGpxTypesTable(){
+  const tbody=$('#gpx-types-tbody');
+  tbody.innerHTML='';
+  for(const[k,v] of Object.entries(_gpxTypesCustom)){
+    tbody.appendChild(_gpxTypeRow(k,v));
+  }
+}
+
+function _gpxTypeRow(key,val){
+  key=key||''; val=val||'senderismo';
+  const tr=document.createElement('tr');
+  tr.innerHTML=
+    `<td><input class="cfg-input gpx-type-key" value="${esc(key)}" placeholder="ej: trail biking" style="min-width:180px"></td>`+
+    `<td><select class="cfg-input gpx-type-val" style="width:150px">${_actOpts(val)}</select></td>`+
+    `<td><button class="btn ghost sm" style="padding:4px 9px;color:var(--gr-red);border-color:var(--gr-red)" `+
+    `onclick="this.closest('tr').remove()">✕</button></td>`;
+  return tr;
+}
+
+function addGpxTypeRow(){
+  $('#gpx-types-tbody').appendChild(_gpxTypeRow('','senderismo'));
+}
+
+async function saveGpxTypes(){
+  const map={};
+  for(const tr of document.querySelectorAll('#gpx-types-tbody tr')){
+    const k=tr.querySelector('.gpx-type-key').value.trim().toLowerCase();
+    const v=tr.querySelector('.gpx-type-val').value;
+    if(k) map[k]=v;
+  }
+  const res=await fetch('/api/settings/gpx-types',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(map),
+  });
+  if(res.ok){_gpxTypesCustom=map;toast('Mapeos guardados');}
+  else toast('Error al guardar los mapeos');
+}
+
 document.addEventListener('keydown', e=>{
   if(e.key==='Escape' && !$('#cfg-overlay').classList.contains('hidden')) closeSettings();
 });
