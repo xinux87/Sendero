@@ -2,8 +2,8 @@
 {% block title %}Sendero{% endblock %}
 
 {% block head_libs %}
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 {% endblock %}
 
 {% block header_nav %}
@@ -95,9 +95,11 @@
   background:transparent;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s;align-self:flex-end}
 .filter-clear:hover{border-color:var(--gr-red);color:var(--gr-red)}
 #overview-map{height:340px;border-radius:11px;border:1px solid var(--line);margin-bottom:18px;overflow:hidden}
-.leaflet-container{background:var(--bg)}
-.leaflet-control-zoom a{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
-.leaflet-control-zoom a:hover{background:var(--panel-2)!important}
+#plan-map{overflow:hidden}
+.maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;padding:8px 12px;font-family:inherit;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.maplibregl-popup-tip{border-top-color:var(--panel);border-bottom-color:var(--panel)}
+.maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
+.maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important}
 .ov-marker{cursor:pointer;filter:drop-shadow(0 2px 4px #00000080)}
 .sort-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .sort-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
@@ -394,8 +396,8 @@ function _afterShow(name) {
     if (name === 'planes')    { initPlanMap(); loadPlans(); }
   }
   const mapDelay = _spaReady ? _ANIM_OUT + 20 : 20;
-  if (name === 'rutas'  && ovMap)   setTimeout(() => { ovMap.invalidateSize(); fitMap(); }, mapDelay);
-  if (name === 'planes' && planMap) setTimeout(() => planMap.invalidateSize(), mapDelay);
+  if (name === 'rutas'  && ovMap)   setTimeout(() => { ovMap.resize(); fitMap(); }, mapDelay);
+  if (name === 'planes' && planMap) setTimeout(() => planMap.resize(), mapDelay);
 }
 
 function _showSec(name, push=true) {
@@ -651,7 +653,7 @@ class DatePicker{
   }
 }
 
-let dpFrom,dpTo,ovMap=null,ovMarkers=[],ovPts=[];
+let dpFrom,dpTo,ovMap=null,ovMapLoaded=false,ovRoutes=[],_ovFitTimer=null,_ovUserMoved=false;
 let allRoutes=[],activeActs=new Set(ACTIVITIES.map(a=>a.id));
 let sortOrder='desc',viewMode='a';
 let editMode=false,selectedIds=new Set(),visibleRoutes=[];
@@ -669,36 +671,169 @@ function saveFilterState(){
   try{sessionStorage.setItem(FILTER_CACHE,JSON.stringify({acts:[...activeActs],from:dpFrom?.value||null,to:dpTo?.value||null,sort:sortOrder,view:viewMode}));}catch(e){}}
 function loadFilterState(){try{const r=sessionStorage.getItem(FILTER_CACHE);return r?JSON.parse(r):null;}catch(e){return null;}}
 
+const OV_TILES={
+  'Topográfico':['https://a.tile.opentopomap.org/{z}/{x}/{y}.png','https://b.tile.opentopomap.org/{z}/{x}/{y}.png','https://c.tile.opentopomap.org/{z}/{x}/{y}.png'],
+  'Callejero':  ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png','https://b.tile.openstreetmap.org/{z}/{x}/{y}.png','https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+  'Satélite':   ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+  'Oscuro':     ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png']
+};
+function _routesGeoJSON(routes){
+  return{type:'FeatureCollection',features:routes.map(r=>({
+    type:'Feature',
+    geometry:{type:'Point',coordinates:[r.start_lon,r.start_lat]},
+    properties:{id:r.id,name:r.name,
+      color:(activityOf(r.activity_type)||{}).color||'#d24a3a',
+      activity:r.activity_type||'otros',
+      dist:r.distance_m?(r.distance_m/1000).toFixed(1)+' km':''}
+  }))};
+}
+function _loadActImages(map){
+  return Promise.all(ACTIVITIES.map(a=>new Promise(resolve=>{
+    const img=new Image(26,26);
+    img.onload=()=>{try{map.addImage('act-'+a.id,img);}catch(e){}resolve();};
+    img.onerror=()=>resolve();
+    img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(iconSvg(a,26));
+  })));
+}
+function _ovSetData(){
+  if(!ovMapLoaded)return;
+  ovMap.getSource('routes').setData(_routesGeoJSON(ovRoutes));
+  if(!_ovUserMoved){clearTimeout(_ovFitTimer);_ovFitTimer=setTimeout(fitMap,600);}
+}
 function renderOverviewMap(routes,append=false){
+  const pts=routes.filter(r=>r.start_lat!=null&&r.start_lon!=null);
+  if(!append)ovRoutes=pts; else ovRoutes.push(...pts);
   if(!ovMap){
-    ovMap=L.map("overview-map",{zoomControl:true});
-    L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-      {maxZoom:17,attribution:"© OpenTopoMap · OSM"}).addTo(ovMap);
+    ovMap=new maplibregl.Map({
+      container:'overview-map',
+      style:{
+        version:8,
+        sources:{basemap:{type:'raster',tileSize:256,maxzoom:19,
+          attribution:'© Esri · OSM',tiles:OV_TILES['Satélite']}},
+        layers:[{id:'basemap',type:'raster',source:'basemap'}]
+      },
+      center:[-84,10],zoom:8,attributionControl:false
+    });
+    ovMap.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
+    ovMap.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+    // selector de capas (top-left)
+    (()=>{
+      const sel=document.createElement('select');
+      sel.style.cssText='background:var(--panel,#fff);color:var(--ink,#101a14);border:none;font-size:12px;cursor:pointer;padding:5px 7px;font-family:inherit;width:100%';
+      Object.keys(OV_TILES).forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;if(c==='Satélite')o.selected=true;sel.appendChild(o);});
+      sel.onchange=()=>ovMap.getSource('basemap').setTiles(OV_TILES[sel.value]);
+      const wrap=document.createElement('div');
+      wrap.className='maplibregl-ctrl maplibregl-ctrl-group';wrap.appendChild(sel);
+      ovMap.addControl({onAdd:()=>wrap,onRemove(){}},'top-left');
+    })();
+    // botón centrar (top-left, debajo del selector)
+    ovMap.addControl({
+      onAdd(){
+        const c=document.createElement('div');c.className='maplibregl-ctrl maplibregl-ctrl-group';
+        const b=document.createElement('button');b.innerHTML='⤢';b.title='Centrar en las rutas';
+        b.style.cssText='font-size:16px;width:29px;height:29px;cursor:pointer;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center';
+        b.onclick=()=>fitMap();c.appendChild(b);return c;
+      },onRemove(){}
+    },'top-left');
+    ovMap.on('load',async()=>{
+      await _loadActImages(ovMap);
+      ovMap.addSource('routes',{
+        type:'geojson',data:_routesGeoJSON(ovRoutes),
+        cluster:true,clusterMaxZoom:10,clusterRadius:25
+      });
+      // Círculos semi-transparentes para clusters
+      ovMap.addLayer({id:'clusters',type:'circle',source:'routes',
+        filter:['has','point_count'],
+        paint:{
+          'circle-color':['step',['get','point_count'],'#e8c44a',10,'#d4863a',50,'#d24a3a'],
+          'circle-radius':['step',['get','point_count'],18,10,24,50,32],
+          'circle-opacity':0.5,'circle-stroke-opacity':1,
+          'circle-stroke-width':2,'circle-stroke-color':'rgba(255,255,255,0.9)'
+        }
+      });
+      // Iconos de actividad para puntos individuales (no requiere glyphs)
+      ovMap.addLayer({id:'unclustered',type:'symbol',source:'routes',
+        filter:['!',['has','point_count']],
+        layout:{
+          'icon-image':['concat','act-',['get','activity']],
+          'icon-size':1,
+          'icon-allow-overlap':true,
+          'icon-ignore-placement':true
+        }
+      });
+      ovMapLoaded=true;
+      // Etiquetas HTML para contar clusters (no necesita glyphs)
+      const _clabels={};
+      function _syncCLabels(){
+        const feats=ovMap.queryRenderedFeatures({layers:['clusters']});
+        const seen=new Set();
+        feats.forEach(f=>{
+          const id=f.properties.cluster_id,n=f.properties.point_count;
+          seen.add(id);
+          if(!_clabels[id]){
+            const el=document.createElement('div');
+            el.style.cssText='pointer-events:none;color:#101a14;font-weight:800;font-size:14px;line-height:1;text-align:center;text-shadow:0 0 3px rgba(255,255,255,0.95)';
+            const mk=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat(f.geometry.coordinates).addTo(ovMap);
+            mk.getElement().style.pointerEvents='none';
+            _clabels[id]=mk;
+          }
+          const txt=n>=1000?Math.round(n/1000)+'k':String(n);
+          if(_clabels[id].getElement().textContent!==txt){_clabels[id].getElement().textContent=txt;}
+        });
+        Object.keys(_clabels).forEach(id=>{if(!seen.has(+id)){_clabels[id].remove();delete _clabels[id];}});
+      }
+      ovMap.on('idle',_syncCLabels);
+      const pop=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:12});
+      ovMap.on('mouseenter','unclustered',e=>{
+        ovMap.getCanvas().style.cursor='pointer';
+        const p=e.features[0].properties;
+        pop.setLngLat(e.features[0].geometry.coordinates)
+          .setHTML(`<strong>${esc(p.name)}</strong>${p.dist?'<br><span style="color:var(--muted);font-size:11px">'+p.dist+'</span>':''}`)
+          .addTo(ovMap);
+      });
+      ovMap.on('mouseleave','unclustered',()=>{ovMap.getCanvas().style.cursor='';pop.remove();});
+      ovMap.on('click','unclustered',e=>{
+        location.href='/Sendero/'+encodeURIComponent(e.features[0].properties.name);
+      });
+      ovMap.on('click','clusters',async e=>{
+        const src=ovMap.getSource('routes');
+        const cid=e.features[0].properties.cluster_id;
+        const coords=e.features[0].geometry.coordinates.slice();
+        try{
+          const zoom=await src.getClusterExpansionZoom(cid);
+          ovMap.easeTo({center:coords,zoom:zoom+2});
+        }catch(_){
+          src.getClusterExpansionZoom(cid,(err,zoom)=>{if(!err)ovMap.easeTo({center:coords,zoom:zoom+2});});
+        }
+      });
+      ovMap.on('mouseenter','clusters',()=>{ovMap.getCanvas().style.cursor='pointer';});
+      ovMap.on('mouseleave','clusters',()=>{ovMap.getCanvas().style.cursor='';});
+      // Detectar movimiento manual para no re-encuadrar una vez el usuario explora
+      ovMap.on('movestart',e=>{if(e.originalEvent)_ovUserMoved=true;});
+      fitMap();
+    });
+    return;
   }
-  if(!append){ovMarkers.forEach(m=>m.remove());ovMarkers=[];ovPts=[];}
-  routes.forEach(r=>{
-    if(r.start_lat==null||r.start_lon==null)return;
-    const act=activityOf(r.activity_type);
-    const sz=32,html=act?iconSvg(act,sz):genericIconSvg(sz);
-    const icon=L.divIcon({html,iconSize:[sz,sz],iconAnchor:[sz/2,sz/2],className:'ov-marker'});
-    const m=L.marker([r.start_lat,r.start_lon],{icon}).addTo(ovMap)
-      .bindTooltip(r.name,{direction:'top',offset:[0,-sz/2]})
-      .on('click',()=>location.href='/Sendero/'+encodeURIComponent(r.name));
-    ovMarkers.push(m);ovPts.push([r.start_lat,r.start_lon]);
-  });
+  _ovSetData();
   if(!append)fitMap();
 }
 function fitMap(){
-  if(!ovMap)return;
-  if(ovPts.length===1)ovMap.setView(ovPts[0],13);
-  else if(ovPts.length>1)ovMap.fitBounds(L.latLngBounds(ovPts),{padding:[32,32]});
-  else ovMap.setView([40.4,-3.7],6);
+  if(!ovMap||!ovRoutes.length)return;
+  if(ovRoutes.length===1){
+    ovMap.easeTo({center:[ovRoutes[0].start_lon,ovRoutes[0].start_lat],zoom:13});return;
+  }
+  let mnLo=Infinity,mxLo=-Infinity,mnLa=Infinity,mxLa=-Infinity;
+  ovRoutes.forEach(r=>{
+    if(r.start_lon<mnLo)mnLo=r.start_lon;if(r.start_lon>mxLo)mxLo=r.start_lon;
+    if(r.start_lat<mnLa)mnLa=r.start_lat;if(r.start_lat>mxLa)mxLa=r.start_lat;
+  });
+  ovMap.fitBounds([[mnLo,mnLa],[mxLo,mxLa]],{padding:50,maxZoom:14});
 }
 function setView(v){
   viewMode=v;$("#dash-wrap").className='view-'+v;
   $("#view-a").classList.toggle("on",v==='a');
   $("#view-b").classList.toggle("on",v==='b');
-  if(ovMap)setTimeout(()=>{ovMap.invalidateSize();fitMap();},60);
+  if(ovMap)setTimeout(()=>{ovMap.resize();fitMap();},60);
   saveFilterState();
 }
 function setSort(order){
@@ -941,23 +1076,42 @@ async function uploadFiles(files){
 let planMap=null,planMarkers={},allPlans=[];
 
 function initPlanMap(){
-  planMap=L.map('plan-map',{zoomControl:true,scrollWheelZoom:false});
-  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    {attribution:'OpenTopoMap',maxZoom:17}).addTo(planMap);
-  planMap.setView([40.4,-3.7],6);
+  if(planMap)return;
+  planMap=new maplibregl.Map({
+    container:'plan-map',
+    style:{version:8,sources:{basemap:{type:'raster',tileSize:256,maxzoom:17,
+      attribution:'© OpenTopoMap · OSM',
+      tiles:['https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+             'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+             'https://c.tile.opentopomap.org/{z}/{x}/{y}.png']}},
+      layers:[{id:'basemap',type:'raster',source:'basemap'}]},
+    center:[-3.7,40.4],zoom:6,attributionControl:false
+  });
+  planMap.scrollZoom.disable();
+  planMap.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
+  planMap.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
 }
 function addMarkersToMap(plans){
   plans.forEach(p=>{
     if(planMarkers[p.id]||!p.start_lat)return;
     const a=activityOf(p.activity_type);
-    const icon=L.divIcon({html:a?iconSvg(a,26):genericIconSvg(26),className:'',iconSize:[26,26],iconAnchor:[13,13]});
-    const mk=L.marker([p.start_lat,p.start_lon],{icon}).addTo(planMap)
-      .bindTooltip(esc(p.name),{permanent:false,direction:'top'})
-      .on('click',()=>location.href='/Plan/'+encodeURIComponent(p.name));
-    planMarkers[p.id]=mk;
+    const el=document.createElement('div');
+    el.innerHTML=a?iconSvg(a,26):genericIconSvg(26);
+    el.style.cssText='cursor:pointer;line-height:0;width:26px;height:26px';
+    el.title=p.name;
+    el.onclick=()=>location.href='/Plan/'+encodeURIComponent(p.name);
+    planMarkers[p.id]=new maplibregl.Marker({element:el,anchor:'center'})
+      .setLngLat([p.start_lon,p.start_lat]).addTo(planMap);
   });
-  const pts=Object.values(planMarkers).map(m=>m.getLatLng());
-  if(pts.length)try{planMap.fitBounds(L.latLngBounds(pts).pad(0.2));}catch(e){}
+  const pts=plans.filter(p=>p.start_lat!=null);
+  if(!pts.length)return;
+  let mnLo=Infinity,mxLo=-Infinity,mnLa=Infinity,mxLa=-Infinity;
+  pts.forEach(p=>{
+    if(p.start_lon<mnLo)mnLo=p.start_lon;if(p.start_lon>mxLo)mxLo=p.start_lon;
+    if(p.start_lat<mnLa)mnLa=p.start_lat;if(p.start_lat>mxLa)mxLa=p.start_lat;
+  });
+  const doFit=()=>{try{planMap.fitBounds([[mnLo,mnLa],[mxLo,mxLa]],{padding:50});}catch(e){}};
+  planMap.loaded()?doFit():planMap.once('load',doFit);
 }
 async function loadPlans(){
   const res=await fetch('/api/planned');const data=await res.json();

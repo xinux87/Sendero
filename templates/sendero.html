@@ -2,14 +2,14 @@
 {% block title %}Sendero{% endblock %}
 
 {% block head_libs %}
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 {% endblock %}
 
 {% block styles %}
 .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
-#map{height:380px;border-radius:11px;border:1px solid var(--line);z-index:0}
+#map{height:380px;border-radius:11px;border:1px solid var(--line);z-index:0;overflow:hidden}
 .stats-row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
 .stat{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);
   border-radius:9px;padding:12px 14px}
@@ -38,15 +38,16 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 .photo-marker{width:26px;height:26px;border-radius:50%;background:#e8c44a;
   border:2.5px solid #101a14;box-shadow:0 2px 6px rgba(0,0,0,.7);
   display:flex;align-items:center;justify-content:center}
-/* Leaflet overrides */
-.leaflet-popup-content-wrapper{background:var(--panel);color:var(--ink)}
-.leaflet-popup-tip{background:var(--panel)}
-.leaflet-control-layers{background:var(--panel)!important;border-color:var(--line)!important;color:var(--ink)!important}
-.leaflet-control-layers-expanded{padding:8px 14px 10px}
-.leaflet-control-layers label{color:var(--ink)!important;font-size:13px}
-.leaflet-control-layers-separator{border-top-color:var(--line)!important}
-.fit-btn{width:30px!important;height:30px!important;font-size:18px;line-height:28px;
-  background:var(--panel)!important;color:var(--ink)!important;border:none!important;cursor:pointer}
+/* MapLibre GL overrides */
+.maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;padding:8px 12px;font-family:inherit;font-size:13px}
+.maplibregl-popup-tip{border-top-color:var(--panel);border-bottom-color:var(--panel)}
+.maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
+.maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
+.maplibregl-ctrl button:hover{background:var(--panel-2,var(--panel))!important}
+.maplibregl-ctrl-icon{filter:invert(0)}
+#btn3d{position:absolute;bottom:10px;left:10px;z-index:10;
+  background:var(--panel);border:1px solid var(--line);color:var(--ink);
+  padding:5px 11px;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit}
 /* lightbox */
 .lb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;align-items:center;
   justify-content:center;z-index:2000}
@@ -125,7 +126,10 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
   </div>
 </div>
 
-<div id="map"></div>
+<div style="position:relative">
+  <div id="map"></div>
+  <button id="btn3d" onclick="toggle3D()">Vista 3D</button>
+</div>
 <div class="stats-row" id="stats"></div>
 
 <div class="section">
@@ -205,7 +209,7 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 {% endblock %}
 
 {% block scripts %}
-let map, trackLayer, elevChart, hrChart, current=null;
+let map, map3dMode=false, elevChart, hrChart, current=null;
 let IMMICH=false, immichCands=[], immichSel=new Set();
 let photoMarkers={}, lbIdx=0;
 const NEAR_M=500;
@@ -308,7 +312,7 @@ async function setActivity(id){
     headers:{"Content-Type":"application/json"},body:JSON.stringify({activity_type:id})});
   current.activity_type=id;
   const a=activityOf(id);
-  if(trackLayer&&a) trackLayer.setStyle({color:a.color});
+  if(map&&a&&map.getLayer('ruta-linea')) map.setPaintProperty('ruta-linea','line-color',a.color);
   renderActivity();
   renderStats();
   closeActivityPicker();
@@ -342,42 +346,111 @@ function renderStats(){
     `<div class="stat"><div class="v">${v} <small>${u}</small></div><div class="l">${l}</div></div>`).join("");
 }
 
-function renderMap(){
-  if(map){map.remove();}
-  map=L.map("map");
-  const capas={
-    "Topográfico":L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",{maxZoom:17,attribution:"© OpenTopoMap · OSM"}),
-    "Callejero":L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}),
-    "Satélite":L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:18,attribution:"© Esri"}),
-    "Oscuro":L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{maxZoom:19,attribution:"© CartoDB"}),
+function buildStyle(capa){
+  const T={
+    'Topográfico':['https://a.tile.opentopomap.org/{z}/{x}/{y}.png','https://b.tile.opentopomap.org/{z}/{x}/{y}.png','https://c.tile.opentopomap.org/{z}/{x}/{y}.png'],
+    'Callejero':  ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png','https://b.tile.openstreetmap.org/{z}/{x}/{y}.png','https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+    'Satélite':   ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+    'Oscuro':     ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png']
   };
-  capas["Topográfico"].addTo(map);
-  L.control.layers(capas,null,{position:"topright"}).addTo(map);
-  const latlngs=current.geojson.map(([lon,lat])=>[lat,lon]);
-  if(latlngs.length){
-    const act=activityOf(current.activity_type);
-    trackLayer=L.polyline(latlngs,{color:act?act.color:"#d24a3a",weight:4}).addTo(map);
-    map.fitBounds(trackLayer.getBounds(),{padding:[20,20]});
-    L.circleMarker(latlngs[0],{radius:6,color:"#e8c44a",fillColor:"#e8c44a",fillOpacity:1}).addTo(map).bindPopup("Inicio");
-    L.circleMarker(latlngs[latlngs.length-1],{radius:6,color:"#fff",fillColor:"#fff",fillOpacity:1}).addTo(map).bindPopup("Fin");
-    const FitBtn=L.Control.extend({options:{position:'topleft'},onAdd(){
-      const b=L.DomUtil.create('button','leaflet-bar leaflet-control fit-btn');
-      b.innerHTML='⤢';b.title='Centrar en la ruta';
-      L.DomEvent.disableClickPropagation(b);
-      b.onclick=()=>map.fitBounds(trackLayer.getBounds(),{padding:[20,20]});
-      return b;
-    }});
-    new FitBtn().addTo(map);
-  } else { map.setView([42.5,-1.6],6); }
-  photoMarkers={};
-  current.photos.filter(p=>p.lat&&p.lon).forEach(p=>{
-    const idx=current.photos.findIndex(ph=>ph.id===p.id);
-    photoMarkers[p.id]=L.marker([p.lat,p.lon],{icon:L.divIcon({
-      className:"photo-marker",iconSize:[26,26],iconAnchor:[13,13],
-      html:'<svg width="13" height="11" viewBox="0 0 13 11" fill="#101a14"><rect x="0" y="2" width="13" height="9" rx="1.5"/><path d="M4 0h5l1 2H3z"/><circle cx="6.5" cy="6.5" r="2.3" fill="#e8c44a"/><circle cx="6.5" cy="6.5" r="1.1" fill="#101a14"/></svg>'
-    })}).addTo(map).on('click',()=>openLightbox(idx));
+  return {version:8,sources:{basemap:{type:'raster',tiles:T[capa]||T['Callejero'],tileSize:256,maxzoom:19}},
+          layers:[{id:'basemap',type:'raster',source:'basemap'}]};
+}
+
+function fitRoute(){
+  const coords=current.geojson;if(!coords.length)return;
+  let minLon=Infinity,maxLon=-Infinity,minLat=Infinity,maxLat=-Infinity;
+  coords.forEach(([lo,la])=>{
+    if(lo<minLon)minLon=lo;if(lo>maxLon)maxLon=lo;
+    if(la<minLat)minLat=la;if(la>maxLat)maxLat=la;
   });
-  setTimeout(()=>map.invalidateSize(),200);
+  map.fitBounds([[minLon,minLat],[maxLon,maxLat]],{padding:40,pitch:map3dMode?60:0,duration:600});
+}
+
+function toggle3D(){
+  map3dMode=!map3dMode;
+  $("#btn3d").textContent=map3dMode?'Vista 2D':'Vista 3D';
+  if(map3dMode){
+    map.setTerrain({source:'terrain',exaggeration:1.5});
+    map.easeTo({pitch:60,duration:800});
+  } else {
+    map.setTerrain(null);
+    map.easeTo({pitch:0,bearing:0,duration:600});
+  }
+}
+
+function renderMap(){
+  if(map){map.remove();map=null;}
+  map3dMode=false;
+  const btn3d=$("#btn3d");if(btn3d)btn3d.textContent="Vista 3D";
+  const coords=current.geojson;
+  const color=(activityOf(current.activity_type)||{}).color||'#d24a3a';
+  let cx=-1.6,cy=42.5;
+  if(coords.length){
+    let minLon=Infinity,maxLon=-Infinity,minLat=Infinity,maxLat=-Infinity;
+    coords.forEach(([lo,la])=>{
+      if(lo<minLon)minLon=lo;if(lo>maxLon)maxLon=lo;
+      if(la<minLat)minLat=la;if(la>maxLat)maxLat=la;
+    });
+    cx=(minLon+maxLon)/2;cy=(minLat+maxLat)/2;
+  }
+  map=new maplibregl.Map({
+    container:'map',style:buildStyle('Topográfico'),
+    center:[cx,cy],zoom:coords.length?12:6,attributionControl:false
+  });
+  map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
+  map.addControl(new maplibregl.NavigationControl({showCompass:true}),'top-right');
+  // botón centrar
+  map.addControl({
+    onAdd(){
+      const c=document.createElement('div');c.className='maplibregl-ctrl maplibregl-ctrl-group';
+      const b=document.createElement('button');b.innerHTML='⤢';b.title='Centrar en la ruta';
+      b.style.cssText='font-size:16px;width:29px;height:29px;cursor:pointer;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center';
+      b.onclick=()=>fitRoute();c.appendChild(b);return c;
+    },onRemove(){}
+  },'top-left');
+  // selector de capas (top-left, debajo del botón centrar)
+  (()=>{
+    const sel=document.createElement('select');
+    sel.style.cssText='background:var(--panel,#fff);color:var(--ink,#101a14);border:none;font-size:12px;cursor:pointer;padding:5px 7px;font-family:inherit;width:100%';
+    ['Topográfico','Callejero','Satélite','Oscuro'].forEach(c=>{
+      const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);
+    });
+    sel.onchange=()=>map.getSource('basemap').setTiles(buildStyle(sel.value).sources.basemap.tiles);
+    const wrap=document.createElement('div');
+    wrap.className='maplibregl-ctrl maplibregl-ctrl-group';
+    wrap.appendChild(sel);
+    map.addControl({onAdd:()=>wrap,onRemove(){}},'top-left');
+  })();
+
+  map.on('load',()=>{
+    map.addSource('terrain',{
+      type:'raster-dem',
+      tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      encoding:'terrarium',tileSize:256,maxzoom:15
+    });
+    if(!coords.length)return;
+    map.addSource('ruta',{type:'geojson',
+      data:{type:'Feature',geometry:{type:'LineString',coordinates:coords}}});
+    map.addLayer({id:'ruta-linea',type:'line',source:'ruta',
+      paint:{'line-color':color,'line-width':4,'line-opacity':0.9}});
+    fitRoute();
+    new maplibregl.Marker({color:'#e8c44a'})
+      .setLngLat(coords[0])
+      .setPopup(new maplibregl.Popup({offset:20}).setText('Inicio')).addTo(map);
+    new maplibregl.Marker({color:'#e0e0e0'})
+      .setLngLat(coords[coords.length-1])
+      .setPopup(new maplibregl.Popup({offset:20}).setText('Fin')).addTo(map);
+    photoMarkers={};
+    current.photos.filter(p=>p.lat&&p.lon).forEach(p=>{
+      const idx=current.photos.findIndex(ph=>ph.id===p.id);
+      const el=document.createElement('div');el.className='photo-marker';
+      el.innerHTML='<svg width="13" height="11" viewBox="0 0 13 11" fill="#101a14"><rect x="0" y="2" width="13" height="9" rx="1.5"/><path d="M4 0h5l1 2H3z"/><circle cx="6.5" cy="6.5" r="2.3" fill="#e8c44a"/><circle cx="6.5" cy="6.5" r="1.1" fill="#101a14"/></svg>';
+      el.onclick=(e)=>{e.stopPropagation();openLightbox(idx);};
+      photoMarkers[p.id]=new maplibregl.Marker({element:el,anchor:'center'})
+        .setLngLat([p.lon,p.lat]).addTo(map);
+    });
+  });
 }
 
 function haversineM(la1,lo1,la2,lo2){
@@ -550,7 +623,7 @@ async function delPhoto(id,ev){
   if(el)el.remove();
   const idx=current.photos.findIndex(p=>p.id===id);
   if(idx!==-1)current.photos.splice(idx,1);
-  if(photoMarkers[id]){map.removeLayer(photoMarkers[id]);delete photoMarkers[id];}
+  if(photoMarkers[id]){photoMarkers[id].remove();delete photoMarkers[id];}
   if(!$("#lb-overlay").classList.contains("hidden"))closeLightbox();
   toast("Foto eliminada");
 }
@@ -682,7 +755,7 @@ async function lbDelete(){
   const el=document.querySelector(`.thumb[data-photoid="${id}"]`);
   if(el)el.remove();
   current.photos.splice(lbIdx,1);
-  if(photoMarkers[id]){map.removeLayer(photoMarkers[id]);delete photoMarkers[id];}
+  if(photoMarkers[id]){photoMarkers[id].remove();delete photoMarkers[id];}
   toast("Foto eliminada");
   if(current.photos.length===0){closeLightbox();return;}
   lbIdx=Math.min(lbIdx,current.photos.length-1);
