@@ -9,6 +9,7 @@ from core.parsers import (
     analyse_gpx, analyse_fit, _detect_activity, _gpx_type_lookup, _FIT_SPORT_MAP
 )
 from core.summaries import auto_summary
+from core.thumbs import generate_thumb
 from werkzeug.utils import secure_filename
 
 routes_bp = Blueprint("routes", __name__)
@@ -111,18 +112,28 @@ def _recompute_stats(con):
         "INSERT OR REPLACE INTO settings(key,value) VALUES('stats_cache',?)",
         (payload,),
     )
+    con.execute("DELETE FROM settings WHERE key='stats_dirty'")
     con.commit()
+
+
+def _mark_stats_dirty(con):
+    con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('stats_dirty','1')")
 
 
 @routes_bp.route("/api/stats")
 def api_stats():
     con = db()
-    row = con.execute(
-        "SELECT value FROM settings WHERE key='stats_cache'"
-    ).fetchone()
+    dirty = bool(con.execute("SELECT 1 FROM settings WHERE key='stats_dirty'").fetchone())
+    row = con.execute("SELECT value FROM settings WHERE key='stats_cache'").fetchone()
     if not row:
+        if dirty:
+            return jsonify({"dirty": True})
         _recompute_stats(con)
         row = con.execute("SELECT value FROM settings WHERE key='stats_cache'").fetchone()
+    if dirty:
+        data = json.loads(row["value"])
+        data["dirty"] = True
+        return jsonify(data)
     return Response(row["value"], mimetype="application/json")
 
 
@@ -160,7 +171,7 @@ def list_routes():
     offset = request.args.get("offset", 0, type=int)
     total  = con.execute("SELECT COUNT(*) FROM routes").fetchone()[0]
     q = ("SELECT id,name,distance_m,ascent_m,duration_s,moving_s,"
-         "started_at,activity_type,start_lat,start_lon "
+         "started_at,activity_type,start_lat,start_lon,thumb_file "
          "FROM routes ORDER BY COALESCE(started_at,created_at) DESC")
     if limit is not None:
         rows = con.execute(q + " LIMIT ? OFFSET ?", (limit, offset)).fetchall()
@@ -225,8 +236,13 @@ def create_route():
          json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max),
     )
     con.commit()
-    _recompute_stats(con)
-    return jsonify({"id": cur.lastrowid}), 201
+    rid = cur.lastrowid
+    thumb = generate_thumb(coords, rid)
+    if thumb:
+        con.execute("UPDATE routes SET thumb_file=? WHERE id=?", (thumb, rid))
+    _mark_stats_dirty(con)
+    con.commit()
+    return jsonify({"id": rid}), 201
 
 
 @routes_bp.route("/api/routes/<int:rid>", methods=["GET"])
@@ -237,17 +253,19 @@ def get_route(rid):
 @routes_bp.route("/api/routes/<int:rid>", methods=["DELETE"])
 def delete_route(rid):
     con = db()
-    r = con.execute("SELECT gpx_file FROM routes WHERE id=?", (rid,)).fetchone()
+    r = con.execute("SELECT gpx_file, thumb_file FROM routes WHERE id=?", (rid,)).fetchone()
     if not r:
         abort(404)
     for p in con.execute("SELECT file FROM photos WHERE route_id=?", (rid,)).fetchall():
         if p["file"]:
             (cfg.PHOTO_DIR / p["file"]).unlink(missing_ok=True)
     (cfg.GPX_DIR / r["gpx_file"]).unlink(missing_ok=True)
+    if r["thumb_file"]:
+        (cfg.THUMB_DIR / r["thumb_file"]).unlink(missing_ok=True)
     con.execute("DELETE FROM photos WHERE route_id=?", (rid,))
     con.execute("DELETE FROM routes WHERE id=?", (rid,))
+    _mark_stats_dirty(con)
     con.commit()
-    _recompute_stats(con)
     return "", 204
 
 
@@ -320,8 +338,23 @@ def rescan_route(rid):
          json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max, rid),
     )
     con.commit()
-    _recompute_stats(con)
+    thumb = generate_thumb(coords, rid)
+    if thumb:
+        con.execute("UPDATE routes SET thumb_file=? WHERE id=?", (thumb, rid))
+    _mark_stats_dirty(con)
+    con.commit()
     return jsonify(_build_route_dict(rid))
+
+
+@routes_bp.route("/api/routes/<int:rid>/thumb", methods=["GET"])
+def route_thumb(rid):
+    r = db().execute("SELECT thumb_file FROM routes WHERE id=?", (rid,)).fetchone()
+    if not r or not r["thumb_file"]:
+        abort(404)
+    fpath = cfg.THUMB_DIR / r["thumb_file"]
+    if not fpath.exists():
+        abort(404)
+    return Response(fpath.read_bytes(), content_type="image/png")
 
 
 @routes_bp.route("/api/routes/<int:rid>/gpx", methods=["GET"])

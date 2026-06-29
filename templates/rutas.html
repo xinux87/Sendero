@@ -10,12 +10,21 @@
 /* ── tarjetas ── */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:11px;
-  padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px}
+  padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px;
+  overflow:hidden}
 .card:hover{filter:brightness(1.06);transform:translateY(-2px)}
 .card h3{font-size:22px;font-weight:600;padding-right:34px;line-height:1.2;
   height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .card .date{color:var(--muted);font-size:12px;margin:2px 0 0;text-transform:uppercase;letter-spacing:.08em}
 .card-act{position:absolute;top:12px;right:12px;line-height:0}
+/* ── thumb del track ── */
+.card-thumb{position:absolute;right:0;top:0;bottom:0;width:42%;
+  pointer-events:none;overflow:hidden;border-radius:0 11px 11px 0}
+.card-thumb::before{content:'';position:absolute;top:0;left:0;bottom:0;width:70%;
+  background:linear-gradient(90deg,var(--panel) 0%,transparent 100%);z-index:1}
+.card-thumb img{width:100%;height:100%;object-fit:contain;object-position:center;
+  opacity:0.55;display:block}
+.card-body{position:relative}
 .metrics{display:flex;gap:16px;flex-wrap:wrap}
 .metric{display:flex;flex-direction:column}
 .metric .v{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--ink)}
@@ -576,12 +585,18 @@ function makeCard(r){
   } else {
     c.onclick=()=>location.href='/Sendero/'+encodeURIComponent(r.name);
   }
+  const thumbHtml=!editMode&&r.thumb_file
+    ?`<div class="card-thumb"><img src="/api/routes/${r.id}/thumb" alt="" loading="lazy"></div>`
+    :'';
   c.innerHTML=`
+    ${thumbHtml}
     ${editMode
       ? `<div class="card-check">${sel?"✓":""}</div>`
       : (act?`<div class="card-act">${iconSvg(act,26)}</div>`:"")}
-    <h3>${esc(r.name)}</h3>
-    <div class="date">${fmtDate(r.started_at)}</div>`;
+    <div class="card-body">
+      <h3>${esc(r.name)}</h3>
+      <div class="date">${fmtDate(r.started_at)}</div>
+    </div>`;
   return c;
 }
 

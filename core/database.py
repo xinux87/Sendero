@@ -68,6 +68,8 @@ def init_db():
                        SET start_lat = CAST(json_extract(geojson,'$[0][1]') AS REAL),
                            start_lon = CAST(json_extract(geojson,'$[0][0]') AS REAL)
                        WHERE geojson IS NOT NULL AND geojson != '[]'""")
+    if "thumb_file" not in route_cols:
+        con.execute("ALTER TABLE routes ADD COLUMN thumb_file TEXT")
     con.execute("CREATE INDEX IF NOT EXISTS idx_routes_date "
                 "ON routes(COALESCE(started_at,created_at) DESC)")
 

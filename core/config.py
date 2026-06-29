@@ -7,9 +7,10 @@ BASE = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get("SENDERO_DATA", BASE / "data"))
 GPX_DIR = DATA / "gpx"
 PHOTO_DIR = DATA / "photos"
+THUMB_DIR = DATA / "thumbs"
 DB_PATH = DATA / "sendero.db"
 
-for d in (DATA, GPX_DIR, PHOTO_DIR):
+for d in (DATA, GPX_DIR, PHOTO_DIR, THUMB_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 IMMICH_URL = os.environ.get("IMMICH_URL", "").rstrip("/")
