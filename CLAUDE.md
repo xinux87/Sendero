@@ -5,8 +5,8 @@ El README explica *qué hace* y cómo desplegarlo; este archivo cubre lo que nec
 para tocar el código sin romperlo. Si algo de aquí contradice al README, este manda.
 
 ## Qué es, en una frase
-Monolito Flask + SQLite que sube/visualiza GPX, les asocia fotos (locales o de Immich
-por referencia) y guarda un resumen por ruta.
+Monolito Flask + SQLite que sube/visualiza GPX y FIT, les asocia fotos (locales o de
+Immich por referencia), genera thumbnails PNG de cada track y guarda un resumen por ruta.
 
 ## Comandos
 ```bash
@@ -16,159 +16,244 @@ python app.py                      # http://localhost:8080, init_db() automátic
 
 # producción / como se despliega de verdad
 docker compose up -d --build       # servicio 'sendero' + servicio 'watcher'
-# El puerto host está en docker-compose.yml ("8090:8080" en esta instalación;
-# cámbialo si el 8080 está libre: "8080:8080").
+# Puerto en docker-compose.yml: "8090:8080" en esta instalación.
 
-# no hay suite de tests formal. Para validar un cambio, smoke test rápido:
+# Smoke test rápido tras un cambio:
 #   1) arranca el server
 #   2) sube un GPX:  curl -F "gpx=@ruta.gpx" localhost:8090/api/routes
-#   3) GET /api/routes y /api/routes/1  y comprueba stats + geojson
-# La lógica de Immich se prueba con unittest.mock parcheando app.requests.post
-# (no hay instancia real disponible en CI).
+#   3) GET /api/routes  →  comprueba stats, geojson y thumb_file
+#   4) GET /api/routes/1/thumb  →  debe devolver imagen PNG
+# La lógica de Immich se prueba con unittest.mock parcheando requests.
 ```
 
 ## Mapa del código
 
-### Backend
-- `app.py` — TODO el backend: rutas Flask, parseo GPX (gpxpy), EXIF (Pillow),
-  acceso SQLite, e integración Immich. No hay capas ni blueprints; es plano a propósito.
-- `watch.py` — importador de carpeta. Proceso **independiente**, no parte del server.
-- `.env` — variables de entorno para Immich (`IMMICH_URL`, `IMMICH_API_KEY`,
-  `IMMICH_MARGIN_MIN`). Sin este archivo Immich queda desactivado silenciosamente.
+### Backend — blueprints, no monolito
+`app.py` es el punto de entrada: registra blueprints y llama a `init_db()` + `refresh_config()`.
+La lógica real está repartida en dos paquetes:
 
-### Frontend — tres plantillas Jinja2
-La app es **multi-página** (no SPA). Cada pantalla es una plantilla independiente
-que hereda de la base. No hay bundler ni paso de compilación.
+```
+core/
+  config.py     — paths (GPX_DIR, PHOTO_DIR, THUMB_DIR, DB_PATH) y variables Immich
+  database.py   — init_db(), close_db(), helper db() (conexión por request vía g.db)
+  parsers.py    — analyse_gpx() y analyse_fit() → devuelven (stats, coords, elev, name, creator)
+  thumbs.py     — generate_thumb(coords, route_id) → PNG 400px en data/thumbs/
+  summaries.py  — auto_summary() y auto_summary_planned()
+  exif.py       — extrae lat/lon/taken_at de fotos subidas
+  immich.py     — cliente HTTP para Immich (immich_get, immich_search, min_dist_to_track)
+
+api/
+  routes.py     — CRUD de rutas + rescan + thumb + stats
+  photos.py     — subida y borrado de fotos locales; proxy de fotos Immich
+  planned.py    — CRUD de rutas planificadas
+  immich_api.py — candidatos Immich, selección, proxy de miniaturas
+  settings.py   — lectura/escritura de ajustes (Immich, tipos GPX personalizados)
+```
+
+`watch.py` — importador de carpeta. Proceso **independiente**, no parte del server.
+
+### Frontend — SPA en `app.html`
+
+**La app es un SPA** servido desde una sola plantilla `templates/app.html`.
+Las rutas `/dashboard`, `/rutas` y `/planificacion` renderan todas `app.html`
+con el parámetro Jinja `initial_section`. El router JS en `app.html` muestra/oculta
+secciones y actualiza el `history` sin recargar la página.
+
+> **TRAMPA CRÍTICA:** Si tocas "Mis Rutas" o "Dashboard", el archivo es `app.html`,
+> NO `rutas.html` ni `dashboard.html`. Esos archivos legacy siguen en disco pero
+> ya no los sirve ninguna ruta Flask.
 
 | Archivo | Ruta Flask | Contenido |
 |---------|-----------|-----------|
-| `templates/base.html` | — | CSS compartido, header con curvas de nivel, toast, utilidades JS (`$`, `fmtKm`, `fmtDur`, `fmtDate`, `esc`) |
-| `templates/dashboard.html` | `GET /` | Lista de rutas, subida de GPX. Sin Leaflet ni Chart.js. |
-| `templates/sendero.html` | `GET /Sendero/<nombre>` | Detalle de ruta: mapa, stats, perfil de elevación, notas, fotos, modal Immich, lightbox. Carga Leaflet + Chart.js. |
+| `templates/base.html` | — | CSS global, header, toast, helpers JS (`$`, `fmtKm`, `fmtDur`, `fmtDate`, `esc`) |
+| `templates/app.html` | `GET /dashboard` · `/rutas` · `/planificacion` | SPA con tres secciones: Dashboard, Mis Rutas, Mis Planes. Usa MapLibre GL para el mapa de visión general. |
+| `templates/sendero.html` | `GET /Sendero/<nombre>` | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación (Chart.js), notas, fotos, modal Immich, lightbox. |
+| `templates/plan_detalle.html` | `GET /Plan/<nombre>` | Detalle de ruta planificada: mapa, stats, notas. |
+| `templates/rutas.html` *(legacy)* | — | Ya no se sirve. No editar. |
+| `templates/overview.html` *(legacy)* | — | Ya no se sirve. No editar. |
+| `templates/planificacion.html` *(legacy)* | — | Ya no se sirve. No editar. |
 
-`templates/index.html` existe como archivo legado; ya no se sirve.
-
-### Navegación entre páginas
-- Clic en tarjeta del dashboard → `location.href = '/Sendero/' + encodeURIComponent(name)`
-- Botón "← Volver" / borrar ruta → `location.href = '/'`
+### Navegación
+- Tarjeta en "Mis Rutas" → `location.href = '/Sendero/' + encodeURIComponent(name)`
+- Cambio de sección (Dashboard ↔ Mis Rutas ↔ Mis Planes) → SPA con `_showSec(name)`
+- Botón "← Volver" en detalle → `location.href = '/rutas'`
 - Renombrar ruta → `history.replaceState` (actualiza URL sin recargar)
-- El botón atrás del navegador funciona de forma nativa (páginas reales, no SPA)
+- El botón Atrás del navegador funciona vía `window.addEventListener('popstate', ...)`
 
-### Rendimiento de carga en sendero.html
-`sendero_page()` en `app.py` resuelve el nombre de la ruta en el servidor y serializa
-los datos con `_route_dict(rid)`. El JSON se inyecta directamente en el HTML mediante
-la variable Jinja `{{ route_json | safe }}`. El JS asigna `current` en el acto y llama
-a `renderAll()` sin ningún fetch previo. La llamada a `/api/config` (solo para el botón
-Immich) corre después, sin bloquear el render.
+### Rutas Flask completas
 
-### Helper `_route_dict(rid)` en app.py
-Construye el dict completo de una ruta (geojson, elevation, photos, auto_summary).
-Lo usan tanto `get_route()` (API JSON) como `sendero_page()` (inyección en template).
-Si añades campos al objeto de ruta, añádelos aquí.
+| Método | URL | Handler |
+|--------|-----|---------|
+| GET | `/` | redirect → `/dashboard` |
+| GET | `/dashboard` | `app.html` (sección dashboard) |
+| GET | `/rutas` | `app.html` (sección rutas) |
+| GET | `/planificacion` | `app.html` (sección planes) |
+| GET | `/Sendero/<name>` | `sendero.html` con JSON inyectado |
+| GET | `/Plan/<name>` | `plan_detalle.html` con JSON inyectado |
+| GET | `/api/routes` | lista paginada (incluye `thumb_file`) |
+| POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb |
+| GET | `/api/routes/<id>` | dict completo de la ruta |
+| PATCH | `/api/routes/<id>` | actualiza name/notes/activity_type/immich_checked |
+| DELETE | `/api/routes/<id>` | borra ruta + fotos + GPX + thumb |
+| POST | `/api/routes/<id>/rescan` | re-parsea GPX/FIT; regenera thumb |
+| GET | `/api/routes/<id>/thumb` | sirve el PNG del track (image/png) |
+| GET | `/api/routes/<id>/gpx` | descarga el archivo GPX/FIT original |
+| GET/POST | `/api/routes/<id>/immich/candidates` | fotos Immich en ventana temporal |
+| POST | `/api/routes/<id>/immich/select` | asocia fotos Immich a la ruta |
+| POST | `/api/routes/<id>/photos` | sube fotos locales |
+| GET | `/api/photos/<pid>/file` | sirve foto local o proxy Immich |
+| DELETE | `/api/photos/<pid>` | borra foto |
+| GET | `/api/stats` | estadísticas globales (desde caché en settings) |
+| POST | `/api/stats/refresh` | recalcula y guarda caché de stats |
+| GET | `/api/planned` | lista rutas planificadas |
+| POST | `/api/planned` | crea ruta planificada desde GPX |
+| GET | `/api/planned/<id>` | dict completo del plan |
+| PATCH | `/api/planned/<id>` | actualiza nombre/notas/actividad del plan |
+| DELETE | `/api/planned/<id>` | borra plan |
+| GET | `/api/planned/<id>/gpx` | descarga GPX del plan |
+| GET | `/api/config` | estado Immich (enabled, margin, dist) |
+| GET | `/api/settings` | ajustes actuales |
+| POST | `/api/settings` | guarda ajustes Immich |
+| GET/POST | `/api/settings/gpx-types` | tipos GPX personalizados |
+| GET | `/api/immich/thumb/<asset_id>` | proxy miniatura Immich |
+
+### Helper `_build_route_dict(rid)` en `api/routes.py`
+Construye el dict completo de una ruta (geojson, elevation, heart_rate, photos,
+auto_summary, thumb_file…). Lo usan `get_route()` (API JSON) y `sendero_page()`
+(inyección en template). **Si añades campos al objeto ruta, añádelos aquí.**
+
+### Thumbnails de track (`core/thumbs.py`)
+`generate_thumb(coords, route_id)` genera un PNG:
+- Fondo `#17241c` (= `--panel`), línea blanca, 400 px de alto, ancho proporcional
+  al bounding-box del track (ratio corregido por latitud, acotado 1:4 – 4:1), 40 px
+  de padding interior.
+- Se llama automáticamente en `create_route` y `rescan_route`; también en el script
+  de backfill manual.
+- El archivo se guarda en `data/thumbs/thumb_<id>.png` y se referencia en `thumb_file`.
+- Al borrar una ruta, se borra también el thumb.
+- En `makeCard` de `app.html`: se muestra como elemento absoluto en el lateral derecho
+  de la tarjeta con degradado izquierda→transparente para no tapar el texto.
 
 ### Estado JS relevante en `sendero.html`
 | Variable | Contenido |
 |----------|-----------|
-| `current` | objeto completo de la ruta (incluye `.photos[]`, `.geojson`, `.elevation`) — poblado desde el HTML, no desde fetch |
-| `photoMarkers` | `{id: L.Marker}` — marcadores Leaflet de fotos con GPS, para quitarlos sin recargar el mapa |
+| `current` | objeto completo de la ruta (geojson, elevation, heart_rate, photos…) — poblado desde el HTML, sin fetch |
+| `photoMarkers` | `{id: marker}` — marcadores MapLibre de fotos con GPS |
 | `lbIdx` | índice en `current.photos` de la foto visible en el lightbox |
-| `immichCands` / `immichSel` | candidatos devueltos por `/immich/candidates` y Set de índices seleccionados |
-| `IMMICH` | booleano, activado tras `/api/config`; controla visibilidad del botón Immich |
+| `immichCands` / `immichSel` | candidatos de Immich y Set de índices seleccionados |
+| `IMMICH` | booleano; activado tras `/api/config`, controla el botón Immich |
 
-### Componentes UI en sendero.html
-- **Lightbox** (`#lb-overlay`) — modal pantalla completa para ver fotos. Navegación con
-  botones ‹ › o flechas de teclado; Escape cierra. Botón "Eliminar foto" llama a
-  `lbDelete()`, que borra del servidor, del DOM y del mapa sin recargar la ruta.
-- **Selector de capas** — control nativo `L.control.layers` con cuatro capas base:
-  Topográfico (OpenTopoMap), Callejero (OSM), Satélite (Esri), Oscuro (CartoDB).
-- **Botón centrar mapa** — control Leaflet personalizado (clase `FitBtn`) en esquina
-  superior izquierda; llama a `map.fitBounds(trackLayer.getBounds())`.
-- **Fotos en el perfil de elevación** — plugin `photoIcons` (`afterDatasetsDraw`) dibuja
-  el icono SVG de cámara 28 px por encima del punto de datos real. El scatter dataset
-  subyacente es transparente pero captura los clics para abrir el lightbox.
-  `photoElevPoints()` encuentra la posición km de cada foto por proximidad al track
-  usando distancia Euclidea con corrección coseno (rápido para 14 k puntos × N fotos).
+### Mapa de visión general en `app.html` (sección Mis Rutas)
+Usa **MapLibre GL** (no Leaflet). La fuente GeoJSON se actualiza con `setData()` sin
+reconstruir el mapa. Soporta clustering nativo. Los iconos de actividad se cargan
+como imágenes PNG en base64 con `map.addImage()`. Al cambiar la capa base se llama a
+`getSource('basemap').setTiles(...)`.
 
 ## Bugs corregidos (no reintroducir)
 
-- **`init_db()` debe estar a nivel de módulo**, no solo bajo `if __name__ == "__main__"`.
-  Gunicorn importa `app:app` directamente y nunca ejecuta el bloque `__main__`; sin
-  `init_db()` al importar, el primer request falla con `no such table: routes`.
+- **`init_db()` a nivel de módulo** — Gunicorn importa `app:app` sin ejecutar el
+  bloque `__main__`; sin `init_db()` al importar falla en el primer request.
 
-- **Especificidad CSS del modal Immich** (en `sendero.html`): `.hidden{display:none}` está
-  definido antes que `.overlay{display:flex}`. Como ambos tienen la misma especificidad,
-  `.overlay` ganaba y el modal era siempre visible. La solución es la regla
-  `.overlay.hidden{display:none}` (especificidad doble) definida inmediatamente después
-  de `.overlay`. No elimines esa regla ni reordenes sin tenerlo en cuenta.
+- **Especificidad CSS del modal Immich** (`sendero.html`): la regla
+  `.overlay.hidden{display:none}` (especificidad doble) debe estar inmediatamente
+  después de `.overlay{display:flex}`. Sin ella el modal Immich aparece al cargar.
+
+- **SPA en `app.html`, no en archivos separados** — el antiguo CLAUDE.md decía
+  "app multi-página"; ya no es cierto. Editar `rutas.html` no tiene efecto.
 
 ## Reglas que evitan romper cosas
 
-1. **El frontend NO tiene build step.** Las tres plantillas heredan de `base.html` via
-   Jinja2 (renderizado en servidor, no compilación). Todo el JS va inline en cada
-   plantilla. No introduzcas npm, bundlers, React ni paso de compilación.
+1. **El frontend NO tiene build step.** Todo el JS va inline en Jinja2. No introduzcas
+   npm, bundlers, React ni paso de compilación.
 
-2. **Una foto es local O de Immich.** En la tabla `photos`, las locales tienen `file`
-   y las de Immich tienen `immich_id` (con `file = NULL`). Cualquier código que borre o
-   abra archivos DEBE comprobar `if p["file"]:` antes de tocar el disco. `photo_file()`
-   ya bifurca: si hay `immich_id`, hace proxy a Immich; si no, sirve el archivo local.
-   Las fotos de Immich se guardan **por referencia**, nunca se copian.
+2. **Una foto es local O de Immich.** En `photos`, las locales tienen `file` y las de
+   Immich tienen `immich_id` (`file = NULL`). Todo código que toque el disco DEBE
+   comprobar `if p["file"]:` primero. Las fotos Immich se guardan **por referencia**.
 
-3. **El watcher corre una sola vez.** Está como servicio aparte en docker-compose
-   precisamente para que no se duplique con los workers de gunicorn. NO lo conviertas en
-   un hilo de fondo dentro de Flask: con `--workers 2` tendrías dos importadores
-   compitiendo. Si necesitas que el server lo arranque, hazlo en un único worker.
+3. **El watcher corre una sola vez.** Es un servicio aparte en docker-compose para que
+   no se duplique con los workers de gunicorn. NO lo hagas hilo de fondo en Flask.
 
-4. **El cruce con Immich es por tiempo.** La ventana es `started_at .. (started_at +
-   duration_s)` ± `IMMICH_MARGIN_MIN`. Requiere que el GPX tenga marcas de tiempo; si
-   `started_at` es NULL, el endpoint devuelve 400 a propósito. No inventes un fallback
-   silencioso.
+4. **El cruce con Immich es por tiempo.** Requiere `started_at` no NULL. Si es NULL,
+   el endpoint devuelve 400 a propósito. No inventes fallback silencioso.
 
-5. **El filtro de cercanía nunca excluye fotos sin GPS.** En `/immich/candidates` se
-   calcula `dist_m` solo para las que tienen lat/lon. El toggle del frontend oculta las
-   que tienen GPS y están lejos, pero las de `dist_m == null` (sin ubicación) SIEMPRE se
-   muestran. Muchas fotos de montaña no llevan GPS; ocultarlas sería un bug, no mejora.
+5. **El filtro de cercanía nunca excluye fotos sin GPS.** `dist_m == null` ⇒ siempre
+   visibles. Muchas fotos de montaña no llevan GPS.
 
-6. **Migraciones de esquema:** sigue el patrón de `init_db()` (ALTER TABLE defensivo
-   comprobando `PRAGMA table_info`). No asumas una BD limpia; hay instalaciones vivas.
+6. **Migraciones de esquema** — sigue el patrón `ALTER TABLE` defensivo de `init_db()`
+   comprobando `PRAGMA table_info`. No asumas BD limpia.
 
-7. **Persistencia solo en `/data`** (variable `SENDERO_DATA`), que es el volumen Docker:
-   `sendero.db`, `gpx/`, `photos/`. No escribas estado en otros directorios.
+7. **Persistencia solo en `/data`** (`SENDERO_DATA`): `sendero.db`, `gpx/`, `photos/`,
+   `thumbs/`. No escribas estado fuera de este volumen Docker.
 
-8. **Idioma:** la interfaz y todos los mensajes al usuario están en **español**.
-   Mantenlo. Comentarios y nombres de código pueden ir en inglés/español como ya están.
+8. **Idioma** — UI y mensajes al usuario en **español**. Código y comentarios pueden
+   mezclar español/inglés como ya están.
 
-9. **Identidad visual:** tema topográfico con variables CSS (`--gr-red`, `--pr-yellow`,
-   curvas de nivel en la cabecera). No metas un framework de UI ni cambies la paleta sin
-   pedirlo; es deliberada (señalética de senderos GR/PR).
+9. **Identidad visual** — paleta CSS (`--gr-red`, `--pr-yellow`, `--panel` #17241c,
+   curvas de nivel en header). No metas framework de UI ni cambies la paleta sin pedirlo.
 
-10. **`{{ route_json | safe }}` en sendero.html** — el filtro `| safe` es intencional:
-    el JSON lo genera `json.dumps()` en Python desde datos de la BD, no desde input
-    de usuario. No lo elimines ni lo escapes dos veces.
+10. **`{{ route_json | safe }}` en sendero.html** — intencional. El JSON viene de
+    `json.dumps()` sobre datos de la BD, no de input de usuario. No lo escapes dos veces.
+
+11. **Caché de rutas en sessionStorage** (`sendero_routes_v1`, TTL 10 min) — si cambias
+    los campos que devuelve `/api/routes`, cambia también la clave de caché para forzar
+    refresco en todos los clientes. Añadir `thumb_file` sin cambiar la clave causó que
+    los usuarios vieran tarjetas sin thumbnail hasta que la caché expiró.
 
 ## Modelo de datos
-- `routes`: stats derivadas del GPX (distance_m, ascent_m, descent_m, duration_s,
-  moving_s, ele_min/max, avg_speed, started_at), más `geojson` (lista `[lon,lat]`) y
-  `elevation` (perfil `[{d_km, e_m}]`) como TEXT JSON, y `notes` (resumen del usuario).
-- `photos`: `route_id`, y luego `file` XOR `immich_id`, más `lat/lon/taken_at`.
-- SQLite sin WAL, conexión por request vía `g.db`. Concurrencia = last-write-wins; no
-  hay bloqueos. Suficiente para uso personal; no lo trates como multiusuario.
 
-## Quirks conocidos (no son bugs urgentes, pero tenlos presentes)
-- La validación de extensión en `create_route` es laxa (`endswith(("gpx", ".gpx"))`):
-  acepta cualquier nombre que termine en "gpx". Si endureces esto, no rompas el watcher,
-  que sube con el nombre original del archivo.
-- No hay autenticación. Es intencional para LAN; si añades login, que sea opt-in y no
-  rompa el contrato de la API que ya existe.
-- `sendero-demo.html` (en la raíz de entregables, fuera de este repo de runtime) es un
-  demo estático con datos embebidos; no consume la API y no hay que mantenerlo en sync.
+### Tabla `routes`
+| Columna | Tipo | Notas |
+|---------|------|-------|
+| id | INTEGER PK | |
+| name | TEXT | |
+| notes | TEXT | resumen del usuario |
+| gpx_file | TEXT | nombre en `data/gpx/` (puede ser .fit) |
+| distance_m, ascent_m, descent_m | REAL | |
+| duration_s, moving_s | REAL | |
+| ele_min, ele_max, avg_speed | REAL | |
+| started_at | TEXT | ISO 8601; NULL si el GPX no tiene timestamps |
+| geojson | TEXT JSON | lista `[[lon,lat], …]` |
+| elevation | TEXT JSON | lista `[{d, e}, …]` (d en km, e en m) |
+| heart_rate | TEXT JSON | lista `[{d, hr}, …]` o NULL |
+| hr_avg, hr_max | INTEGER | NULL si no hay FC |
+| created_at | TEXT | |
+| activity_type | TEXT | senderismo/bicicleta/caminata/correr/esqui/otros |
+| device | TEXT | fabricante/modelo del dispositivo |
+| immich_checked | INTEGER | 0/1 |
+| start_lat, start_lon | REAL | primer punto del track |
+| thumb_file | TEXT | nombre en `data/thumbs/` (PNG) |
+
+### Tabla `photos`
+`route_id`, `file` XOR `immich_id`, `original`, `lat`, `lon`, `taken_at`
+
+### Tabla `planned_routes`
+`name`, `source`, `source_url`, `activity_type`, `distance_m`, `ascent_m`,
+`descent_m`, `ele_min`, `ele_max`, `start_lat`, `start_lon`, `geojson`,
+`elevation`, `notes`, `gpx_data` (BLOB), `created_at`
+
+### Tabla `settings`
+Clave-valor: `IMMICH_URL`, `IMMICH_API_KEY`, `IMMICH_MARGIN_MIN`, `IMMICH_DIST_M`,
+`GPX_TYPE_CUSTOM` (JSON), `stats_cache` (JSON con estadísticas globales).
+Los ajustes de settings sobreescriben los de `.env`/variables de entorno.
+
+## Quirks conocidos
+- La validación de extensión en `create_route` acepta cualquier nombre que termine en
+  `gpx` o `.fit`. No endurezcas sin revisar el watcher.
+- No hay autenticación. Intencional para LAN.
+- `rutas.html`, `overview.html`, `planificacion.html` — archivos legacy en `templates/`.
+  No los borres (pueden servir de referencia) pero no los edites; el app no los usa.
 
 ## Antes de dar por buena una tarea
 - ¿Sigue arrancando `python app.py` e `init_db()` sin error?
+- Si tocaste `create_route` o `rescan_route`: ¿se genera el thumb y se guarda `thumb_file`?
 - Si tocaste fotos: ¿probaste los dos caminos (local y `immich_id`)?
-- Si tocaste el esquema: ¿añadiste la migración defensiva?
+- Si tocaste el esquema: ¿añadiste la migración defensiva en `init_db()`?
 - ¿La UI sigue en español y sin paso de build?
-- Si tocaste CSS del modal en `sendero.html`: comprueba que `.overlay.hidden` sigue
-  ocultando el modal al cargar una ruta (abre `/Sendero/<nombre>` y verifica que no
-  aparece el overlay de Immich sin haberlo abierto).
-- Si tocaste `_route_dict()`: verifica que `/api/routes/<id>` y la navegación directa
-  a `/Sendero/<nombre>` devuelven los mismos datos.
+- Si tocaste el CSS del modal Immich en `sendero.html`: comprueba que `.overlay.hidden`
+  sigue ocultando el modal al cargar la ruta.
+- Si tocaste `_build_route_dict()`: verifica que `/api/routes/<id>` y
+  `/Sendero/<nombre>` devuelven los mismos campos.
+- Si añadiste columnas a `/api/routes` (lista): actualiza la clave `ROUTE_CACHE`
+  en `app.html` para invalidar el sessionStorage de los clientes.
+- Si tocaste `app.html` (`makeCard`, CSS de `.card`): recuerda que tanto "Mis Rutas"
+  como las tarjetas del mapa de overview están en ese mismo archivo.
