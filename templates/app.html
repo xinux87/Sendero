@@ -38,7 +38,7 @@
 .ov-section{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:22px 24px;margin-bottom:18px}
 .ov-section-title{font-family:'Saira Condensed',sans-serif;font-size:13px;font-weight:700;
   text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:16px}
-.hero-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.hero-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .hero-card{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:16px 18px}
 .hero-card .v{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--ink);line-height:1.1}
 .hero-card .v small{font-size:14px;font-weight:400;color:var(--muted)}
@@ -51,13 +51,15 @@
 .act-bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
 .act-meta{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
 .act-count{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
-.year-chart{display:flex;align-items:flex-end;gap:6px;height:120px;border-bottom:1px solid var(--line);overflow-x:auto}
-.year-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;min-width:36px}
-.year-bar{background:var(--pr-yellow);border-radius:3px 3px 0 0;width:28px;min-height:2px}
-.year-bar:hover{filter:brightness(1.12)}
+.year-chart{display:flex;align-items:flex-end;gap:6px;height:120px;border-bottom:1px solid var(--line)}
+.year-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:0;cursor:pointer;transition:opacity .2s}
+.year-col.inactive{opacity:.3}
+.year-bar{background:var(--pr-yellow);border-radius:3px 3px 0 0;width:100%;max-width:48px;min-height:2px;transition:filter .15s}
+.year-col:hover .year-bar{filter:brightness(1.2)}
+.year-col.selected .year-bar{filter:brightness(1.4)}
 .year-num{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;margin-top:6px}
 .year-count{font-family:var(--mono);font-size:10px;color:var(--ink);font-weight:700}
-.records-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.records-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .record-card{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
   padding:14px 16px;cursor:pointer;transition:filter .15s,transform .15s}
 .record-card:hover{filter:brightness(1.06);transform:translateY(-2px)}
@@ -66,6 +68,10 @@
 .record-card .rl{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:6px;font-weight:600}
 .record-card .rn{font-size:13px;color:var(--ink);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ov-loading{color:var(--muted);font-size:14px;padding:32px 0;text-align:center}
+#dash-map{height:320px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.act-row{cursor:pointer;border-radius:6px;padding:4px 6px;margin:0 -6px;transition:opacity .2s}
+.act-row:hover{background:var(--panel-2)}
+.act-row.inactive{opacity:.3}
 
 /* ══ SECCIÓN RUTAS ══ */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
@@ -290,8 +296,15 @@
         <div class="hero-card"><div class="v" id="ov-total-time">–</div><div class="l">Tiempo en movimiento</div></div>
       </div>
     </div>
+    <div class="ov-section" id="ov-map-section">
+      <div class="ov-section-title">Todas las rutas</div>
+      <div id="dash-map"></div>
+      <div id="dash-map-loader" class="hidden" style="height:3px;background:var(--line);border-radius:0 0 8px 8px;overflow:hidden;margin-top:-1px">
+        <div id="dash-map-loader-bar" style="height:100%;width:0;background:var(--pr-yellow);transition:width .1s linear"></div>
+      </div>
+    </div>
     <div class="ov-section">
-      <div class="ov-section-title">Por actividad</div>
+      <div class="ov-section-title">Por actividad <span style="font-size:10px;font-weight:400;color:var(--muted);margin-left:8px">Pulsa para filtrar el mapa</span></div>
       <div class="act-rows" id="ov-act-rows"></div>
     </div>
     <div class="ov-section">
@@ -394,14 +407,152 @@ const _secInited = {dashboard:false, rutas:false, planes:false};
 const _ANIM_OUT  = 150; // ms fade-out
 let _spaReady    = false;
 
+/* ══ MAPA DASHBOARD ══ */
+let dashMap=null,dashMapLoaded=false,dashActiveActs=null,dashAllFC=null,dashSelectedYear=null;
+
+function _dashLineColor(){
+  const expr=['match',['get','activity']];
+  ACTIVITIES.forEach(a=>{expr.push(a.id,a.color);});
+  expr.push('#888888');
+  return expr;
+}
+
+function initDashMap(){
+  if(dashMapLoaded||dashMap)return; // ya cargado o cargando
+  if(!dashActiveActs) dashActiveActs=new Set(ACTIVITIES.map(a=>a.id));
+
+  // El mapa se crea inmediatamente; las rutas se cargan en paralelo
+  dashMap=new maplibregl.Map({
+    container:'dash-map',
+    style:{version:8,
+      sources:{basemap:{type:'raster',tileSize:256,maxzoom:19,
+        attribution:'© CartoDB · OSM',
+        tiles:['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+               'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+               'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png']}},
+      layers:[{id:'basemap',type:'raster',source:'basemap'}]},
+    center:[-84,10],zoom:4,attributionControl:false
+  });
+  dashMap.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
+  dashMap.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+  dashMap.addControl(new maplibregl.FullscreenControl(),'top-right');
+
+  dashMap.on('load',async()=>{
+    // Fuente vacía para que la capa exista antes de recibir datos
+    dashMap.addSource('dash-routes',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    dashMap.addLayer({id:'dash-lines',type:'line',source:'dash-routes',
+      layout:{'line-join':'round','line-cap':'round'},
+      paint:{'line-color':_dashLineColor(),'line-width':1.8,'line-opacity':0.8}});
+    dashMapLoaded=true;
+
+    // Barra de carga
+    const loader=document.getElementById('dash-map-loader');
+    const loaderBar=document.getElementById('dash-map-loader-bar');
+    loader.classList.remove('hidden');
+    let pct=0;const iv=setInterval(()=>{pct=Math.min(pct+1.5,88);loaderBar.style.width=pct+'%';},80);
+
+    // Carga de rutas tras mostrar el mapa
+    let fc;
+    try{const r=await fetch('/api/routes/geojson');fc=await r.json();}catch(e){clearInterval(iv);loader.classList.add('hidden');return;}
+    clearInterval(iv);loaderBar.style.width='100%';
+    setTimeout(()=>loader.classList.add('hidden'),300);
+    if(!fc.features.length){
+      document.getElementById('ov-map-section').classList.add('hidden');return;
+    }
+    dashAllFC=fc;
+    dashMap.getSource('dash-routes').setData(fc);
+    _refreshActRows();
+    let mnLo=180,mxLo=-180,mnLa=90,mxLa=-90;
+    fc.features.forEach(f=>f.geometry.coordinates.forEach(([lo,la])=>{
+      if(lo<mnLo)mnLo=lo;if(lo>mxLo)mxLo=lo;
+      if(la<mnLa)mnLa=la;if(la>mxLa)mxLa=la;
+    }));
+    if(mnLo<mxLo&&mnLa<mxLa)
+      dashMap.fitBounds([[mnLo,mnLa],[mxLo,mxLa]],{padding:30,maxZoom:12,duration:0});
+  });
+}
+
+function _dashApplyFilters(){
+  if(!dashMapLoaded||!dashActiveActs)return;
+  const filters=[];
+  if(dashActiveActs.size<ACTIVITIES.length)
+    filters.push(['in',['get','activity'],['literal',[...dashActiveActs]]]);
+  if(dashSelectedYear)
+    filters.push(['==',['get','year'],dashSelectedYear]);
+  dashMap.setFilter('dash-lines',filters.length===0?null:filters.length===1?filters[0]:['all',...filters]);
+}
+
+function _refreshActRows(){
+  if(!dashAllFC)return;
+  const features=dashAllFC.features.filter(f=>!dashSelectedYear||f.properties.year===dashSelectedYear);
+  const byAct={};
+  features.forEach(f=>{
+    const a=f.properties.activity||'otros';
+    if(!byAct[a])byAct[a]={count:0,km:0};
+    byAct[a].count++;byAct[a].km+=f.properties.km||0;
+  });
+  const totalR=features.length||1;
+  const actBox=document.getElementById('ov-act-rows');
+  actBox.innerHTML='';
+  ACTIVITIES.forEach(a=>{
+    const t=byAct[a.id];if(!t)return;
+    const pct=Math.round((t.count/totalR)*100);
+    const row=document.createElement('div');row.className='act-row';
+    row.dataset.act=a.id;row.onclick=()=>toggleDashAct(a.id);
+    if(!dashActiveActs.has(a.id))row.classList.add('inactive');
+    row.innerHTML=`<div class="act-label"><div class="act-dot" style="background:${a.color}"></div>${a.label}</div>
+      <div class="act-bar-bg"><div class="act-bar-fill" style="width:${pct}%;background:${a.color}"></div></div>
+      <div class="act-meta">${t.km.toLocaleString('es-ES',{maximumFractionDigits:0})} km</div>
+      <div class="act-count">${t.count} ruta${t.count!==1?'s':''}</div>`;
+    actBox.appendChild(row);
+  });
+}
+
+function toggleDashAct(actId){
+  if(dashActiveActs.has(actId)){
+    if(dashActiveActs.size===1)return;
+    dashActiveActs.delete(actId);
+  }else{
+    dashActiveActs.add(actId);
+  }
+  document.querySelectorAll('.act-row[data-act]').forEach(r=>{
+    r.classList.toggle('inactive',!dashActiveActs.has(r.dataset.act));
+  });
+  _dashApplyFilters();
+}
+
+function toggleDashYear(year){
+  dashSelectedYear=(dashSelectedYear===year)?null:year;
+  document.querySelectorAll('.year-col[data-year]').forEach(col=>{
+    const isSelected=col.dataset.year===dashSelectedYear;
+    col.classList.toggle('selected',!!dashSelectedYear&&isSelected);
+    col.classList.toggle('inactive',!!dashSelectedYear&&!isSelected);
+  });
+  _dashApplyFilters();
+  _refreshActRows();
+}
+
+function _reloadDashboard(){
+  // Limpia contenedores dinámicos para evitar duplicados en re-visitas
+  document.getElementById('ov-act-rows').innerHTML='';
+  document.getElementById('ov-year-chart').innerHTML='';
+  document.getElementById('ov-records-grid').innerHTML='';
+  document.getElementById('ov-records-section').classList.remove('hidden');
+  document.getElementById('ov-map-section').classList.remove('hidden');
+  loadStats();
+  initDashMap();
+}
+
 function _afterShow(name) {
   if (!_secInited[name]) {
     _secInited[name] = true;
-    if (name === 'dashboard') loadStats();
-    if (name === 'rutas')     loadList();
-    if (name === 'planes')    { initPlanMap(); loadPlans(); }
+    if (name === 'rutas')  loadList();
+    if (name === 'planes') { initPlanMap(); loadPlans(); }
   }
+  // Dashboard siempre recarga: stats pueden haber cambiado y el mapa puede no haberse iniciado
+  if (name === 'dashboard') _reloadDashboard();
   const mapDelay = _spaReady ? _ANIM_OUT + 20 : 20;
+  if (name === 'dashboard' && dashMap) setTimeout(() => dashMap.resize(), mapDelay);
   if (name === 'rutas'  && ovMap)   setTimeout(() => { ovMap.resize(); fitMap(); }, mapDelay);
   if (name === 'planes' && planMap) setTimeout(() => planMap.resize(), mapDelay);
 }
@@ -555,6 +706,8 @@ async function loadStats(){
     const t=data.by_type[a.id];if(!t)return;
     const pct=Math.round((t.count/totalR)*100);
     const row=document.createElement('div');row.className='act-row';
+    row.dataset.act=a.id;
+    row.onclick=()=>toggleDashAct(a.id);
     row.innerHTML=`<div class="act-label"><div class="act-dot" style="background:${a.color}"></div>${a.label}</div>
       <div class="act-bar-bg"><div class="act-bar-fill" style="width:${pct}%;background:${a.color}"></div></div>
       <div class="act-meta">${t.km.toLocaleString('es-ES',{maximumFractionDigits:0})} km</div>
@@ -570,8 +723,10 @@ async function loadStats(){
     years.forEach(([year,count])=>{
       const h=Math.max(4,Math.round((count/maxC)*100));
       const col=document.createElement('div');col.className='year-col';
+      col.dataset.year=year;col.onclick=()=>toggleDashYear(year);
+      col.title=`${year}: ${count} ruta${count!==1?'s':''}`;
       col.innerHTML=`<div class="year-count">${count}</div>
-        <div class="year-bar" style="height:${h}px" title="${year}: ${count} ruta${count!==1?'s':''}"></div>
+        <div class="year-bar" style="height:${h}px"></div>
         <div class="year-num">${year}</div>`;
       yearBox.appendChild(col);
     });
@@ -903,6 +1058,7 @@ function makeCard(r){
   const act=activityOf(r.activity_type);const sel=selectedIds.has(r.id);
   const c=document.createElement("div");
   c.className="card"+(editMode?" edit-mode":"")+(sel?" selected":"");
+  c.dataset.id=r.id;
   c.style.borderLeftColor=act?act.color:"var(--line)";
   if(editMode){
     c.onclick=()=>{
@@ -951,15 +1107,20 @@ async function deleteSelected(){
     document.getElementById("del-count").textContent=`${done} / ${total}`;
     document.getElementById("del-status").textContent=`${pct}% completado`;}
   const CONCURRENCY=4;let idx=0;
+  function removeCardNow(id){
+    allRoutes=allRoutes.filter(r=>r.id!==id);
+    const card=document.querySelector(`.card[data-id="${id}"]`);
+    if(card){card.style.cssText+='opacity:0;transform:scale(.95) translateY(-4px);transition:opacity .15s,transform .15s';
+      setTimeout(()=>card.remove(),160);}
+  }
   async function worker(){while(idx<ids.length){const id=ids[idx++];
-    try{const res=await fetch(`/api/routes/${id}`,{method:"DELETE"});if(!res.ok)errors++;}catch{errors++;}
+    try{const res=await fetch(`/api/routes/${id}`,{method:"DELETE"});
+      if(!res.ok)errors++;else removeCardNow(id);}catch{errors++;}
     done++;updProg();}}
   await Promise.all(Array.from({length:Math.min(CONCURRENCY,total)},worker));
   document.getElementById("del-bar").style.width="100%";
   document.getElementById("del-status").textContent=errors?`Completado con ${errors} error(es)`:"Completado";
-  selectedIds.clear();clearRouteCache();
-  const reload=await(await fetch(`/api/routes?limit=9999&offset=0`)).json();
-  allRoutes=reload.items;saveRouteCache();toggleEdit();
+  selectedIds.clear();saveRouteCache();toggleEdit();
   setTimeout(()=>loader.remove(),1800);
   toast(errors?`${done-errors} eliminada(s), ${errors} error(es)`:`${total} ruta${total!==1?"s":""} eliminada${total!==1?"s":""}`);
 }

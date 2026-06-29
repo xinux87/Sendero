@@ -32,11 +32,10 @@ header{position:relative;padding:10px 22px;border-bottom:1px solid var(--line);
   overflow:hidden;background:var(--panel)}
 header svg{position:absolute;inset:0;width:100%;height:100%;opacity:.5;pointer-events:none}
 header .header-inner{position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px}
-header .brand{display:flex;align-items:baseline;gap:14px}
-header h1{font-size:40px;font-weight:700;text-transform:uppercase}
+header .brand{display:flex;align-items:center;gap:14px}
+header .brand-logo{height:48px;width:48px;flex-shrink:0}
+header h1{font-size:40px;font-weight:700;text-transform:uppercase;line-height:1}
 header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transform:uppercase}
-header .blaze{position:relative;display:inline-block;width:14px;height:34px;border-radius:2px;
-  background:linear-gradient(var(--gr-red) 0 50%, #fff 50% 100%);transform:translateY(4px)}
 @media(max-width:560px){header .header-inner{flex-direction:column;align-items:flex-start}}
 .header-nav{display:flex;gap:4px;flex-shrink:0}
 .nav-link{padding:5px 12px;border-radius:20px;border:1px solid transparent;
@@ -131,9 +130,11 @@ header .blaze{position:relative;display:inline-block;width:14px;height:34px;bord
   </svg>
   <div class="header-inner">
     <div class="brand">
-      <span class="blaze"></span>
-      <h1>Sendero</h1>
-      <span class="tag">Bitácora de montaña</span>
+      <img src="/static/icon.svg" class="brand-logo" alt="Sendero">
+      <div>
+        <h1>Sendero</h1>
+        <span class="tag">Bitácora de montaña</span>
+      </div>
     </div>
     <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
       {% block header_nav %}{% endblock %}

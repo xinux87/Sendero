@@ -91,6 +91,7 @@ secciones y actualiza el `history` sin recargar la página.
 | GET | `/Sendero/<name>` | `sendero.html` con JSON inyectado |
 | GET | `/Plan/<name>` | `plan_detalle.html` con JSON inyectado |
 | GET | `/api/routes` | lista paginada (incluye `thumb_file`) |
+| GET | `/api/routes/geojson` | FeatureCollection de líneas decimadas para el mapa del dashboard (props: id, name, activity, year, km) |
 | POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb |
 | GET | `/api/routes/<id>` | dict completo de la ruta |
 | PATCH | `/api/routes/<id>` | actualiza name/notes/activity_type/immich_checked |
@@ -149,7 +150,25 @@ reconstruir el mapa. Soporta clustering nativo. Los iconos de actividad se carga
 como imágenes PNG en base64 con `map.addImage()`. Al cambiar la capa base se llama a
 `getSource('basemap').setTiles(...)`.
 
+### Mapa del dashboard en `app.html` (sección Dashboard)
+Segundo mapa MapLibre (`dashMap`) que dibuja **todas las rutas como líneas** (no puntos).
+- Fuente: `GET /api/routes/geojson` — FeatureCollection con coordenadas decimadas (1 de cada 4 puntos). Cada feature lleva `activity`, `year` y `km` en `properties`.
+- El mapa se inicializa inmediatamente con fuente vacía; las rutas se cargan en paralelo y se añaden con `setData()`. Hay una barra de progreso de 3 px debajo del mapa.
+- **Filtros combinados**: `_dashApplyFilters()` aplica un filtro MapLibre `['all', ...]` combinando año (`dashSelectedYear`) y actividades (`dashActiveActs`).
+- **Barras de año clicables** (`toggleDashYear(year)`): seleccionar un año atenúa los demás, filtra el mapa y re-renderiza "Por actividad" con datos del año.
+- **Filas de actividad clicables** (`toggleDashAct(actId)`): togglean la visibilidad en el mapa.
+- **`_refreshActRows()`**: re-renderiza "Por actividad" desde `dashAllFC` (GeoJSON en memoria), respetando el año seleccionado. Se llama tras cargar el GeoJSON y al cambiar el año.
+- **`_reloadDashboard()`**: se llama en cada visita al dashboard (no solo la primera) para recargar stats y reintentar el mapa si estaba vacío. Limpia los contenedores dinámicos antes de repoblarlos.
+- **TRAMPA**: `dashActiveActs` se inicializa dentro de `initDashMap()` (no en la declaración) porque `ACTIVITIES` se define más abajo en el mismo fichero y causaría ReferenceError.
+
+### Header (`base.html`)
+El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se copia en el Dockerfile; si añades assets estáticos, asegúrate de que el `COPY static ./static` siga en el Dockerfile.
+
 ## Bugs corregidos (no reintroducir)
+
+- **`dashActiveActs` inicializado fuera de orden** — declarar `dashActiveActs=new Set(ACTIVITIES.map(...))` en el `let` del módulo lanza `ReferenceError` porque `ACTIVITIES` se define más abajo. Siempre inicializar dentro de `initDashMap()`.
+
+
 
 - **`init_db()` a nivel de módulo** — Gunicorn importa `app:app` sin ejecutar el
   bloque `__main__`; sin `init_db()` al importar falla en el primer request.
@@ -257,3 +276,5 @@ Los ajustes de settings sobreescriben los de `.env`/variables de entorno.
   en `app.html` para invalidar el sessionStorage de los clientes.
 - Si tocaste `app.html` (`makeCard`, CSS de `.card`): recuerda que tanto "Mis Rutas"
   como las tarjetas del mapa de overview están en ese mismo archivo.
+- Si tocaste el mapa del dashboard: verifica que `_reloadDashboard()` limpia los contenedores antes de repoblar y que `initDashMap()` no se llama dos veces (guarda `if(dashMapLoaded||dashMap)return`).
+- Si añades assets estáticos a `static/`: el `COPY static ./static` ya está en el Dockerfile.

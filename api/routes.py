@@ -164,6 +164,37 @@ def get_route_by_name(name):
     return jsonify(_build_route_dict(r["id"]))
 
 
+@routes_bp.route("/api/routes/geojson", methods=["GET"])
+def routes_geojson():
+    """GeoJSON FeatureCollection de todas las rutas (líneas decimadas) para el mapa del dashboard."""
+    rows = db().execute(
+        "SELECT id, name, activity_type, geojson, started_at, distance_m FROM routes "
+        "WHERE geojson IS NOT NULL AND geojson != '[]'"
+    ).fetchall()
+    features = []
+    for r in rows:
+        coords = json.loads(r["geojson"] or "[]")
+        if len(coords) < 2:
+            continue
+        # Keep every 4th point to reduce payload; always keep first and last
+        step = 4
+        dec = coords[::step]
+        if dec[-1] != coords[-1]:
+            dec.append(coords[-1])
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": dec},
+            "properties": {
+                "id": r["id"],
+                "name": r["name"],
+                "activity": r["activity_type"] or "otros",
+                "year": (r["started_at"] or "")[:4] or None,
+                "km": (r["distance_m"] or 0) / 1000,
+            },
+        })
+    return jsonify({"type": "FeatureCollection", "features": features})
+
+
 @routes_bp.route("/api/routes", methods=["GET"])
 def list_routes():
     con = db()
