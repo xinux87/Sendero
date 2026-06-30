@@ -27,6 +27,7 @@ def refresh_config():
     global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_DIST_M, IMMICH_ENABLED, _CUSTOM_GPX_TYPES
     try:
         con = sqlite3.connect(DB_PATH)
+        con.execute("PRAGMA busy_timeout=20000")
         rows = dict(con.execute("SELECT key, value FROM settings").fetchall())
         con.close()
     except Exception:

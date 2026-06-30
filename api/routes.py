@@ -164,12 +164,44 @@ def get_route_by_name(name):
     return jsonify(_build_route_dict(r["id"]))
 
 
+def _route_bbox(coords):
+    """min_lon, min_lat, max_lon, max_lat a partir de la lista de coordenadas del track."""
+    if not coords:
+        return None
+    lons = [c[0] for c in coords]
+    lats = [c[1] for c in coords]
+    return min(lons), min(lats), max(lons), max(lats)
+
+
 @routes_bp.route("/api/routes/geojson", methods=["GET"])
 def routes_geojson():
-    """GeoJSON FeatureCollection de todas las rutas (líneas decimadas) para el mapa del dashboard."""
-    rows = db().execute(
-        "SELECT id, name, activity_type, geojson, started_at, distance_m FROM routes "
-        "WHERE geojson IS NOT NULL AND geojson != '[]'"
+    """GeoJSON FeatureCollection de líneas decimadas para el mapa del dashboard.
+
+    Acepta ?bbox=minLon,minLat,maxLon,maxLat para devolver solo las rutas cuyo
+    bounding box corta esa zona (la vista actual del mapa), en vez de las líneas
+    de las 475 rutas siempre: así el navegador no descarga ni mantiene en memoria
+    nada que el usuario no esté viendo (ni va a ver con un par de niveles de zoom
+    de margen). idx_routes_bbox descarta las que no caen dentro sin tocar la fila
+    completa (y por tanto sin atravesar geojson/elevation/heart_rate).
+    Sin bbox, devuelve todas las rutas (modo de compatibilidad, no usado por el
+    dashboard normalmente).
+    """
+    con = db()
+    bbox = request.args.get("bbox")
+    where = "geojson IS NOT NULL AND geojson != '[]'"
+    params = []
+    if bbox:
+        try:
+            min_lon, min_lat, max_lon, max_lat = (float(v) for v in bbox.split(","))
+        except ValueError:
+            return jsonify({"error": "bbox inválido, formato minLon,minLat,maxLon,maxLat"}), 400
+        where += (" AND bbox_min_lon<=? AND bbox_max_lon>=?"
+                  " AND bbox_min_lat<=? AND bbox_max_lat>=?")
+        params += [max_lon, min_lon, max_lat, min_lat]
+    rows = con.execute(
+        f"SELECT id, name, activity_type, geojson, started_at, distance_m "
+        f"FROM routes WHERE {where}",
+        params,
     ).fetchall()
     features = []
     for r in rows:
@@ -251,20 +283,23 @@ def create_route():
 
     start_lat = coords[0][1] if coords else None
     start_lon = coords[0][0] if coords else None
+    bbox = _route_bbox(coords)
     con = db()
     cur = con.execute(
         """INSERT INTO routes
         (name,notes,gpx_file,distance_m,ascent_m,descent_m,duration_s,moving_s,
          ele_min,ele_max,avg_speed,started_at,geojson,elevation,created_at,
-         activity_type,device,start_lat,start_lon,heart_rate,hr_avg,hr_max)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         activity_type,device,start_lat,start_lon,heart_rate,hr_avg,hr_max,
+         bbox_min_lon,bbox_min_lat,bbox_max_lon,bbox_max_lat)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (name, "", stored, stats["distance_m"], stats["ascent_m"],
          stats["descent_m"], stats["duration_s"], stats["moving_s"],
          stats["ele_min"], stats["ele_max"], stats["avg_speed"],
          stats["started_at"], json.dumps(coords), json.dumps(elev),
          dt.datetime.now().isoformat(), activity_type, creator,
          start_lat, start_lon,
-         json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max),
+         json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max,
+         *(bbox or (None, None, None, None))),
     )
     con.commit()
     rid = cur.lastrowid
@@ -354,19 +389,22 @@ def rescan_route(rid):
 
     start_lat = coords[0][1] if coords else None
     start_lon = coords[0][0] if coords else None
+    bbox = _route_bbox(coords) or (None, None, None, None)
     con.execute(
         """UPDATE routes SET
            distance_m=?,ascent_m=?,descent_m=?,duration_s=?,moving_s=?,
            ele_min=?,ele_max=?,avg_speed=?,started_at=?,
            geojson=?,elevation=?,device=?,activity_type=?,
-           start_lat=?,start_lon=?,heart_rate=?,hr_avg=?,hr_max=?
+           start_lat=?,start_lon=?,heart_rate=?,hr_avg=?,hr_max=?,
+           bbox_min_lon=?,bbox_min_lat=?,bbox_max_lon=?,bbox_max_lat=?
            WHERE id=?""",
         (stats["distance_m"], stats["ascent_m"], stats["descent_m"],
          stats["duration_s"], stats["moving_s"],
          stats["ele_min"], stats["ele_max"], stats["avg_speed"], stats["started_at"],
          json.dumps(coords), json.dumps(elev), creator, activity_type,
          start_lat, start_lon,
-         json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max, rid),
+         json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max,
+         *bbox, rid),
     )
     con.commit()
     thumb = generate_thumb(coords, rid)

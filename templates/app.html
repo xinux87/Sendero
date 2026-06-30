@@ -52,11 +52,8 @@
 .act-meta{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
 .act-count{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
 .year-chart{display:flex;align-items:flex-end;gap:6px;height:120px;border-bottom:1px solid var(--line)}
-.year-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:0;cursor:pointer;transition:opacity .2s}
-.year-col.inactive{opacity:.3}
-.year-bar{background:var(--pr-yellow);border-radius:3px 3px 0 0;width:100%;max-width:48px;min-height:2px;transition:filter .15s}
-.year-col:hover .year-bar{filter:brightness(1.2)}
-.year-col.selected .year-bar{filter:brightness(1.4)}
+.year-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:0}
+.year-bar{background:var(--pr-yellow);border-radius:3px 3px 0 0;width:100%;max-width:48px;min-height:2px}
 .year-num{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;margin-top:6px}
 .year-count{font-family:var(--mono);font-size:10px;color:var(--ink);font-weight:700}
 .records-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
@@ -69,9 +66,6 @@
 .record-card .rn{font-size:13px;color:var(--ink);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ov-loading{color:var(--muted);font-size:14px;padding:32px 0;text-align:center}
 #dash-map{height:320px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
-.act-row{cursor:pointer;border-radius:6px;padding:4px 6px;margin:0 -6px;transition:opacity .2s}
-.act-row:hover{background:var(--panel-2)}
-.act-row.inactive{opacity:.3}
 
 /* ══ SECCIÓN RUTAS ══ */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
@@ -304,7 +298,7 @@
       </div>
     </div>
     <div class="ov-section">
-      <div class="ov-section-title">Por actividad <span style="font-size:10px;font-weight:400;color:var(--muted);margin-left:8px">Pulsa para filtrar el mapa</span></div>
+      <div class="ov-section-title">Por actividad</div>
       <div class="act-rows" id="ov-act-rows"></div>
     </div>
     <div class="ov-section">
@@ -408,7 +402,14 @@ const _ANIM_OUT  = 150; // ms fade-out
 let _spaReady    = false;
 
 /* ══ MAPA DASHBOARD ══ */
-let dashMap=null,dashMapLoaded=false,dashActiveActs=null,dashAllFC=null,dashSelectedYear=null;
+let dashMap=null,dashMapLoaded=false;
+let dashRoutesLite=null;
+const DASH_CLUSTER_MAXZOOM=9,DASH_POINTS_MAXZOOM=11,DASH_LINES_MINZOOM=9;
+// Por debajo de este zoom no se piden líneas en absoluto: solo se ven las bolitas
+// (de lejos no aportan nada y serían las 475 rutas completas). DASH_LINES_MINZOOM-2
+// da un colchón de un par de niveles de zoom para que ya estén listas al hacer zoom.
+const DASH_LINES_PREFETCH_ZOOM=DASH_LINES_MINZOOM-2;
+let dashLineIds=new Set(),dashLineFeatures=[],dashLinesMoveTimer=null,dashLinesFetching=false;
 
 function _dashLineColor(){
   const expr=['match',['get','activity']];
@@ -417,9 +418,81 @@ function _dashLineColor(){
   return expr;
 }
 
+function _dashPointsGeoJSON(){
+  return{type:'FeatureCollection',features:(dashRoutesLite||[]).map(r=>({
+    type:'Feature',
+    geometry:{type:'Point',coordinates:[r.start_lon,r.start_lat]},
+    properties:{id:r.id,name:r.name,activity:r.activity_type||'otros',
+      year:(r.started_at||'').slice(0,4)||null,
+      km:(r.distance_m||0)/1000}
+  }))};
+}
+
+function _dashFitFromPoints(){
+  if(!dashRoutesLite||!dashRoutesLite.length)return;
+  let mnLo=180,mxLo=-180,mnLa=90,mxLa=-90;
+  dashRoutesLite.forEach(r=>{
+    if(r.start_lon<mnLo)mnLo=r.start_lon;if(r.start_lon>mxLo)mxLo=r.start_lon;
+    if(r.start_lat<mnLa)mnLa=r.start_lat;if(r.start_lat>mxLa)mxLa=r.start_lat;
+  });
+  if(mnLo<mxLo&&mnLa<mxLa)
+    dashMap.fitBounds([[mnLo,mnLa],[mxLo,mxLa]],{padding:30,maxZoom:12,duration:0});
+}
+
+function _dashScheduleLineLoad(){
+  clearTimeout(dashLinesMoveTimer);
+  dashLinesMoveTimer=setTimeout(_dashLoadLinesForView,350);
+}
+
+async function _dashLoadLinesForView(){
+  if(!dashMapLoaded||dashLinesFetching)return;
+  if(dashMap.getZoom()<DASH_LINES_PREFETCH_ZOOM)return; // de lejos, solo bolitas
+  const b=dashMap.getBounds();
+  // Margen del 50% del viewport en cada lado: pequeños paneos dentro de esa zona
+  // no disparan otra petición (dashLineIds ya las tendrá).
+  const padLon=(b.getEast()-b.getWest())*0.5,padLat=(b.getNorth()-b.getSouth())*0.5;
+  const bbox=[b.getWest()-padLon,b.getSouth()-padLat,b.getEast()+padLon,b.getNorth()+padLat].join(',');
+  dashLinesFetching=true;
+  const loader=document.getElementById('dash-map-loader');
+  const loaderBar=document.getElementById('dash-map-loader-bar');
+  loader.classList.remove('hidden');loaderBar.style.width='30%';
+  try{
+    const fc=await(await fetch('/api/routes/geojson?bbox='+encodeURIComponent(bbox))).json();
+    const fresh=fc.features.filter(f=>!dashLineIds.has(f.properties.id));
+    if(fresh.length){
+      fresh.forEach(f=>dashLineIds.add(f.properties.id));
+      dashLineFeatures.push(...fresh);
+      dashMap.getSource('dash-routes').setData({type:'FeatureCollection',features:dashLineFeatures});
+    }
+    loaderBar.style.width='100%';
+  }catch(e){/* las bolitas siguen visibles igualmente */}
+  finally{
+    dashLinesFetching=false;
+    setTimeout(()=>loader.classList.add('hidden'),250);
+  }
+}
+
+function _syncDashClusterLabels(){
+  if(!dashMap.getLayer('dash-clusters'))return;
+  if(!dashMap._dclabels)dashMap._dclabels={};
+  const _dclabels=dashMap._dclabels;
+  const feats=dashMap.queryRenderedFeatures({layers:['dash-clusters']});
+  const seen=new Set();
+  feats.forEach(f=>{
+    const id=f.properties.cluster_id,n=f.properties.point_count;seen.add(id);
+    if(!_dclabels[id]){
+      const el=document.createElement('div');
+      el.style.cssText='pointer-events:none;color:#101a14;font-weight:800;font-size:12px;line-height:1;text-align:center;text-shadow:0 0 3px rgba(255,255,255,0.95)';
+      _dclabels[id]=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat(f.geometry.coordinates).addTo(dashMap);
+    }
+    const txt=n>=1000?Math.round(n/1000)+'k':String(n);
+    if(_dclabels[id].getElement().textContent!==txt)_dclabels[id].getElement().textContent=txt;
+  });
+  Object.keys(_dclabels).forEach(id=>{if(!seen.has(+id)){_dclabels[id].remove();delete _dclabels[id];}});
+}
+
 function initDashMap(){
   if(dashMapLoaded||dashMap)return; // ya cargado o cargando
-  if(!dashActiveActs) dashActiveActs=new Set(ACTIVITIES.map(a=>a.id));
 
   // El mapa se crea inmediatamente; las rutas se cargan en paralelo
   dashMap=new maplibregl.Map({
@@ -438,98 +511,94 @@ function initDashMap(){
   dashMap.addControl(new maplibregl.FullscreenControl(),'top-right');
 
   dashMap.on('load',async()=>{
-    // Fuente vacía para que la capa exista antes de recibir datos
+    // Capa de líneas (track real); solo se ve a partir de cierto zoom, se rellena en 2º plano
     dashMap.addSource('dash-routes',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-    dashMap.addLayer({id:'dash-lines',type:'line',source:'dash-routes',
+    dashMap.addLayer({id:'dash-lines',type:'line',source:'dash-routes',minzoom:DASH_LINES_MINZOOM,
       layout:{'line-join':'round','line-cap':'round'},
       paint:{'line-color':_dashLineColor(),'line-width':1.8,'line-opacity':0.8}});
+    // Línea invisible más ancha encima, solo para que el click/hover sea más fácil
+    // de acertar que sobre la línea real de 1.8px.
+    dashMap.addLayer({id:'dash-lines-hit',type:'line',source:'dash-routes',minzoom:DASH_LINES_MINZOOM,
+      layout:{'line-join':'round','line-cap':'round'},
+      paint:{'line-color':'#000','line-width':14,'line-opacity':0}});
+
+    // Capa de bolitas/clusters (un punto por ruta); es la que se ve "de lejos"
+    await _loadActImages(dashMap);
+    dashMap.addSource('dash-points',{type:'geojson',data:{type:'FeatureCollection',features:[]},
+      cluster:true,clusterMaxZoom:DASH_CLUSTER_MAXZOOM,clusterRadius:30});
+    dashMap.addLayer({id:'dash-clusters',type:'circle',source:'dash-points',
+      filter:['has','point_count'],
+      paint:{
+        'circle-color':['step',['get','point_count'],'#e8c44a',10,'#d4863a',50,'#d24a3a'],
+        'circle-radius':['step',['get','point_count'],14,10,20,50,28],
+        'circle-opacity':0.55,'circle-stroke-opacity':1,
+        'circle-stroke-width':2,'circle-stroke-color':'rgba(255,255,255,0.85)'
+      }});
+    dashMap.addLayer({id:'dash-unclustered',type:'symbol',source:'dash-points',maxzoom:DASH_POINTS_MAXZOOM,
+      filter:['!',['has','point_count']],
+      layout:{'icon-image':['concat','act-',['get','activity']],'icon-size':0.85,
+        'icon-allow-overlap':true,'icon-ignore-placement':true}});
+    dashMap.on('idle',_syncDashClusterLabels);
+    dashMap.on('click','dash-clusters',async e=>{
+      const src=dashMap.getSource('dash-points');
+      const cid=e.features[0].properties.cluster_id;
+      const coords=e.features[0].geometry.coordinates.slice();
+      try{const zoom=await src.getClusterExpansionZoom(cid);dashMap.easeTo({center:coords,zoom:zoom+1.5});}
+      catch(_){src.getClusterExpansionZoom(cid,(err,zoom)=>{if(!err)dashMap.easeTo({center:coords,zoom:zoom+1.5});});}
+    });
+    dashMap.on('mouseenter','dash-clusters',()=>{dashMap.getCanvas().style.cursor='pointer';});
+    dashMap.on('mouseleave','dash-clusters',()=>{dashMap.getCanvas().style.cursor='';});
+    // Punto individual o línea de una ruta concreta → ficha de detalle
+    const _goToRoute=name=>{location.href='/Sendero/'+encodeURIComponent(name);};
+    dashMap.on('click','dash-unclustered',e=>{_goToRoute(e.features[0].properties.name);});
+    dashMap.on('mouseenter','dash-unclustered',()=>{dashMap.getCanvas().style.cursor='pointer';});
+    dashMap.on('mouseleave','dash-unclustered',()=>{dashMap.getCanvas().style.cursor='';});
+    dashMap.on('click','dash-lines-hit',e=>{_goToRoute(e.features[0].properties.name);});
+    dashMap.on('mouseenter','dash-lines-hit',()=>{dashMap.getCanvas().style.cursor='pointer';});
+    dashMap.on('mouseleave','dash-lines-hit',()=>{dashMap.getCanvas().style.cursor='';});
+    // Las líneas solo se piden para la zona visible (+ colchón de zoom/paneo);
+    // nunca se descargan ni se mantienen en memoria las 475 rutas de golpe.
+    dashMap.on('moveend',_dashScheduleLineLoad);
+
     dashMapLoaded=true;
 
-    // Barra de carga
-    const loader=document.getElementById('dash-map-loader');
-    const loaderBar=document.getElementById('dash-map-loader-bar');
-    loader.classList.remove('hidden');
-    let pct=0;const iv=setInterval(()=>{pct=Math.min(pct+1.5,88);loaderBar.style.width=pct+'%';},80);
-
-    // Carga de rutas tras mostrar el mapa
-    let fc;
-    try{const r=await fetch('/api/routes/geojson');fc=await r.json();}catch(e){clearInterval(iv);loader.classList.add('hidden');return;}
-    clearInterval(iv);loaderBar.style.width='100%';
-    setTimeout(()=>loader.classList.add('hidden'),300);
-    if(!fc.features.length){
+    // Carga ligera (~130 KB): bolitas visibles casi al instante, sin loader
+    let lite;
+    try{lite=await(await fetch('/api/routes')).json();}catch(e){lite={items:[]};}
+    dashRoutesLite=(lite.items||[]).filter(r=>r.start_lat!=null&&r.start_lon!=null);
+    if(!dashRoutesLite.length){
       document.getElementById('ov-map-section').classList.add('hidden');return;
     }
-    dashAllFC=fc;
-    dashMap.getSource('dash-routes').setData(fc);
+    dashMap.getSource('dash-points').setData(_dashPointsGeoJSON());
     _refreshActRows();
-    let mnLo=180,mxLo=-180,mnLa=90,mxLa=-90;
-    fc.features.forEach(f=>f.geometry.coordinates.forEach(([lo,la])=>{
-      if(lo<mnLo)mnLo=lo;if(lo>mxLo)mxLo=lo;
-      if(la<mnLa)mnLa=la;if(la>mxLa)mxLa=la;
-    }));
-    if(mnLo<mxLo&&mnLa<mxLa)
-      dashMap.fitBounds([[mnLo,mnLa],[mxLo,mxLa]],{padding:30,maxZoom:12,duration:0});
+    _dashFitFromPoints();
+    // fitBounds(duration:0) ya dispara 'moveend', pero por si el zoom de partida
+    // ya está dentro del rango de líneas y el fit no movió nada, se fuerza una vez.
+    _dashLoadLinesForView();
   });
-}
-
-function _dashApplyFilters(){
-  if(!dashMapLoaded||!dashActiveActs)return;
-  const filters=[];
-  if(dashActiveActs.size<ACTIVITIES.length)
-    filters.push(['in',['get','activity'],['literal',[...dashActiveActs]]]);
-  if(dashSelectedYear)
-    filters.push(['==',['get','year'],dashSelectedYear]);
-  dashMap.setFilter('dash-lines',filters.length===0?null:filters.length===1?filters[0]:['all',...filters]);
 }
 
 function _refreshActRows(){
-  if(!dashAllFC)return;
-  const features=dashAllFC.features.filter(f=>!dashSelectedYear||f.properties.year===dashSelectedYear);
+  if(!dashRoutesLite)return;
   const byAct={};
-  features.forEach(f=>{
-    const a=f.properties.activity||'otros';
+  dashRoutesLite.forEach(r=>{
+    const a=r.activity_type||'otros';
     if(!byAct[a])byAct[a]={count:0,km:0};
-    byAct[a].count++;byAct[a].km+=f.properties.km||0;
+    byAct[a].count++;byAct[a].km+=(r.distance_m||0)/1000;
   });
-  const totalR=features.length||1;
+  const totalR=dashRoutesLite.length||1;
   const actBox=document.getElementById('ov-act-rows');
   actBox.innerHTML='';
   ACTIVITIES.forEach(a=>{
     const t=byAct[a.id];if(!t)return;
     const pct=Math.round((t.count/totalR)*100);
     const row=document.createElement('div');row.className='act-row';
-    row.dataset.act=a.id;row.onclick=()=>toggleDashAct(a.id);
-    if(!dashActiveActs.has(a.id))row.classList.add('inactive');
     row.innerHTML=`<div class="act-label"><div class="act-dot" style="background:${a.color}"></div>${a.label}</div>
       <div class="act-bar-bg"><div class="act-bar-fill" style="width:${pct}%;background:${a.color}"></div></div>
       <div class="act-meta">${t.km.toLocaleString('es-ES',{maximumFractionDigits:0})} km</div>
       <div class="act-count">${t.count} ruta${t.count!==1?'s':''}</div>`;
     actBox.appendChild(row);
   });
-}
-
-function toggleDashAct(actId){
-  if(dashActiveActs.has(actId)){
-    if(dashActiveActs.size===1)return;
-    dashActiveActs.delete(actId);
-  }else{
-    dashActiveActs.add(actId);
-  }
-  document.querySelectorAll('.act-row[data-act]').forEach(r=>{
-    r.classList.toggle('inactive',!dashActiveActs.has(r.dataset.act));
-  });
-  _dashApplyFilters();
-}
-
-function toggleDashYear(year){
-  dashSelectedYear=(dashSelectedYear===year)?null:year;
-  document.querySelectorAll('.year-col[data-year]').forEach(col=>{
-    const isSelected=col.dataset.year===dashSelectedYear;
-    col.classList.toggle('selected',!!dashSelectedYear&&isSelected);
-    col.classList.toggle('inactive',!!dashSelectedYear&&!isSelected);
-  });
-  _dashApplyFilters();
-  _refreshActRows();
 }
 
 function _reloadDashboard(){
@@ -706,8 +775,6 @@ async function loadStats(){
     const t=data.by_type[a.id];if(!t)return;
     const pct=Math.round((t.count/totalR)*100);
     const row=document.createElement('div');row.className='act-row';
-    row.dataset.act=a.id;
-    row.onclick=()=>toggleDashAct(a.id);
     row.innerHTML=`<div class="act-label"><div class="act-dot" style="background:${a.color}"></div>${a.label}</div>
       <div class="act-bar-bg"><div class="act-bar-fill" style="width:${pct}%;background:${a.color}"></div></div>
       <div class="act-meta">${t.km.toLocaleString('es-ES',{maximumFractionDigits:0})} km</div>
@@ -723,7 +790,6 @@ async function loadStats(){
     years.forEach(([year,count])=>{
       const h=Math.max(4,Math.round((count/maxC)*100));
       const col=document.createElement('div');col.className='year-col';
-      col.dataset.year=year;col.onclick=()=>toggleDashYear(year);
       col.title=`${year}: ${count} ruta${count!==1?'s':''}`;
       col.innerHTML=`<div class="year-count">${count}</div>
         <div class="year-bar" style="height:${h}px"></div>
@@ -857,7 +923,7 @@ let allRoutes=[],activeActs=new Set(ACTIVITIES.map(a=>a.id));
 let sortOrder='desc',viewMode='a';
 let editMode=false,selectedIds=new Set(),visibleRoutes=[];
 let monthDomMap=new Map();
-const FIRST_BATCH=25,BATCH_SIZE=100;
+const PAGE_SIZE=30;
 const ROUTE_CACHE='sendero_routes_v1',FILTER_CACHE='sendero_filters_v1';
 
 function saveRouteCache(){try{sessionStorage.setItem(ROUTE_CACHE,JSON.stringify({ts:Date.now(),routes:allRoutes}));}catch(e){}}
@@ -1179,23 +1245,20 @@ function selectMonth(key){
   if(allSel)mr.forEach(r=>selectedIds.delete(r.id));else mr.forEach(r=>selectedIds.add(r.id));
   updateSelCount();renderList();
 }
+let pendingRoutes=[],_listObserver=null;
 function renderList(){
   monthDomMap.clear();const box=$("#routes");box.innerHTML="";
-  const filtered=visibleRoutes=[...allRoutes].filter(passesFilter).sort((a,b)=>{
+  const filtered=[...allRoutes].filter(passesFilter).sort((a,b)=>{
     const da=a.started_at||"",db=b.started_at||"";
     return sortOrder==='asc'?(da>db?1:da<db?-1:0):(da<db?1:da>db?-1:0);
   });
   updateCountDisplay(allRoutes.length,filtered.length);
   $("#no-routes").classList.toggle("hidden",filtered.length>0);
-  const groups=new Map();
-  filtered.forEach(r=>{const key=r.started_at?r.started_at.slice(0,7):"sin-fecha";
-    if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);});
-  groups.forEach((routes,key)=>{
-    const section=createMonthSection(key);const grid=section.querySelector(".grid");
-    routes.forEach(r=>grid.appendChild(makeCard(r)));
-    section.querySelector(".month-count").textContent=`${routes.length} ruta${routes.length!==1?'s':''}`;
-    box.appendChild(section);monthDomMap.set(key,{section,grid,count:routes.length});
-  });
+  visibleRoutes=[];
+  pendingRoutes=filtered.slice();
+  // En modo edición se renderiza todo de una vez: selección por mes/"todo visible"
+  // necesita que cada tarjeta ya exista en el DOM.
+  loadNextListPage(editMode?pendingRoutes.length:PAGE_SIZE);
   renderOverviewMap(filtered,false);
 }
 function appendBatchToDOM(routes){
@@ -1210,37 +1273,33 @@ function appendBatchToDOM(routes){
   });
   $("#no-routes").classList.toggle("hidden",visibleRoutes.length>0);
 }
+function loadNextListPage(n){
+  _teardownListSentinel();
+  const slice=pendingRoutes.splice(0,n);
+  if(slice.length)appendBatchToDOM(slice);
+  _setupListSentinel();
+}
+function _setupListSentinel(){
+  if(!pendingRoutes.length)return;
+  const s=document.createElement("div");s.id="list-sentinel";s.style.cssText="height:1px";
+  $("#routes").appendChild(s);
+  if(!_listObserver)_listObserver=new IntersectionObserver(es=>{
+    if(es[0].isIntersecting)loadNextListPage(PAGE_SIZE);
+  },{rootMargin:"800px"});
+  _listObserver.observe(s);
+}
+function _teardownListSentinel(){
+  if(_listObserver)_listObserver.disconnect();
+  const s=document.getElementById("list-sentinel");if(s)s.remove();
+}
 function updateCountDisplay(loaded,shown){
   if(!loaded){$("#count").textContent="";return;}
   $("#count").textContent=shown<loaded?`${shown} de ${loaded} ruta(s)`:`${loaded} ruta(s)`;
 }
-async function fetchAllInBackground(knownTotal){
-  const bgLoader=document.createElement("div");bgLoader.className="upload-loader";
-  bgLoader.innerHTML=`<div class="upload-loader-title">Cargando rutas <span class="upload-loader-count" id="bg-count">${allRoutes.length} / ${knownTotal}</span></div>
-    <div class="upload-bar-bg"><div class="upload-bar-fill" id="bg-bar" style="width:${Math.round(allRoutes.length/knownTotal*100)}%"></div></div>
-    <div class="upload-filename" id="bg-status">Cargando en segundo plano…</div>`;
-  document.body.appendChild(bgLoader);
-  let loaded=allRoutes.length;
-  while(loaded<knownTotal){
-    const batch=await(await fetch(`/api/routes?limit=${BATCH_SIZE}&offset=${loaded}`)).json();
-    if(!batch.items.length)break;
-    loaded+=batch.items.length;allRoutes.push(...batch.items);
-    appendBatchToDOM(batch.items);
-    renderOverviewMap(batch.items.filter(r=>r.start_lat!=null),true);
-    const pct=Math.round(loaded/knownTotal*100);
-    document.getElementById("bg-bar").style.width=`${pct}%`;
-    document.getElementById("bg-count").textContent=`${loaded} / ${knownTotal}`;
-    document.getElementById("bg-status").textContent=`${pct}% cargado`;
-  }
-  document.getElementById("bg-bar").style.width="100%";
-  document.getElementById("bg-status").textContent="Listo";
-  updateCountDisplay(allRoutes.length,visibleRoutes.length);
-  saveRouteCache();setTimeout(()=>bgLoader.remove(),1500);
-}
 async function silentRefresh(){
   try{const check=await(await fetch(`/api/routes?limit=1&offset=0`)).json();
     if(check.total!==allRoutes.length){clearRouteCache();
-      const all=await(await fetch(`/api/routes?limit=9999&offset=0`)).json();
+      const all=await(await fetch(`/api/routes`)).json();
       allRoutes=all.items;renderList();saveRouteCache();}}catch(e){}
 }
 async function loadList(){
@@ -1253,10 +1312,10 @@ async function loadList(){
   if(sessionStorage.getItem('sendero_cache_dirty')){sessionStorage.removeItem('sendero_cache_dirty');clearRouteCache();}
   const cached=loadRouteCache();
   if(cached){allRoutes=cached;buildPills();renderList();silentRefresh();return;}
-  const first=await(await fetch(`/api/routes?limit=${FIRST_BATCH}&offset=0`)).json();
-  allRoutes=first.items;buildPills();renderList();
-  if(first.total<=FIRST_BATCH){saveRouteCache();return;}
-  await fetchAllInBackground(first.total);
+  // El listado resumido (sin geojson) de todas las rutas pesa ~130 KB para 475
+  // filas: es más rápido traerlo de una vez que encadenar varias peticiones.
+  const all=await(await fetch(`/api/routes`)).json();
+  allRoutes=all.items;buildPills();renderList();saveRouteCache();
 }
 async function uploadFiles(files){
   const total=files.length;let ok=0;const errors=[];

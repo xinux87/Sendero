@@ -1,12 +1,22 @@
+import json
 import sqlite3
 from flask import g
 import core.config as cfg
+
+
+# Gunicorn arranca varios workers (procesos) que abren su propia conexión sqlite3
+# contra el mismo archivo. Sin busy_timeout, una escritura concurrente de otro
+# worker/proceso (p.ej. dos workers corriendo init_db() a la vez al arrancar, o un
+# request normal mientras otro escribe) falla al instante con "database is locked"
+# en vez de esperar a que se libere; con esto esperan hasta 20s antes de fallar.
+BUSY_TIMEOUT_MS = 20000
 
 
 def db():
     if "db" not in g:
         g.db = sqlite3.connect(cfg.DB_PATH)
         g.db.row_factory = sqlite3.Row
+        g.db.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     return g.db
 
 
@@ -18,6 +28,7 @@ def close_db(exc):
 
 def init_db():
     con = sqlite3.connect(cfg.DB_PATH)
+    con.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     con.executescript(
         """
         CREATE TABLE IF NOT EXISTS routes (
@@ -70,8 +81,46 @@ def init_db():
                        WHERE geojson IS NOT NULL AND geojson != '[]'""")
     if "thumb_file" not in route_cols:
         con.execute("ALTER TABLE routes ADD COLUMN thumb_file TEXT")
+    # Bounding box de cada track, para poder pedir al mapa del dashboard solo las
+    # rutas que caen dentro de la zona visible (en vez de las líneas de todas
+    # siempre). create_route/rescan_route la rellenan al guardar cada ruta; no
+    # hay backfill para rutas ya existentes (la base de partida está vacía).
+    # Gunicorn arranca 2 workers que ejecutan init_db() cada uno por su cuenta:
+    # el ALTER TABLE puede fallar con "duplicate column" si el otro worker ya lo
+    # añadió justo antes, así que se tolera ese error concreto en vez de tumbar
+    # el worker.
+    if "bbox_min_lon" not in route_cols:
+        try:
+            con.execute("ALTER TABLE routes ADD COLUMN bbox_min_lon REAL")
+            con.execute("ALTER TABLE routes ADD COLUMN bbox_min_lat REAL")
+            con.execute("ALTER TABLE routes ADD COLUMN bbox_max_lon REAL")
+            con.execute("ALTER TABLE routes ADD COLUMN bbox_max_lat REAL")
+            con.commit()
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e):
+                raise
     con.execute("CREATE INDEX IF NOT EXISTS idx_routes_date "
                 "ON routes(COALESCE(started_at,created_at) DESC)")
+    # Índice compacto solo con el bbox (sin las demás columnas): permite descartar
+    # rápidamente qué rutas caen fuera de la zona visible sin tocar la fila completa
+    # (y por tanto sin atravesar geojson/elevation/heart_rate) para las que no caen dentro.
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_bbox ON routes(
+        bbox_min_lon, bbox_max_lon, bbox_min_lat, bbox_max_lat
+    )""")
+    # Índices de cobertura: start_lat/start_lon/thumb_file/activity_type se añadieron
+    # con ALTER TABLE, así que quedan físicamente DESPUÉS de geojson/elevation/heart_rate
+    # en cada fila. Sin estos índices, SQLite tiene que atravesar esos blobs (cientos de
+    # KB por ruta) solo para llegar a estas columnas pequeñas, lo que hace que listar las
+    # rutas (sin pedir geojson) tarde segundos en vez de milisegundos a partir de unas
+    # pocas centenas de rutas.
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_list_cov ON routes(
+        COALESCE(started_at,created_at) DESC,
+        id, name, distance_m, ascent_m, duration_s, moving_s, started_at,
+        activity_type, start_lat, start_lon, thumb_file
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_stats_cov ON routes(
+        activity_type, distance_m, ascent_m, moving_s, avg_speed, started_at, name
+    )""")
 
     con.executescript("""
         CREATE TABLE IF NOT EXISTS planned_routes (

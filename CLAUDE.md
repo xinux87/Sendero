@@ -90,8 +90,8 @@ secciones y actualiza el `history` sin recargar la página.
 | GET | `/planificacion` | `app.html` (sección planes) |
 | GET | `/Sendero/<name>` | `sendero.html` con JSON inyectado |
 | GET | `/Plan/<name>` | `plan_detalle.html` con JSON inyectado |
-| GET | `/api/routes` | lista paginada (incluye `thumb_file`) |
-| GET | `/api/routes/geojson` | FeatureCollection de líneas decimadas para el mapa del dashboard (props: id, name, activity, year, km) |
+| GET | `/api/routes` | lista paginada (incluye `thumb_file`); sin `limit` devuelve todas (es barata, ~130 KB/500 rutas) |
+| GET | `/api/routes/geojson` | FeatureCollection de líneas decimadas (props: id, name, activity, year, km). Acepta `?bbox=minLon,minLat,maxLon,maxLat`; sin él devuelve todas (no lo usa el dashboard salvo fallback) |
 | POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb |
 | GET | `/api/routes/<id>` | dict completo de la ruta |
 | PATCH | `/api/routes/<id>` | actualiza name/notes/activity_type/immich_checked |
@@ -151,15 +151,51 @@ como imágenes PNG en base64 con `map.addImage()`. Al cambiar la capa base se ll
 `getSource('basemap').setTiles(...)`.
 
 ### Mapa del dashboard en `app.html` (sección Dashboard)
-Segundo mapa MapLibre (`dashMap`) que dibuja **todas las rutas como líneas** (no puntos).
-- Fuente: `GET /api/routes/geojson` — FeatureCollection con coordenadas decimadas (1 de cada 4 puntos). Cada feature lleva `activity`, `year` y `km` en `properties`.
-- El mapa se inicializa inmediatamente con fuente vacía; las rutas se cargan en paralelo y se añaden con `setData()`. Hay una barra de progreso de 3 px debajo del mapa.
-- **Filtros combinados**: `_dashApplyFilters()` aplica un filtro MapLibre `['all', ...]` combinando año (`dashSelectedYear`) y actividades (`dashActiveActs`).
-- **Barras de año clicables** (`toggleDashYear(year)`): seleccionar un año atenúa los demás, filtra el mapa y re-renderiza "Por actividad" con datos del año.
-- **Filas de actividad clicables** (`toggleDashAct(actId)`): togglean la visibilidad en el mapa.
-- **`_refreshActRows()`**: re-renderiza "Por actividad" desde `dashAllFC` (GeoJSON en memoria), respetando el año seleccionado. Se llama tras cargar el GeoJSON y al cambiar el año.
-- **`_reloadDashboard()`**: se llama en cada visita al dashboard (no solo la primera) para recargar stats y reintentar el mapa si estaba vacío. Limpia los contenedores dinámicos antes de repoblarlos.
+Segundo mapa MapLibre (`dashMap`). Dibuja las rutas con **dos representaciones según el
+zoom** en vez de cargar siempre las 500 líneas completas:
+- **Bolitas/clusters (`dash-points`/`dash-clusters`/`dash-unclustered`)**: se pintan casi
+  al instante a partir de `dashRoutesLite` (el mismo `GET /api/routes` ligero, ~130 KB,
+  sin geojson) — clustering nativo de MapLibre, igual patrón que el mapa de "Mis Rutas".
+  Visibles siempre que no haya filtro de actividad/año activo.
+- **Líneas reales (`dash-lines`)**: solo `minzoom: DASH_LINES_MINZOOM` (9). Se piden a
+  `GET /api/routes/geojson?bbox=...` **solo para la zona visible** (+ 50% de margen) en
+  el listener `dashMap.on('moveend', _dashScheduleLineLoad)` (debounce 350 ms), y solo si
+  el zoom ya pasó `DASH_LINES_PREFETCH_ZOOM` (`DASH_LINES_MINZOOM - 2`, para que estén
+  listas antes de que se vuelvan visibles). `dashLineIds` (Set) evita volver a pedir
+  rutas ya cargadas; `dashLineFeatures` acumula el FeatureCollection mostrado.
+- **Filtros combinados**: `_dashApplyFilters()` aplica un filtro MapLibre `['all', ...]`
+  combinando año (`dashSelectedYear`) y actividades (`dashActiveActs`) **solo sobre
+  `dash-lines`** — los clusters no tienen `activity`/`year` en sus propiedades (son
+  agregados de MapLibre), así que con cualquier filtro activo se ocultan
+  `dash-clusters`/`dash-unclustered` y se confía en las líneas filtradas.
+- **Barras de año clicables** (`toggleDashYear(year)`) / **filas de actividad clicables**
+  (`toggleDashAct(actId)`): togglean filtros/visibilidad como antes.
+- **`_refreshActRows()`**: re-renderiza "Por actividad" desde `dashRoutesLite` (no del
+  geojson pesado), respetando el año seleccionado.
+- **`_reloadDashboard()`**: se llama en cada visita al dashboard. `initDashMap()` está
+  guardado (`if(dashMapLoaded||dashMap)return`) así que no repite el setup ni el fetch
+  ligero en revisitas dentro de la misma sesión.
 - **TRAMPA**: `dashActiveActs` se inicializa dentro de `initDashMap()` (no en la declaración) porque `ACTIVITIES` se define más abajo en el mismo fichero y causaría ReferenceError.
+- Si añades una representación nueva por zoom (p.ej. una capa intermedia), sigue el mismo
+  patrón: dato ligero primero (instantáneo), dato pesado filtrado por bbox después, en
+  segundo plano, sin loader que bloquee.
+
+### Listado de rutas en `app.html` (sección Mis Rutas) — scroll infinito
+`loadList()` trae **todas** las rutas en una sola llamada a `/api/routes` (sin `limit`;
+es barata, no hace falta paginar la red). Lo que se pagina es el **renderizado de
+tarjetas**, no la petición:
+- `renderList()` filtra/ordena/agrupa por mes el array completo, pero solo manda a
+  `appendBatchToDOM()` las primeras `PAGE_SIZE` (30) vía `loadNextListPage()`.
+- Un `<div id="list-sentinel">` al final de `#routes`, observado con
+  `IntersectionObserver` (`rootMargin:"800px"`), llama a `loadNextListPage(PAGE_SIZE)`
+  cuando entra en viewport — así se van añadiendo tarjetas al hacer scroll.
+- En modo edición (`editMode`) se renderiza todo de golpe (`pendingRoutes.length`),
+  porque "Selec. mes"/"Seleccionar visibles" necesitan que la tarjeta ya exista en el DOM.
+- `visibleRoutes` solo contiene lo que ya está renderizado (no todo lo cargado); úsalo
+  con eso en mente si tocas selección.
+- El mapa de overview (`renderOverviewMap`) sigue recibiendo el array **completo**
+  filtrado de una vez (es barato, son solo puntos), independientemente de cuántas
+  tarjetas estén ya en el DOM.
 
 ### Header (`base.html`)
 El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se copia en el Dockerfile; si añades assets estáticos, asegúrate de que el `COPY static ./static` siga en el Dockerfile.
@@ -179,6 +215,29 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 
 - **SPA en `app.html`, no en archivos separados** — el antiguo CLAUDE.md decía
   "app multi-página"; ya no es cierto. Editar `rutas.html` no tiene efecto.
+
+- **Columnas pequeñas añadidas con `ALTER TABLE` después de `geojson`/`elevation`/
+  `heart_rate` hacen lentísima cualquier query que las lea**, aunque no pidas el geojson.
+  `ALTER TABLE ADD COLUMN` añade la columna al final del registro físico de cada fila;
+  para leer una columna que viene *después* de un blob de cientos de KB, SQLite tiene que
+  atravesar igualmente las páginas de overflow de ese blob (son una lista enlazada, no se
+  puede saltar). Con ~500 rutas esto se notaba como 7-9 s en `/api/routes` (que ni
+  siquiera pedía `geojson`). Solución: índices de cobertura que incluyan exactamente las
+  columnas que la query necesita (`idx_routes_list_cov`, `idx_routes_stats_cov`,
+  `idx_routes_bbox`), para que SQLite resuelva la query desde el índice sin tocar la fila
+  completa. Si añades una columna nueva con `ALTER TABLE` y la vas a leer junto a otras en
+  una query frecuente (listados, stats, filtros), añade también su índice de cobertura en
+  `init_db()` — no asumas que basta con la columna.
+
+- **`init_db()` corre en cada worker de gunicorn por separado** (no hay `--preload`), así
+  que con `--workers 2` dos procesos ejecutan las migraciones a la vez contra el mismo
+  archivo SQLite. Sin `PRAGMA busy_timeout`, el segundo `ALTER TABLE`/`UPDATE` que choca
+  con el primero falla al instante con `database is locked` y tumba ese worker (gunicorn
+  lo reintenta, puede entrar en bucle de crash-reinicio si la migración tarda). Por eso
+  `db()` e `init_db()` ponen `PRAGMA busy_timeout=20000` (en `core/database.py`) — y aun
+  así, los `ALTER TABLE ADD COLUMN` que puedan chocar por carrera están en un
+  `try/except sqlite3.OperationalError` tolerando `"duplicate column"`. Si añades una
+  migración nueva en `init_db()`, asume que puede ejecutarse dos veces en paralelo.
 
 ## Reglas que evitan romper cosas
 
@@ -218,6 +277,17 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
     refresco en todos los clientes. Añadir `thumb_file` sin cambiar la clave causó que
     los usuarios vieran tarjetas sin thumbnail hasta que la caché expiró.
 
+12. **Toda columna nueva que se vaya a leer en un listado o agregado frecuente necesita
+    su índice de cobertura en `init_db()`**, no solo el `ALTER TABLE`. Ver "Bugs
+    corregidos" — sin esto, leer una columna añadida tarde en el esquema obliga a SQLite
+    a atravesar los blobs grandes (`geojson`/`elevation`/`heart_rate`) de cada fila.
+
+13. **Cualquier migración en `init_db()` debe asumir que puede ejecutarse dos veces en
+    paralelo** (gunicorn arranca 2 workers, cada uno corre `init_db()` por su cuenta).
+    `PRAGMA busy_timeout` ya está puesto; para `ALTER TABLE ADD COLUMN` que puedan
+    chocar, envuélvelos en `try/except sqlite3.OperationalError` tolerando
+    `"duplicate column"`.
+
 ## Modelo de datos
 
 ### Tabla `routes`
@@ -241,6 +311,7 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | immich_checked | INTEGER | 0/1 |
 | start_lat, start_lon | REAL | primer punto del track |
 | thumb_file | TEXT | nombre en `data/thumbs/` (PNG) |
+| bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat | REAL | bounding box del track completo; lo calcula `_route_bbox()` en `create_route`/`rescan_route`. Usado por `/api/routes/geojson?bbox=` (mapa del dashboard) para no cargar rutas fuera de la zona visible |
 
 ### Tabla `photos`
 `route_id`, `file` XOR `immich_id`, `original`, `lat`, `lon`, `taken_at`
@@ -261,6 +332,18 @@ Los ajustes de settings sobreescriben los de `.env`/variables de entorno.
 - No hay autenticación. Intencional para LAN.
 - `rutas.html`, `overview.html`, `planificacion.html` — archivos legacy en `templates/`.
   No los borres (pueden servir de referencia) pero no los edites; el app no los usa.
+- **Docker Desktop sobre WSL2 (esta instalación) puede dejar procesos `gunicorn`/
+  `watch.py` huérfanos** tras varios `docker compose down`/`up --build` seguidos: el
+  proceso sigue vivo (visible en `ps aux` del host, propiedad de `root`) y sigue
+  atendiendo el puerto publicado con código *antiguo*, aunque `docker ps` ya no liste
+  ningún contenedor y el contenedor "actual" tenga el código correcto. Síntoma: cambios
+  en el código que no se reflejan en `localhost:8090` aunque el build no dé error y
+  `docker compose exec` confirme que el archivo en el contenedor es el correcto.
+  Diagnóstico: `ps aux | grep gunicorn` — si hay procesos con una hora de arranque muy
+  anterior al último `docker compose up`, son huérfanos. Solución: `sudo kill -9
+  <esos PIDs>` y volver a `docker compose up -d --build` (puede generar un nuevo huérfano
+  si lo que mueres es el proceso supervisado por `restart: unless-stopped`; conviene
+  `docker compose down` primero para quitar esa política antes de matar).
 
 ## Antes de dar por buena una tarea
 - ¿Sigue arrancando `python app.py` e `init_db()` sin error?
@@ -278,3 +361,10 @@ Los ajustes de settings sobreescriben los de `.env`/variables de entorno.
   como las tarjetas del mapa de overview están en ese mismo archivo.
 - Si tocaste el mapa del dashboard: verifica que `_reloadDashboard()` limpia los contenedores antes de repoblar y que `initDashMap()` no se llama dos veces (guarda `if(dashMapLoaded||dashMap)return`).
 - Si añades assets estáticos a `static/`: el `COPY static ./static` ya está en el Dockerfile.
+- Si añadiste una columna a `routes` que se lee en un listado/agregado frecuente:
+  ¿le añadiste también su índice de cobertura en `init_db()`? (ver regla 12).
+- Si tocaste algo en `init_db()`: ¿sobrevive a ejecutarse dos veces en paralelo
+  (2 workers de gunicorn)? (ver regla 13).
+- Si tras `docker compose up -d --build` los cambios no se reflejan en `localhost:8090`
+  pese a que el build no falla: revisa el quirk de procesos huérfanos de Docker
+  Desktop/WSL2 antes de sospechar del código.
