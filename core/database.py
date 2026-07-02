@@ -174,6 +174,18 @@ def init_db():
         ON route_versions(route_id, version_n DESC, summary, distance_m,
                           ascent_m, n_points, created_at, file)""")
 
+    # Columna heredada del planner interno (ya eliminado): nada la lee ni la
+    # escribe, pero se conserva la migración para no reconstruir la tabla.
+    # Puede ejecutarse dos veces en paralelo (regla 13).
+    plan_cols = [r[1] for r in con.execute("PRAGMA table_info(planned_routes)").fetchall()]
+    if "draw_anchors" not in plan_cols:
+        try:
+            con.execute("ALTER TABLE planned_routes ADD COLUMN draw_anchors TEXT")
+            con.commit()
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e):
+                raise
+
     con.executescript("""
         CREATE TABLE IF NOT EXISTS settings (
             key   TEXT PRIMARY KEY,

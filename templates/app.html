@@ -365,6 +365,11 @@
         <input id="plan-file" type="file" accept=".gpx" class="hidden">
       </div>
       <button class="btn" style="width:100%" onclick="uploadPlanGpx()">Añadir ruta planificada</button>
+      <button class="btn ghost" style="width:100%;margin-top:8px" onclick="window.open(PLANNER_URL,'_blank','noopener')">✏ Dibujar ruta nueva ↗</button>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4">
+        Abre el planificador externo en otra ventana. Dibuja la ruta, expórtala como GPX
+        y arrástrala aquí arriba para importarla.
+      </div>
     </div>
   </div>
   <div id="plan-loader" class="upload-loader hidden">
@@ -397,6 +402,7 @@
 const _SEC_URLS  = {dashboard:'/dashboard', rutas:'/rutas', planes:'/planificacion'};
 const _URL_SEC   = {'/dashboard':'dashboard', '/rutas':'rutas', '/planificacion':'planes'};
 let _curSec      = '{{ initial_section }}';
+const PLANNER_URL = '{{ planner_url }}' || 'https://brouter.de/brouter-web';
 const _secInited = {dashboard:false, rutas:false, planes:false};
 const _ANIM_OUT  = 150; // ms fade-out
 let _spaReady    = false;

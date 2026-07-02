@@ -16,6 +16,7 @@ def get_settings():
         "IMMICH_MARGIN_MIN": str(cfg.IMMICH_MARGIN_MIN),
         "IMMICH_DIST_M":     str(cfg.IMMICH_DIST_M),
         "DEM_URL":           cfg.DEM_URL,
+        "PLANNER_URL":       cfg.PLANNER_URL,
     })
 
 

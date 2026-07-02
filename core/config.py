@@ -27,8 +27,13 @@ IMMICH_ENABLED = bool(IMMICH_URL and IMMICH_API_KEY)
 # Vacío = función desactivada (el botón no aparece en el editor).
 DEM_URL = os.environ.get("DEM_URL", "").rstrip("/")
 
+# Planificador externo que se abre al pulsar "Dibujar ruta nueva". Por defecto
+# brouter-web (permite exportar GPX, que luego se importa a mano). Editable
+# desde Ajustes → Editor.
+PLANNER_URL = os.environ.get("PLANNER_URL", "https://brouter.de/brouter-web").rstrip("/")
+
 _SETTINGS_KEYS = {"IMMICH_URL", "IMMICH_API_KEY", "IMMICH_MARGIN_MIN", "IMMICH_DIST_M",
-                  "DEM_URL"}
+                  "DEM_URL", "PLANNER_URL"}
 _CUSTOM_GPX_TYPES: dict = {}
 
 # Umbrales por defecto para detectar tramos GPS incorrectos (core/gps_analysis.py):
@@ -55,7 +60,7 @@ def gps_thresholds_for(activity_type):
 
 
 def refresh_config():
-    global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_DIST_M, IMMICH_ENABLED, _CUSTOM_GPX_TYPES, _GPS_THRESHOLDS_CUSTOM, DEM_URL
+    global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_DIST_M, IMMICH_ENABLED, _CUSTOM_GPX_TYPES, _GPS_THRESHOLDS_CUSTOM, DEM_URL, PLANNER_URL
     try:
         con = sqlite3.connect(DB_PATH)
         con.execute("PRAGMA busy_timeout=20000")
@@ -79,6 +84,8 @@ def refresh_config():
         IMMICH_DIST_M = 100
     IMMICH_ENABLED = bool(IMMICH_URL and IMMICH_API_KEY)
     DEM_URL = (rows.get("DEM_URL") or os.environ.get("DEM_URL", "")).rstrip("/")
+    PLANNER_URL = (rows.get("PLANNER_URL") or os.environ.get("PLANNER_URL", "")
+                   or "https://brouter.de/brouter-web").rstrip("/")
     try:
         raw = rows.get("GPX_TYPE_CUSTOM", "")
         parsed = json.loads(raw) if raw else {}

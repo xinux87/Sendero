@@ -71,7 +71,7 @@ secciones y actualiza el `history` sin recargar la página.
 | `templates/app.html` | `GET /dashboard` · `/rutas` · `/planificacion` | SPA con tres secciones: Dashboard, Mis Rutas, Mis Planes. Usa MapLibre GL para el mapa de visión general. |
 | `templates/sendero.html` | `GET /Sendero/<nombre>` | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación (Chart.js), notas, fotos, modal Immich, lightbox. Botón "✎ Editar" → editor. |
 | `templates/editor.html` | `GET /Sendero/<nombre>/editor` | Editor de rutas (F1+F2): recorte/eliminación de tramos, invertir, editar vértices, simplificar, corregir picos, dividir, undo/redo, historial de versiones, zoom en gráficas. |
-| `templates/plan_detalle.html` | `GET /Plan/<nombre>` | Detalle de ruta planificada: mapa, stats, notas. |
+| `templates/plan_detalle.html` | `GET /Plan/<nombre>` | Detalle de ruta planificada: mapa, stats, notas, descarga GPX. |
 | `templates/rutas.html` *(legacy)* | — | Ya no se sirve. No editar. |
 | `templates/overview.html` *(legacy)* | — | Ya no se sirve. No editar. |
 | `templates/planificacion.html` *(legacy)* | — | Ya no se sirve. No editar. |
@@ -476,15 +476,20 @@ El archivo activo de la ruta es siempre idéntico a la versión más alta.
 `route_id`, `file` XOR `immich_id`, `original`, `lat`, `lon`, `taken_at`
 
 ### Tabla `planned_routes`
-`name`, `source`, `source_url`, `activity_type`, `distance_m`, `ascent_m`,
-`descent_m`, `ele_min`, `ele_max`, `start_lat`, `start_lon`, `geojson`,
-`elevation`, `notes`, `gpx_data` (BLOB), `created_at`
+`name`, `source` (`gpx` | `dibujada`), `source_url`, `activity_type`,
+`distance_m`, `ascent_m`, `descent_m`, `ele_min`, `ele_max`, `start_lat`,
+`start_lon`, `geojson`, `elevation`, `notes`, `gpx_data` (BLOB), `created_at`,
+`draw_anchors` (columna heredada del planner interno ya eliminado; siempre NULL
+en filas nuevas, no se lee ni se escribe — la migración se conserva por no
+reconstruir la tabla, ver `init_db()`)
 
 ### Tabla `settings`
 Clave-valor: `IMMICH_URL`, `IMMICH_API_KEY`, `IMMICH_MARGIN_MIN`, `IMMICH_DIST_M`,
-`DEM_URL` (OpenTopoData para el editor; vacío = botón oculto), `GPX_TYPE_CUSTOM`
-(JSON), `GPS_THRESHOLDS_CUSTOM` (JSON), `stats_cache` (JSON con estadísticas
-globales). Los ajustes de settings sobreescriben los de `.env`/variables de entorno.
+`DEM_URL` (OpenTopoData para el editor; vacío = desactivado),
+`PLANNER_URL` (web externa que abre "Dibujar ruta nueva"; por defecto
+brouter-web), `GPX_TYPE_CUSTOM` (JSON), `GPS_THRESHOLDS_CUSTOM` (JSON),
+`stats_cache` (JSON con estadísticas globales). Los ajustes de settings
+sobreescriben los de `.env`/variables de entorno.
 
 ## Quirks conocidos
 - La validación de extensión en `create_route` acepta cualquier nombre que termine en

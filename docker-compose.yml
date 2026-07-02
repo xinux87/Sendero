@@ -36,3 +36,15 @@ services:
   #   volumes:
   #     - ./demdata:/app/data:ro
   #   restart: unless-stopped
+
+  # Motor de rutas opcional para el modo "seguir senderos" al dibujar rutas.
+  # 1) Descomenta el bloque, 2) descarga los segmentos de tu región (archivos
+  #    .rd5 de https://brouter.de/brouter/segments4/) en ./brouter-segments/,
+  # 3) en Sendero → Ajustes → Editor pon: http://brouter:17777
+  # La imagen se construye desde el repo oficial: https://github.com/abrensch/brouter
+  # brouter:
+  #   build: https://github.com/abrensch/brouter.git
+  #   container_name: sendero-brouter
+  #   volumes:
+  #     - ./brouter-segments:/segments4
+  #   restart: unless-stopped

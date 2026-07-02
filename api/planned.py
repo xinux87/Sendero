@@ -20,13 +20,15 @@ def _build_plan_dict(pid):
     d["elevation"] = json.loads(d.get("elevation") or "[]")
     d["has_gpx"]   = bool(d.get("gpx_data"))
     d["gpx_data"]  = None
+    # `draw_anchors` es columna heredada del planner interno (eliminado); no se expone.
+    d.pop("draw_anchors", None)
     d["auto_summary"] = auto_summary_planned(d)
     return d
 
 
 @planned_bp.route("/planificacion")
 def planificacion_page():
-    return render_template("app.html", initial_section="planes")
+    return render_template("app.html", initial_section="planes", planner_url=cfg.PLANNER_URL)
 
 
 @planned_bp.route("/Plan/<path:name>")

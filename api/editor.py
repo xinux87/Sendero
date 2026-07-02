@@ -21,8 +21,7 @@ from flask import Blueprint, abort, request, jsonify, render_template, Response,
 
 import core.config as cfg
 from core.database import db
-import requests
-
+from core.dem import dem_elevations, DemError
 from core.editing import (
     load_gpx, extract_points, apply_ops, split_track, merge_gpx, EditError
 )
@@ -343,11 +342,6 @@ def merge_routes():
     return jsonify({"id": bid, "name": name, "times_kept": times_kept}), 201
 
 
-# Límite estándar de OpenTopoData por petición (tanto en la API pública como el
-# valor por defecto del self-hosted).
-_DEM_BATCH = 100
-
-
 @editor_bp.route("/api/routes/<int:rid>/elevation-dem", methods=["POST"])
 def elevation_dem(rid):
     """Recalcula la elevación de TODOS los puntos contra el servicio DEM
@@ -382,23 +376,15 @@ def elevation_dem(rid):
     if len(points) < 2:
         return jsonify({"error": "Este archivo no contiene tracks editables"}), 400
 
+    try:
+        eles = dem_elevations([(p.latitude, p.longitude) for p in points])
+    except DemError as e:
+        return jsonify({"error": str(e)}), 502
     changed = 0
-    for i in range(0, len(points), _DEM_BATCH):
-        batch = points[i:i + _DEM_BATCH]
-        locs = "|".join(f"{p.latitude:.6f},{p.longitude:.6f}" for p in batch)
-        try:
-            resp = requests.post(cfg.DEM_URL, json={"locations": locs}, timeout=30)
-            payload = resp.json()
-        except Exception:
-            return jsonify({"error": "No se pudo contactar con el servicio DEM"}), 502
-        if resp.status_code != 200 or payload.get("status") != "OK":
-            return jsonify({"error": f"El servicio DEM respondió con error: "
-                                     f"{payload.get('error') or resp.status_code}"}), 502
-        for p, res in zip(batch, payload.get("results") or []):
-            ele = res.get("elevation")
-            if ele is not None:
-                p.elevation = round(float(ele), 1)
-                changed += 1
+    for p, ele in zip(points, eles or []):
+        if ele is not None:
+            p.elevation = round(float(ele), 1)
+            changed += 1
     if not changed:
         return jsonify({"error": "El DEM no devolvió elevación para ningún punto"}), 502
 

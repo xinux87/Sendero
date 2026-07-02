@@ -26,7 +26,21 @@
 > actividad (`GET/POST /api/settings/gps-thresholds`). Fixes: conservar la
 > actividad asignada cuando la re-detección no da nada (los umbrales dependen
 > de ella) y `refresh_config()` por request (consistencia entre workers).
-> Fase 4 pendiente.
+> **Fase 4 IMPLEMENTADA** (2026-07-02): planner de rutas en
+> `/planificacion/crear` (`templates/planner.html`) — dibujo por anclas con
+> routing BRouter vía proxy `GET /api/route-engine` (perfil seleccionable,
+> fallback automático a línea recta si BRouter falla o no está configurado:
+> `BROUTER_URL` en Ajustes → Editor, servicio comentado en docker-compose),
+> anclas arrastrables/Alt+click, undo, stats en vivo (con desnivel si BRouter
+> devuelve elevación). Guarda como plan (`POST /api/planned/draw`): GPX
+> sintético + elevación DEM si está configurado + `draw_anchors` (columna
+> nueva en planned_routes) con el estado completo del dibujo → los planes
+> dibujados se re-editan desde "✎ Editar dibujo" en su detalle.
+> **Fase 4 REVERTIDA** (2026-07-02): el planner interno se eliminó (planner.html,
+> `/planificacion/crear`, `/api/route-engine`, `/api/planned/draw`, `BROUTER_URL`).
+> "Dibujar ruta nueva" ahora abre un planificador externo configurable
+> (`PLANNER_URL`, por defecto brouter-web) en una ventana nueva; el GPX exportado
+> se importa a mano. La columna `draw_anchors` queda como esquema muerto.
 
 > Documento autocontenido para implementar el editor. **Lee primero `CLAUDE.md` en la raíz
 > del repo**: contiene las reglas duras del proyecto (sin build step, migraciones

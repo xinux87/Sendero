@@ -55,12 +55,12 @@ def index():
 
 @routes_bp.route("/dashboard")
 def stats_page():
-    return render_template("app.html", initial_section="dashboard")
+    return render_template("app.html", initial_section="dashboard", planner_url=cfg.PLANNER_URL)
 
 
 @routes_bp.route("/rutas")
 def dashboard():
-    return render_template("app.html", initial_section="rutas")
+    return render_template("app.html", initial_section="rutas", planner_url=cfg.PLANNER_URL)
 
 
 def _recompute_stats(con):
