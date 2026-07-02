@@ -1,0 +1,27 @@
+services:
+  sendero:
+    image: xinux87/sendero:latest
+    container_name: sendero
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./data:/data            # rutas GPX, fotos locales y base de datos
+    environment:
+      - SENDERO_DATA=/data
+    restart: unless-stopped
+
+  # Importación automática: vigila ./watch y sube los GPX que Syncthing deje ahí.
+  # Si no usas importación automática, puedes borrar este servicio.
+  watcher:
+    image: xinux87/sendero:latest
+    container_name: sendero-watcher
+    command: ["python", "watch.py"]
+    volumes:
+      - ./watch:/watch          # apunta aquí tu carpeta sincronizada con Syncthing
+    environment:
+      - SENDERO_API=http://sendero:8080
+      - SENDERO_WATCH_DIR=/watch
+      - SENDERO_POLL=30
+    depends_on:
+      - sendero
+    restart: unless-stopped
