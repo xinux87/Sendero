@@ -561,21 +561,37 @@ function initDashMap(){
     dashMap.on('moveend',_dashScheduleLineLoad);
 
     dashMapLoaded=true;
-
-    // Carga ligera (~130 KB): bolitas visibles casi al instante, sin loader
-    let lite;
-    try{lite=await(await fetch('/api/routes')).json();}catch(e){lite={items:[]};}
-    dashRoutesLite=(lite.items||[]).filter(r=>r.start_lat!=null&&r.start_lon!=null);
-    if(!dashRoutesLite.length){
-      document.getElementById('ov-map-section').classList.add('hidden');return;
-    }
-    dashMap.getSource('dash-points').setData(_dashPointsGeoJSON());
-    _refreshActRows();
-    _dashFitFromPoints();
     // fitBounds(duration:0) ya dispara 'moveend', pero por si el zoom de partida
-    // ya está dentro del rango de líneas y el fit no movió nada, se fuerza una vez.
-    _dashLoadLinesForView();
+    // ya está dentro del rango de líneas y el fit no movió nada, se fuerza una vez
+    // dentro de _dashReloadRoutes (vía _dashLoadLinesForView).
+    await _dashReloadRoutes(true);
   });
+}
+
+// Recarga bolitas + líneas desde cero (nuevas rutas, borradas, etc.). Se llama al
+// crear el mapa por primera vez y también cada vez que se revisita el dashboard o
+// se pulsa "Actualizar" — si no, tras borrar rutas el mapa se queda con los puntos
+// y líneas viejos porque las fuentes de MapLibre nunca se limpiaban tras la carga inicial.
+async function _dashReloadRoutes(fit=false){
+  if(!dashMap||!dashMapLoaded)return;
+  // Carga ligera (~130 KB): bolitas visibles casi al instante, sin loader
+  let lite;
+  try{lite=await(await fetch('/api/routes')).json();}catch(e){lite={items:[]};}
+  dashRoutesLite=(lite.items||[]).filter(r=>r.start_lat!=null&&r.start_lon!=null);
+  // Las líneas cargadas para la vista anterior ya no son válidas (pueden referenciar
+  // rutas borradas o quedarse cortas si hay rutas nuevas): se limpian y se vuelven a pedir.
+  dashLineIds=new Set();dashLineFeatures=[];
+  dashMap.getSource('dash-routes').setData({type:'FeatureCollection',features:[]});
+  if(!dashRoutesLite.length){
+    dashMap.getSource('dash-points').setData({type:'FeatureCollection',features:[]});
+    document.getElementById('ov-map-section').classList.add('hidden');
+    return;
+  }
+  document.getElementById('ov-map-section').classList.remove('hidden');
+  dashMap.getSource('dash-points').setData(_dashPointsGeoJSON());
+  _refreshActRows();
+  if(fit)_dashFitFromPoints();
+  _dashLoadLinesForView();
 }
 
 function _refreshActRows(){
@@ -610,6 +626,7 @@ function _reloadDashboard(){
   document.getElementById('ov-map-section').classList.remove('hidden');
   loadStats();
   initDashMap();
+  if(dashMapLoaded) _dashReloadRoutes();
 }
 
 function _afterShow(name) {
@@ -858,6 +875,7 @@ async function refreshStats(){
     document.getElementById('ov-year-chart').innerHTML='';
     document.getElementById('ov-records-grid').innerHTML='';
     await loadStats();
+    if(dashMapLoaded) await _dashReloadRoutes();
   }finally{btn.disabled=false;btn.textContent='↻ Actualizar';}
 }
 
@@ -919,6 +937,10 @@ class DatePicker{
 }
 
 let dpFrom,dpTo,ovMap=null,ovMapLoaded=false,ovRoutes=[],_ovFitTimer=null,_ovUserMoved=false;
+// Líneas reales del track en el mapa de Mis Rutas: mismo patrón que el dashboard
+// (bbox + caché acumulada), pero filtradas por los filtros activos de la lista.
+let ovLineIds=new Set(),ovLineFeaturesAll=[],ovLinesMoveTimer=null,ovLinesFetching=false;
+const OV_LINES_MINZOOM=10,OV_LINES_PREFETCH_ZOOM=OV_LINES_MINZOOM-2,OV_POINTS_MAXZOOM=12;
 let allRoutes=[],activeActs=new Set(ACTIVITIES.map(a=>a.id));
 let sortOrder='desc',viewMode='a';
 let editMode=false,selectedIds=new Set(),visibleRoutes=[];
@@ -931,7 +953,11 @@ function loadRouteCache(){
   try{const raw=sessionStorage.getItem(ROUTE_CACHE);if(!raw)return null;
     const{ts,routes}=JSON.parse(raw);if(Date.now()-ts>10*60*1000)return null;return routes;}
   catch(e){return null;}}
-function clearRouteCache(){sessionStorage.removeItem(ROUTE_CACHE);}
+function clearRouteCache(){
+  sessionStorage.removeItem(ROUTE_CACHE);
+  ovLineIds=new Set();ovLineFeaturesAll=[];
+  if(ovMapLoaded)ovMap.getSource('ov-lines').setData({type:'FeatureCollection',features:[]});
+}
 function saveFilterState(){
   try{sessionStorage.setItem(FILTER_CACHE,JSON.stringify({acts:[...activeActs],from:dpFrom?.value||null,to:dpTo?.value||null,sort:sortOrder,view:viewMode}));}catch(e){}}
 function loadFilterState(){try{const r=sessionStorage.getItem(FILTER_CACHE);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -960,9 +986,42 @@ function _loadActImages(map){
     img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(iconSvg(a,26));
   })));
 }
+function _ovApplyLineFilter(){
+  if(!ovMapLoaded)return;
+  const ids=new Set(ovRoutes.map(r=>r.id));
+  ovMap.getSource('ov-lines').setData({type:'FeatureCollection',
+    features:ovLineFeaturesAll.filter(f=>ids.has(f.properties.id))});
+  // Si la caché está vacía (recién invalidada por un upload/rescan/delete) pero hay
+  // rutas que mostrar, se vuelve a pedir la vista actual sin esperar a un moveend.
+  if(!ovLineFeaturesAll.length&&ovRoutes.length)_ovLoadLinesForView();
+}
+function _ovScheduleLineLoad(){
+  clearTimeout(ovLinesMoveTimer);
+  ovLinesMoveTimer=setTimeout(_ovLoadLinesForView,350);
+}
+async function _ovLoadLinesForView(){
+  if(!ovMapLoaded||ovLinesFetching)return;
+  if(ovMap.getZoom()<OV_LINES_PREFETCH_ZOOM)return; // de lejos, solo bolitas
+  const b=ovMap.getBounds();
+  // Margen del 50% del viewport en cada lado, igual que en el dashboard.
+  const padLon=(b.getEast()-b.getWest())*0.5,padLat=(b.getNorth()-b.getSouth())*0.5;
+  const bbox=[b.getWest()-padLon,b.getSouth()-padLat,b.getEast()+padLon,b.getNorth()+padLat].join(',');
+  ovLinesFetching=true;
+  try{
+    const fc=await(await fetch('/api/routes/geojson?bbox='+encodeURIComponent(bbox))).json();
+    const fresh=fc.features.filter(f=>!ovLineIds.has(f.properties.id));
+    if(fresh.length){
+      fresh.forEach(f=>ovLineIds.add(f.properties.id));
+      ovLineFeaturesAll.push(...fresh);
+      _ovApplyLineFilter();
+    }
+  }catch(e){/* las bolitas siguen visibles igualmente */}
+  finally{ovLinesFetching=false;}
+}
 function _ovSetData(){
   if(!ovMapLoaded)return;
   ovMap.getSource('routes').setData(_routesGeoJSON(ovRoutes));
+  _ovApplyLineFilter();
   if(!_ovUserMoved){clearTimeout(_ovFitTimer);_ovFitTimer=setTimeout(fitMap,600);}
 }
 function renderOverviewMap(routes,append=false){
@@ -1001,6 +1060,18 @@ function renderOverviewMap(routes,append=false){
       },onRemove(){}
     },'top-left');
     ovMap.on('load',async()=>{
+      // Líneas reales del track (igual que el dashboard): por debajo de los puntos,
+      // solo visibles a partir de OV_LINES_MINZOOM, cargadas por bbox en 2º plano.
+      ovMap.addSource('ov-lines',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+      ovMap.addLayer({id:'ov-lines',type:'line',source:'ov-lines',minzoom:OV_LINES_MINZOOM,
+        layout:{'line-join':'round','line-cap':'round'},
+        paint:{'line-color':_dashLineColor(),'line-width':1.8,'line-opacity':0.8}});
+      // Línea invisible más ancha encima, solo para que el click/hover sea más fácil
+      // de acertar que sobre la línea real de 1.8px.
+      ovMap.addLayer({id:'ov-lines-hit',type:'line',source:'ov-lines',minzoom:OV_LINES_MINZOOM,
+        layout:{'line-join':'round','line-cap':'round'},
+        paint:{'line-color':'#000','line-width':14,'line-opacity':0}});
+
       await _loadActImages(ovMap);
       ovMap.addSource('routes',{
         type:'geojson',data:_routesGeoJSON(ovRoutes),
@@ -1016,8 +1087,9 @@ function renderOverviewMap(routes,append=false){
           'circle-stroke-width':2,'circle-stroke-color':'rgba(255,255,255,0.9)'
         }
       });
-      // Iconos de actividad para puntos individuales (no requiere glyphs)
-      ovMap.addLayer({id:'unclustered',type:'symbol',source:'routes',
+      // Iconos de actividad para puntos individuales; desaparecen a partir de cierto
+      // zoom para dar paso a las líneas reales (igual que en el dashboard).
+      ovMap.addLayer({id:'unclustered',type:'symbol',source:'routes',maxzoom:OV_POINTS_MAXZOOM,
         filter:['!',['has','point_count']],
         layout:{
           'icon-image':['concat','act-',['get','activity']],
@@ -1073,26 +1145,38 @@ function renderOverviewMap(routes,append=false){
       });
       ovMap.on('mouseenter','clusters',()=>{ovMap.getCanvas().style.cursor='pointer';});
       ovMap.on('mouseleave','clusters',()=>{ovMap.getCanvas().style.cursor='';});
+      // Punto o línea de una ruta concreta → ficha de detalle
+      ovMap.on('click','ov-lines-hit',e=>{location.href='/Sendero/'+encodeURIComponent(e.features[0].properties.name);});
+      ovMap.on('mouseenter','ov-lines-hit',()=>{ovMap.getCanvas().style.cursor='pointer';});
+      ovMap.on('mouseleave','ov-lines-hit',()=>{ovMap.getCanvas().style.cursor='';});
       // Detectar movimiento manual para no re-encuadrar una vez el usuario explora
       ovMap.on('movestart',e=>{if(e.originalEvent)_ovUserMoved=true;});
-      fitMap();
+      // Las líneas solo se piden para la zona visible (+ colchón de zoom/paneo),
+      // igual que en el dashboard: nunca se descargan todas las rutas de golpe.
+      ovMap.on('moveend',_ovScheduleLineLoad);
+      // Encuadre instantáneo: el centro/zoom del constructor son solo un placeholder,
+      // no tiene sentido animar el "vuelo" desde ahí la primera vez que se crea el mapa.
+      fitMap(true);
+      // Por si el fitBounds/easeTo inicial no llega a disparar 'moveend'.
+      _ovLoadLinesForView();
     });
     return;
   }
   _ovSetData();
   if(!append)fitMap();
 }
-function fitMap(){
+function fitMap(instant=false){
   if(!ovMap||!ovRoutes.length)return;
+  const opts=instant?{duration:0}:{};
   if(ovRoutes.length===1){
-    ovMap.easeTo({center:[ovRoutes[0].start_lon,ovRoutes[0].start_lat],zoom:13});return;
+    ovMap.easeTo({center:[ovRoutes[0].start_lon,ovRoutes[0].start_lat],zoom:13,...opts});return;
   }
   let mnLo=Infinity,mxLo=-Infinity,mnLa=Infinity,mxLa=-Infinity;
   ovRoutes.forEach(r=>{
     if(r.start_lon<mnLo)mnLo=r.start_lon;if(r.start_lon>mxLo)mxLo=r.start_lon;
     if(r.start_lat<mnLa)mnLa=r.start_lat;if(r.start_lat>mxLa)mxLa=r.start_lat;
   });
-  ovMap.fitBounds([[mnLo,mnLa],[mxLo,mxLa]],{padding:50,maxZoom:14});
+  ovMap.fitBounds([[mnLo,mnLa],[mxLo,mxLa]],{padding:50,maxZoom:14,...opts});
 }
 function setView(v){
   viewMode=v;$("#dash-wrap").className='view-'+v;
@@ -1318,7 +1402,7 @@ async function loadList(){
   allRoutes=all.items;buildPills();renderList();saveRouteCache();
 }
 async function uploadFiles(files){
-  const total=files.length;let ok=0;const errors=[];
+  const total=files.length;let ok=0;const dups=[];const errors=[];
   const loader=document.createElement("div");loader.className="upload-loader";
   loader.innerHTML=`<div class="upload-loader-title">Subiendo rutas <span class="upload-loader-count" id="up-count">0 / ${total}</span></div>
     <div class="upload-bar-bg"><div class="upload-bar-fill" id="up-bar"></div></div>
@@ -1330,16 +1414,37 @@ async function uploadFiles(files){
     document.getElementById("up-bar").style.width=`${Math.round((i/total)*100)}%`;
     document.getElementById("up-name").textContent=f.name;
     const fd=new FormData();fd.append("gpx",f);
-    try{const res=await fetch("/api/routes",{method:"POST",body:fd});
-      if(res.ok)ok++;else{const j=await res.json();errors.push(`${f.name}: ${j.error||"Error"}`);}}
-    catch{errors.push(`${f.name}: Error de red`);}
+    try{
+      const res=await fetch("/api/routes",{method:"POST",body:fd});
+      if(res.ok){ok++;}
+      else{
+        const j=await res.json().catch(()=>({}));
+        if(j.duplicate)dups.push(f.name);
+        else errors.push(`${f.name}: ${j.error||"Error"}`);
+      }
+    }catch{errors.push(`${f.name}: Error de red`);}
   }
   document.getElementById("up-bar").style.width="100%";
   document.getElementById("up-count").textContent=`${ok} / ${total}`;
-  document.getElementById("up-name").textContent=errors.length?`${errors.length} error(es)`:"Completado";
+  const summaryParts=[];
+  if(ok)summaryParts.push(`${ok} subida${ok!==1?"s":""}`);
+  if(dups.length)summaryParts.push(`${dups.length} duplicada${dups.length!==1?"s":""}`);
+  if(errors.length)summaryParts.push(`${errors.length} error${errors.length!==1?"es":""}`);
+  document.getElementById("up-name").textContent=summaryParts.join(" · ")||"Completado";
   clearRouteCache();await loadList();
-  setTimeout(()=>loader.remove(),1800);
-  if(errors.length)toast(errors[0]);else toast(`${ok} ruta${ok!==1?"s":""} añadida${ok!==1?"s":""}`);
+  setTimeout(()=>loader.remove(),2600);
+  if(errors.length){
+    toast(errors[0]);
+  }else if(dups.length&&!ok){
+    toast(dups.length===1
+      ? "1 ruta repetida, no se importó"
+      : `${dups.length} rutas repetidas, no se importaron`);
+  }else if(dups.length){
+    toast(`${ok} ruta${ok!==1?"s":""} añadida${ok!==1?"s":""}`
+      +(dups.length===1?" · 1 repetida descartada":` · ${dups.length} repetidas descartadas`));
+  }else{
+    toast(`${ok} ruta${ok!==1?"s":""} añadida${ok!==1?"s":""}`);
+  }
 }
 
 /* ══ PLANES ══ */

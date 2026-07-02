@@ -25,3 +25,14 @@ services:
     depends_on:
       - sendero
     restart: unless-stopped
+
+  # Servicio DEM opcional para "Recalcular elevación" en el editor de rutas.
+  # 1) Descomenta el bloque, 2) descarga un dataset (p.ej. EU-DEM) siguiendo
+  #    https://www.opentopodata.org/datasets/eudem/ en ./demdata/eudem25m/,
+  # 3) en Sendero → Ajustes → Editor pon: http://opentopodata:5000/v1/eudem25m
+  # opentopodata:
+  #   image: ghcr.io/ajnisbet/opentopodata:latest
+  #   container_name: sendero-dem
+  #   volumes:
+  #     - ./demdata:/app/data:ro
+  #   restart: unless-stopped

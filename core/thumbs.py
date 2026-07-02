@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 from PIL import Image, ImageDraw
 import core.config as cfg
 
@@ -11,8 +12,10 @@ _MIN_ASPECT = 0.25
 _MAX_PTS = 2000
 
 
-def generate_thumb(coords, route_id):
-    """Genera imagen PNG del track. Devuelve el nombre del archivo o None."""
+def generate_thumb(coords, gpx_file):
+    """Genera imagen PNG del track. Se nombra igual que gpx_file (mismo stem,
+    extensión .png) para que ambos archivos vayan siempre emparejados.
+    Devuelve el nombre del archivo o None."""
     if not coords or len(coords) < 2:
         return None
 
@@ -60,6 +63,6 @@ def generate_thumb(coords, route_id):
     draw.line(pixels, fill=_LINE, width=2)
 
     cfg.THUMB_DIR.mkdir(parents=True, exist_ok=True)
-    fname = f"thumb_{route_id}.png"
+    fname = f"{Path(gpx_file).stem}.png"
     img.save(str(cfg.THUMB_DIR / fname), "PNG", optimize=True)
     return fname

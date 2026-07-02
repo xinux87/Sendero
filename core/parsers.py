@@ -1,11 +1,14 @@
 import io
 import math
 import xml.etree.ElementTree as ET
+from collections import deque
 
 import gpxpy
 import fitparse
 
 import core.config as cfg
+
+SPEED_WINDOW_S = 15
 
 _GPX_TYPE_MAP = {
     "hiking":                "senderismo",
@@ -121,6 +124,11 @@ def analyse_gpx(text):
     coords = []
     elev_profile = []
     hr_profile = []
+    speed_profile = []
+    # Velocidad instantánea punto a punto (a menudo con 1s entre puntos) es puro
+    # ruido de GPS; se suaviza con una ventana móvil de SPEED_WINDOW_S segundos,
+    # igual que hacen Garmin/Strava, en vez de derivar cada par de puntos consecutivos.
+    speed_hist = deque()  # (time, cum_dist_m)
     cum = 0.0
     for track in gpx.tracks:
         for seg in track.segments:
@@ -129,6 +137,16 @@ def analyse_gpx(text):
                 coords.append([p.longitude, p.latitude])
                 if prev is not None:
                     cum += prev.distance_3d(p) or 0.0
+                if p.time:
+                    speed_hist.append((p.time, cum))
+                    while speed_hist and (p.time - speed_hist[0][0]).total_seconds() > SPEED_WINDOW_S:
+                        speed_hist.popleft()
+                    if len(speed_hist) >= 2:
+                        t0, d0 = speed_hist[0]
+                        dt_s = (p.time - t0).total_seconds()
+                        if dt_s > 0:
+                            speed_profile.append({"d": round(cum / 1000, 3),
+                                                  "v": round(((cum - d0) / dt_s) * 3.6, 2)})
                 if p.elevation is not None:
                     elev_profile.append({"d": round(cum / 1000, 3),
                                          "e": round(p.elevation, 1)})
@@ -195,6 +213,7 @@ def analyse_gpx(text):
         stats["hr_avg"] = round(sum(hrs) / len(hrs))
         stats["hr_max"] = max(hrs)
     stats["_hr_profile"] = hr_profile
+    stats["_speed_profile"] = speed_profile
 
     creator = (gpx.creator or "").strip() or None
     return stats, coords, elev_profile, name, creator
@@ -207,6 +226,7 @@ def analyse_fit(data: bytes):
     coords = []
     elev_profile = []
     hr_profile = []
+    speed_profile = []
 
     name = ""
     creator = None
@@ -254,6 +274,9 @@ def analyse_fit(data: bytes):
             ele    = msg.get_value("enhanced_altitude") or msg.get_value("altitude")
             dist   = msg.get_value("distance")
             hr     = msg.get_value("heart_rate")
+            spd    = msg.get_value("enhanced_speed")
+            if spd is None:
+                spd = msg.get_value("speed")
             ts     = msg.get_value("timestamp")
 
             if lat_sc is not None and lon_sc is not None:
@@ -267,6 +290,9 @@ def analyse_fit(data: bytes):
                     started_at = ts.isoformat()
             if hr is not None and dist is not None:
                 hr_profile.append({"d": round(dist / 1000, 3), "hr": int(hr)})
+            if spd is not None and dist is not None:
+                speed_profile.append({"d": round(dist / 1000, 3),
+                                      "v": round(float(spd) * 3.6, 2)})
 
     if fit_sport and not name:
         name = fit_sport.replace("_", " ").title()
@@ -294,5 +320,6 @@ def analyse_fit(data: bytes):
         stats["hr_avg"] = round(sum(hrs) / len(hrs))
         stats["hr_max"] = max(hrs)
     stats["_hr_profile"] = hr_profile
+    stats["_speed_profile"] = speed_profile
 
     return stats, coords, elev_profile, name, creator

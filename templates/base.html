@@ -162,6 +162,10 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
                 onclick="cfgSection('immich',this)">Immich</button>
         <button id="cfg-nav-ingesta" class="cfg-nav-item"
                 onclick="cfgSection('ingesta',this)">Ingesta</button>
+        <button id="cfg-nav-gps" class="cfg-nav-item"
+                onclick="cfgSection('gps',this)">GPS incorrecto</button>
+        <button id="cfg-nav-editor" class="cfg-nav-item"
+                onclick="cfgSection('editor',this)">Editor</button>
       </nav>
     </div>
 
@@ -227,6 +231,41 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
         </div>
       </div>
 
+      <!-- sección GPS incorrecto -->
+      <div id="cfg-sec-gps" class="cfg-sec-content hidden">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.6">
+          Umbrales por actividad para marcar tramos como <strong style="color:var(--ink)">fallo de GPS/barómetro</strong>
+          (avisos en el editor de rutas). Un tramo que supere la velocidad, la tasa de
+          ascenso/descenso o la altitud máxima se considera error del dispositivo, no esfuerzo real.
+          Se aplican a las rutas nuevas y al reescanear/guardar las existentes.
+        </p>
+        <table class="gpx-types-table">
+          <thead>
+            <tr>
+              <th>Actividad</th>
+              <th style="width:120px">Vel. máx (km/h)</th>
+              <th style="width:120px">Ascenso máx (m/s)</th>
+              <th style="width:120px">Altitud máx (m)</th>
+            </tr>
+          </thead>
+          <tbody id="gps-thr-tbody"></tbody>
+        </table>
+        <button class="btn sm" onclick="saveGpsThresholds()">Guardar umbrales</button>
+      </div>
+
+      <!-- sección Editor -->
+      <div id="cfg-sec-editor" class="cfg-sec-content hidden">
+        <div class="cfg-field" style="margin-bottom:24px">
+          <label class="cfg-label" for="cfg-dem-url">Servicio DEM (OpenTopoData)</label>
+          <input id="cfg-dem-url" class="cfg-input" type="url"
+                 placeholder="http://opentopodata:5000/v1/eudem25m">
+          <div class="cfg-hint">URL completa del dataset de un OpenTopoData autoalojado
+            (hay un servicio de ejemplo comentado en docker-compose.yml). Habilita el botón
+            "Recalcular elevación (DEM)" del editor de rutas. Vacío = desactivado.</div>
+        </div>
+        <button class="btn" onclick="saveSettings()">Guardar ajustes</button>
+      </div>
+
     </div><!-- /cfg-body -->
   </div><!-- /cfg-fullscreen -->
 </div>
@@ -256,6 +295,38 @@ function esc(s){return(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"
 /* ── ajustes ─────────────────────────────────────────────────────────────── */
 const _CFG_ACTIVITIES=['senderismo','bicicleta','caminata','correr','esqui','otros'];
 let _gpxTypesCustom={};
+let _gpsThresholds={};
+
+function renderGpsThrTable(){
+  const tbody=$('#gps-thr-tbody');
+  if(!tbody)return;
+  tbody.innerHTML='';
+  _CFG_ACTIVITIES.forEach(act=>{
+    const th=_gpsThresholds[act]||{};
+    const tr=document.createElement('tr');
+    const inp=(k,step)=>`<input type="number" min="0" step="${step}" class="cfg-input"
+      style="width:100%" id="gps-thr-${act}-${k}" value="${th[k]??''}">`;
+    tr.innerHTML=`<td style="text-transform:capitalize">${act}</td>
+      <td>${inp('max_speed_kmh','1')}</td>
+      <td>${inp('max_vert_rate_ms','0.5')}</td>
+      <td>${inp('max_ele_m','50')}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function saveGpsThresholds(){
+  const payload={};
+  for(const act of _CFG_ACTIVITIES){
+    const v=k=>parseFloat($(`#gps-thr-${act}-${k}`).value);
+    const th={max_speed_kmh:v('max_speed_kmh'),max_vert_rate_ms:v('max_vert_rate_ms'),max_ele_m:v('max_ele_m')};
+    if(Object.values(th).some(x=>isNaN(x)||x<=0)){toast(`Umbrales inválidos en «${act}»`);return;}
+    payload[act]=th;
+  }
+  const res=await fetch('/api/settings/gps-thresholds',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(res.ok){toast('Umbrales guardados. Se aplican al reescanear o guardar cada ruta.');}
+  else{const j=await res.json().catch(()=>({}));toast(j.error||'Error al guardar los umbrales');}
+}
 
 async function openSettings(){
   try{
@@ -265,12 +336,18 @@ async function openSettings(){
     $('#cfg-immich-key').value    = c.IMMICH_API_KEY    || '';
     $('#cfg-immich-margin').value = c.IMMICH_MARGIN_MIN || '180';
     $('#cfg-immich-dist').value   = c.IMMICH_DIST_M     || '100';
+    $('#cfg-dem-url').value       = c.DEM_URL           || '';
   }catch(e){}
   try{
     const r=await fetch('/api/settings/gpx-types');
     _gpxTypesCustom=await r.json();
   }catch(e){_gpxTypesCustom={};}
   renderGpxTypesTable();
+  try{
+    const r=await fetch('/api/settings/gps-thresholds');
+    _gpsThresholds=await r.json();
+  }catch(e){_gpsThresholds={};}
+  renderGpsThrTable();
   cfgSection('immich',$('#cfg-nav-immich'));
   $('#cfg-overlay').classList.remove('hidden');
 }
@@ -294,6 +371,7 @@ async function saveSettings(){
       IMMICH_API_KEY:    $('#cfg-immich-key').value.trim(),
       IMMICH_MARGIN_MIN: $('#cfg-immich-margin').value.trim(),
       IMMICH_DIST_M:     $('#cfg-immich-dist').value.trim(),
+      DEM_URL:           $('#cfg-dem-url').value.trim(),
     }),
   });
   if(res.ok){ closeSettings(); toast('Ajustes guardados'); }

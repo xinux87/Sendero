@@ -21,6 +21,7 @@ POLL = int(os.environ.get("SENDERO_POLL", "30"))
 
 DONE = WATCH / "imported"
 FAIL = WATCH / "failed"
+DUP = WATCH / "duplicated"
 
 
 def process(path: Path):
@@ -33,6 +34,11 @@ def process(path: Path):
             DONE.mkdir(exist_ok=True)
             shutil.move(str(path), DONE / path.name)
             print(f"[ok] importado {path.name} -> ruta {r.json().get('id')}", flush=True)
+        elif r.status_code == 409:
+            # Ruta repetida (colisión de nombre de GPX): se descarta, no es un fallo real.
+            DUP.mkdir(exist_ok=True)
+            shutil.move(str(path), DUP / path.name)
+            print(f"[dup] descartado {path.name}: ya existe una ruta con ese nombre", flush=True)
         else:
             raise RuntimeError(f"HTTP {r.status_code}: {r.text[:120]}")
     except Exception as e:

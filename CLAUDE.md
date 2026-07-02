@@ -34,16 +34,18 @@ La lógica real está repartida en dos paquetes:
 
 ```
 core/
-  config.py     — paths (GPX_DIR, PHOTO_DIR, THUMB_DIR, DB_PATH) y variables Immich
+  config.py     — paths (GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR, DB_PATH) y variables Immich
   database.py   — init_db(), close_db(), helper db() (conexión por request vía g.db)
   parsers.py    — analyse_gpx() y analyse_fit() → devuelven (stats, coords, elev, name, creator)
-  thumbs.py     — generate_thumb(coords, route_id) → PNG 400px en data/thumbs/
+  thumbs.py     — generate_thumb(coords, gpx_file) → PNG 400px en data/thumbs/
+  editing.py    — lógica pura del editor: extract_points(), apply_ops(), fit_to_gpx()
   summaries.py  — auto_summary() y auto_summary_planned()
   exif.py       — extrae lat/lon/taken_at de fotos subidas
   immich.py     — cliente HTTP para Immich (immich_get, immich_search, min_dist_to_track)
 
 api/
   routes.py     — CRUD de rutas + rescan + thumb + stats
+  editor.py     — editor de rutas: página, /points, guardado por ops, versiones
   photos.py     — subida y borrado de fotos locales; proxy de fotos Immich
   planned.py    — CRUD de rutas planificadas
   immich_api.py — candidatos Immich, selección, proxy de miniaturas
@@ -67,7 +69,8 @@ secciones y actualiza el `history` sin recargar la página.
 |---------|-----------|-----------|
 | `templates/base.html` | — | CSS global, header, toast, helpers JS (`$`, `fmtKm`, `fmtDur`, `fmtDate`, `esc`) |
 | `templates/app.html` | `GET /dashboard` · `/rutas` · `/planificacion` | SPA con tres secciones: Dashboard, Mis Rutas, Mis Planes. Usa MapLibre GL para el mapa de visión general. |
-| `templates/sendero.html` | `GET /Sendero/<nombre>` | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación (Chart.js), notas, fotos, modal Immich, lightbox. |
+| `templates/sendero.html` | `GET /Sendero/<nombre>` | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación (Chart.js), notas, fotos, modal Immich, lightbox. Botón "✎ Editar" → editor. |
+| `templates/editor.html` | `GET /Sendero/<nombre>/editor` | Editor de rutas (F1+F2): recorte/eliminación de tramos, invertir, editar vértices, simplificar, corregir picos, dividir, undo/redo, historial de versiones, zoom en gráficas. |
 | `templates/plan_detalle.html` | `GET /Plan/<nombre>` | Detalle de ruta planificada: mapa, stats, notas. |
 | `templates/rutas.html` *(legacy)* | — | Ya no se sirve. No editar. |
 | `templates/overview.html` *(legacy)* | — | Ya no se sirve. No editar. |
@@ -95,10 +98,19 @@ secciones y actualiza el `history` sin recargar la página.
 | POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb |
 | GET | `/api/routes/<id>` | dict completo de la ruta |
 | PATCH | `/api/routes/<id>` | actualiza name/notes/activity_type/immich_checked |
-| DELETE | `/api/routes/<id>` | borra ruta + fotos + GPX + thumb |
+| DELETE | `/api/routes/<id>` | borra ruta + fotos + GPX + thumb + versiones |
 | POST | `/api/routes/<id>/rescan` | re-parsea GPX/FIT; regenera thumb |
 | GET | `/api/routes/<id>/thumb` | sirve el PNG del track (image/png) |
 | GET | `/api/routes/<id>/gpx` | descarga el archivo GPX/FIT original |
+| GET | `/Sendero/<name>/editor` | `editor.html` con JSON ligero inyectado (sin geojson) |
+| GET | `/api/routes/<id>/points` | puntos completos para el editor: arrays paralelos lonlat/ele/time/hr 1:1 con los trkpt + `segments` + `version` |
+| POST | `/api/routes/<id>/edit` | guarda edición: `{base_version, summary, ops}`; 409 si base_version ≠ actual |
+| POST | `/api/routes/<id>/split` | divide en el punto `index`: la original se recorta (versión nueva) y la 2ª mitad pasa a ruta nueva; las fotos se quedan en la original |
+| POST | `/api/routes/merge` | `{ids, name}` → RUTA NUEVA con las rutas unidas (originales intactas); orden cronológico, tiempos descartados si se solapan (`times_kept` en la respuesta) |
+| POST | `/api/routes/<id>/elevation-dem` | recalcula la elevación de todos los puntos contra el OpenTopoData de Ajustes (versión nueva); 400 sin `DEM_URL`, 409 por `base_version`, 502 si el DEM falla |
+| GET | `/api/routes/<id>/versions` | historial de versiones (desc) |
+| POST | `/api/routes/<id>/versions/<vn>/restore` | restaura la versión vn como versión nueva |
+| GET | `/api/routes/<id>/versions/<vn>/gpx` | descarga el archivo de esa versión |
 | GET/POST | `/api/routes/<id>/immich/candidates` | fotos Immich en ventana temporal |
 | POST | `/api/routes/<id>/immich/select` | asocia fotos Immich a la ruta |
 | POST | `/api/routes/<id>/photos` | sube fotos locales |
@@ -116,21 +128,78 @@ secciones y actualiza el `history` sin recargar la página.
 | GET | `/api/settings` | ajustes actuales |
 | POST | `/api/settings` | guarda ajustes Immich |
 | GET/POST | `/api/settings/gpx-types` | tipos GPX personalizados |
+| GET/POST | `/api/settings/gps-thresholds` | umbrales GPS por actividad (vel. máx km/h, ascenso máx m/s, altitud máx m); GET devuelve los efectivos (custom con fallback a defaults) |
 | GET | `/api/immich/thumb/<asset_id>` | proxy miniatura Immich |
 
 ### Helper `_build_route_dict(rid)` en `api/routes.py`
-Construye el dict completo de una ruta (geojson, elevation, heart_rate, photos,
-auto_summary, thumb_file…). Lo usan `get_route()` (API JSON) y `sendero_page()`
-(inyección en template). **Si añades campos al objeto ruta, añádelos aquí.**
+Construye el dict completo de una ruta (geojson, elevation, heart_rate, speed, photos,
+auto_summary, thumb_file, `version`…). Lo usan `get_route()` (API JSON) y
+`sendero_page()` (inyección en template). **Si añades campos al objeto ruta,
+añádelos aquí.** El campo `version` se deriva de `MAX(version_n)` en
+`route_versions` (0 = nunca editada); no hay columna `version` en `routes` a propósito.
+
+### Editor de rutas (`api/editor.py` + `core/editing.py` + `templates/editor.html`)
+Fase 1: recortar inicio/fin, eliminar tramo intermedio, invertir ruta, con
+versionado completo. Fase 2: dos modos de edición — "Seleccionar" (tramos A–B) y
+"Editar puntos" (arrastrar vértice = `move_point`, Alt+click = `delete_points`,
+click en línea = `insert_point`) — más simplificación Douglas-Peucker con preview
+(compila a `delete_points`), corrección de picos de elevación (`set_ele`),
+corrección de velocidad excesiva (saltos de GPS: puntos que exigirían superar el
+umbral de la actividad — Ajustes → "GPS incorrecto", inyectado como
+`gps_max_speed` en la página del editor — se eliminan vía `delete_points`) y
+dividir ruta en dos (`POST /split`, server-side sobre el estado guardado).
+Fase 3: `shift_time` (desplazar todos los timestamps; reactiva el cruce Immich),
+waypoints (`wpt_add`/`wpt_move`/`wpt_rename`/`wpt_del`, sobre `gpx.waypoints`;
+Shift+click en modo "Editar puntos" añade, popup del marker ⚑ renombra/borra),
+unir rutas (`POST /api/routes/merge`, ruta NUEVA), elevación DEM
+(`POST /elevation-dem`, requiere `DEM_URL` en Ajustes → Editor; servicio
+OpenTopoData comentado en docker-compose.yml) e integración con `gps_issues`:
+la página inyecta los avisos, el panel "⚠ Avisos GPS" los lista con bandas rojas
+en las gráficas y tramos rojos en el mapa (solo sin cambios pendientes: los km
+son del estado guardado), y "Corregir" hace zoom al tramo y abre la herramienta
+según `type` (speed → velocidad excesiva con el umbral del aviso; elevation →
+picos). El roadmap de la fase 4 está en `roadmap/editorplan.md`.
+
+**Paridad cliente/servidor**: el cliente mantiene el estado con `idxMap`
+(orden/supervivencia) + `posOverride`/`eleOverride` (valores editados por índice
+original; los insertados se añaden al final de los arrays de `P`). Cliente y
+servidor deben aplicar cada op EXACTAMENTE igual — si añades una op nueva,
+impleméntala en `doOp()` (editor.html) y en `apply_ops()` (core/editing.py) y
+verifica que la misma secuencia produce las mismas coordenadas en ambos.
+`delete_points` (puntos sueltos) NO parte el segmento; `delete_range` sí.
+
+**Principio central: el cliente manda OPERACIONES por índice de punto, nunca
+coordenadas.** El servidor re-parsea el GPX con gpxpy, aplica las ops sobre los
+`GPXTrackPoint` reales (conservan time/HR/extensiones que el parser no extrae) y
+serializa con `to_xml()`. El aplanado punto[i] ↔ i-ésimo trkpt usa el mismo triple
+bucle tracks→segments→points que `analyse_gpx()`: **si cambias ese orden de
+iteración en un sitio, cámbialo en los dos** (`core/parsers.py` y `core/editing.py`).
+
+**Versionado (append-only):**
+- Archivos inmutables en `data/gpx/versions/<route_id>/v<N>.<ext>`; metadatos en
+  la tabla `route_versions`. Una ruta nunca editada no tiene filas (versión 0).
+- **Invariante: el archivo activo en `data/gpx/` == la versión más alta.**
+- Primer guardado: el original se archiva como v1 ANTES de tocar el activo; el
+  resultado editado es v2. Restaurar la vk no borra posteriores: crea v(n+1).
+- El activo **no cambia de nombre** entre versiones (los thumbs `<stem>.png` y la
+  validación 409 de duplicados dependen de ello). Excepción: al editar un `.fit`
+  por primera vez se materializa `<stem>.gpx` (mismo stem) y el `.fit` queda como v1.
+- Un `delete_range` interior a un segmento lo **parte en dos** (no se fabrica
+  distancia en línea recta sobre el hueco). `reverse` elimina todos los `<time>`
+  (timestamps descendentes serían inválidos); el frontend avisa con confirm.
+- Concurrencia: el POST de guardado lleva `base_version`; si no coincide con
+  `MAX(version_n)` → 409 `version_conflict`.
+- `DELETE /api/routes/<id>` borra también `route_versions` y `versions/<id>/`.
 
 ### Thumbnails de track (`core/thumbs.py`)
-`generate_thumb(coords, route_id)` genera un PNG:
+`generate_thumb(coords, gpx_file)` genera un PNG:
 - Fondo `#17241c` (= `--panel`), línea blanca, 400 px de alto, ancho proporcional
   al bounding-box del track (ratio corregido por latitud, acotado 1:4 – 4:1), 40 px
   de padding interior.
 - Se llama automáticamente en `create_route` y `rescan_route`; también en el script
   de backfill manual.
-- El archivo se guarda en `data/thumbs/thumb_<id>.png` y se referencia en `thumb_file`.
+- El archivo se llama igual que el GPX con extensión .png (`<stem>.png`), se guarda
+  en `data/thumbs/` y se referencia en `thumb_file`.
 - Al borrar una ruta, se borra también el thumb.
 - En `makeCard` de `app.html`: se muestra como elemento absoluto en el lateral derecho
   de la tarjeta con degradado izquierda→transparente para no tapar el texto.
@@ -143,12 +212,72 @@ auto_summary, thumb_file…). Lo usan `get_route()` (API JSON) y `sendero_page()
 | `lbIdx` | índice en `current.photos` de la foto visible en el lightbox |
 | `immichCands` / `immichSel` | candidatos de Immich y Set de índices seleccionados |
 | `IMMICH` | booleano; activado tras `/api/config`, controla el botón Immich |
+| `hoverD` | distancia (km) resaltada ahora mismo en el hover sincronizado mapa↔gráficos, o `null` |
+| `trackCumKm` | distancia acumulada (km) por punto de `current.geojson`, recalculada en cada `renderMap()` |
+
+### Hover sincronizado mapa↔gráficos en `sendero.html`
+Pasar el ratón por la línea del track en el mapa, o por el perfil de elevación/velocidad/FC,
+resalta la misma posición en los otros 3 elementos y muestra un cuadro flotante en el mapa
+con altitud/velocidad/FC en ese punto. Punto de entrada único: `setHoverD(d)` (d en km o `null`).
+- **`elevation`/`speed`/`heart_rate` son series independientes**, cada una con su propio muestreo
+  de `d` (no todos los puntos del track tienen elevación/velocidad/FC). `_nearestByD(arr,d)` busca
+  el punto más cercano por distancia (binary search, arrays ya vienen ordenados por `d`); no asumas
+  mismo índice entre series.
+- **Mapa → gráficos**: capa `ruta-linea-hit` (línea ancha invisible sobre `ruta-linea`, mismo
+  patrón que `dash-lines-hit` en `app.html`) recibe `mousemove`/`mouseleave`; busca el vértice de
+  `current.geojson` más cercano al cursor (scan lineal, barato incluso con miles de puntos porque
+  solo corre mientras el cursor está sobre la línea) y llama a `setHoverD(trackCumKm[idx])`.
+- **Gráficos → mapa**: cada chart usa `options.onHover(e,els,chart)` leyendo
+  `chart.scales.x.getValueForPixel(e.x)` (posición interpolada, no snapeada al punto de dato más
+  cercano) en vez de depender de `els`/`intersect`. `ctx.onmouseleave=()=>setHoverD(null)` limpia
+  al salir — usa asignación directa (no `addEventListener`) porque `renderElev/renderSpeed/renderHR`
+  destruyen y recrean el `Chart` en cada `renderAll()` (tras reescanear) pero reutilizan el mismo
+  `<canvas>`: con `addEventListener` los listeners se irían acumulando en cada re-render.
+- **Crosshair en los charts**: `_crosshairPlugin()` (plugin Chart.js genérico, `afterDatasetsDraw`)
+  lee `hoverD` del scope compartido y dibuja línea+punto leyendo `chart.data.datasets[0].data`
+  directamente — funciona igual en los 3 gráficos sin lookup adicional a `current.*`.
+- **Marcador + cuadro en el mapa**: fuente/capa GeoJSON `hover-point` (un solo Point, `setData()`
+  en cada hover) en vez de un `maplibregl.Marker` DOM — más barato de mover en cada `mousemove`.
+  El cuadro flotante (`.hover-infobox`) es un `<div>` posicionado con `map.project(lngLat)`,
+  añadido a `map.getContainer()`. **TRAMPA**: la clase CSS trae `display:none` por defecto (para
+  que no aparezca antes del primer hover); para mostrarlo hay que forzar `display='block'`, no
+  `display=''` — limpiar el inline style solo hace que caiga de vuelta al `none` de la clase.
+- `renderMap()` resetea `hoverD=null` y `hoverBoxEl=null` al principio (el mapa se destruye y
+  recrea por completo en cada `renderAll()`, así que cualquier estado de hover anterior queda huérfano).
 
 ### Mapa de visión general en `app.html` (sección Mis Rutas)
-Usa **MapLibre GL** (no Leaflet). La fuente GeoJSON se actualiza con `setData()` sin
-reconstruir el mapa. Soporta clustering nativo. Los iconos de actividad se cargan
-como imágenes PNG en base64 con `map.addImage()`. Al cambiar la capa base se llama a
-`getSource('basemap').setTiles(...)`.
+Usa **MapLibre GL** (no Leaflet), basemap **Satélite** (Esri) por defecto con selector de
+4 capas (Topográfico/Callejero/Satélite/Oscuro) — a diferencia del dashboard, que no tiene
+selector y usa siempre CartoDB Oscuro fijo. La fuente GeoJSON de puntos se actualiza con
+`setData()` sin reconstruir el mapa. Soporta clustering nativo. Los iconos de actividad se
+cargan como imágenes PNG en base64 con `map.addImage()` (`_loadActImages()`, compartida con
+el dashboard). Al cambiar la capa base se llama a `getSource('basemap').setTiles(...)`.
+
+Como el dashboard, dibuja las rutas con **dos representaciones según el zoom** (mismo
+patrón, ver más abajo, pero adaptado a que aquí sí hay filtros de lista activos):
+- **Bolitas/clusters (`routes`/`clusters`/`unclustered`)**: a partir del array `ovRoutes`
+  (ya filtrado por actividad/fecha/búsqueda desde `renderList()`). `unclustered` tiene
+  `maxzoom: OV_POINTS_MAXZOOM` (12) para dar paso a las líneas reales por encima de ese zoom.
+- **Líneas reales (`ov-lines`/`ov-lines-hit`)**: igual que `dash-lines` del dashboard —
+  se piden a `GET /api/routes/geojson?bbox=...` por la zona visible (+50% margen), debounce
+  350ms en `moveend` (`_ovScheduleLineLoad`/`_ovLoadLinesForView`), solo si el zoom pasó
+  `OV_LINES_PREFETCH_ZOOM` (`OV_LINES_MINZOOM-2`). `ovLineIds`/`ovLineFeaturesAll` acumulan
+  TODO lo descargado por bbox (nunca se recorta), pero **a diferencia del dashboard, la capa
+  se filtra por los filtros activos de la lista**: `_ovApplyLineFilter()` recalcula qué
+  subconjunto de `ovLineFeaturesAll` mostrar cada vez que cambia `ovRoutes` (filtro de
+  actividad/fecha/búsqueda), sin volver a pedir red — el endpoint `/api/routes/geojson` solo
+  filtra por bbox, así que el filtrado por actividad/fecha es 100% cliente.
+- **Invalidación de caché**: `clearRouteCache()` (ya usada para invalidar `allRoutes`)
+  también vacía `ovLineIds`/`ovLineFeaturesAll` y limpia la fuente `ov-lines` — si añades un
+  nuevo punto de mutación de rutas (upload/rescan/delete), reutiliza esa función en vez de
+  inventar otra invalidación; si el caché queda vacío pero hay rutas que mostrar,
+  `_ovApplyLineFilter()` relanza `_ovLoadLinesForView()` sola.
+- **Encuadre inicial instantáneo**: `fitMap(true)` en la creación del mapa usa
+  `duration:0` — el centro/zoom del constructor (`[-84,10]`, un placeholder en Costa Rica)
+  nunca se ve, salta directo a la posición real de las rutas. Sin el `true`, MapLibre anima
+  el vuelo desde ese placeholder cada vez que se (re)crea el mapa, aunque tus rutas estén al
+  otro lado del mundo. El resto de llamadas a `fitMap()` (botón "centrar", cambios de filtro)
+  sí animan, ahí tiene sentido.
 
 ### Mapa del dashboard en `app.html` (sección Dashboard)
 Segundo mapa MapLibre (`dashMap`). Dibuja las rutas con **dos representaciones según el
@@ -202,6 +331,21 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 
 ## Bugs corregidos (no reintroducir)
 
+- **Re-detección de actividad borraba la elegida a mano y falseaba los umbrales GPS**
+  — `_reanalyse_and_update` (rescan + todos los guardados del editor) recalculaba
+  `activity_type` desde el nombre y el `<type>` del GPX; con nombre tipo fecha y un
+  GPX reescrito por el editor (to_xml() no conserva un `<type>` que gpxpy no leyó),
+  quedaba None → los `gps_issues` se calculaban con los umbrales de 'otros'
+  (40 km/h) en vez de los de la actividad real (15 de senderismo), y "Corregir
+  todo" limpiaba con el umbral equivocado dejando 0 avisos aparentes. Regla: si la
+  re-detección no da nada, **conservar** la actividad ya guardada.
+
+- **Ajustes obsoletos en el otro worker de gunicorn** — un POST de ajustes solo
+  ejecutaba `refresh_config()` en el worker que lo atendía; el segundo worker
+  seguía en memoria con los umbrales GPS/Immich/DEM viejos y aplicaba valores
+  distintos según qué worker tocara. Solución: `refresh_config()` en
+  `before_request` (app.py) — un SELECT de ~10 filas por request, despreciable.
+
 - **`dashActiveActs` inicializado fuera de orden** — declarar `dashActiveActs=new Set(ACTIVITIES.map(...))` en el `let` del módulo lanza `ReferenceError` porque `ACTIVITIES` se define más abajo. Siempre inicializar dentro de `initDashMap()`.
 
 
@@ -228,6 +372,12 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
   completa. Si añades una columna nueva con `ALTER TABLE` y la vas a leer junto a otras en
   una query frecuente (listados, stats, filtros), añade también su índice de cobertura en
   `init_db()` — no asumas que basta con la columna.
+
+- **`fitMap()` sin `duration:0` en el primer encuadre del mapa de "Mis Rutas"** (`app.html`)
+  animaba un "vuelo" visible desde el centro placeholder del constructor (`[-84,10]`, zona de
+  Costa Rica) hasta la posición real de las rutas, cada vez que se creaba el mapa. Solución:
+  `fitMap(true)` (parámetro `instant`) solo en ese primer encuadre; el resto de usos (botón
+  "centrar", cambios de filtro) siguen animados a propósito.
 
 - **`init_db()` corre en cada worker de gunicorn por separado** (no hay `--preload`), así
   que con `--workers 2` dos procesos ejecutan las migraciones a la vez contra el mismo
@@ -305,6 +455,8 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | elevation | TEXT JSON | lista `[{d, e}, …]` (d en km, e en m) |
 | heart_rate | TEXT JSON | lista `[{d, hr}, …]` o NULL |
 | hr_avg, hr_max | INTEGER | NULL si no hay FC |
+| speed | TEXT JSON | lista `[{d, v}, …]` (v en km/h) o NULL. GPX: derivada de posición/tiempo con ventana móvil de `SPEED_WINDOW_S` (15s) para suavizar ruido GPS — requiere `<time>` por punto, si no hay queda vacío. FIT: `enhanced_speed`/`speed` del propio dispositivo, sin suavizar |
+| gps_issues | TEXT JSON | tramos GPS anómalos (`core/gps_analysis.py::detect_gps_anomalies`, umbrales por actividad de Ajustes → "GPS incorrecto"); lista `[{type: speed\|elevation\|altitude, d_from, d_to, value_max, threshold, severity}, …]` o NULL. `altitude` (puntos por encima de `max_ele_m`) se detecta incluso sin timestamps. Lo calculan `create_route` y `_reanalyse_and_update` (rescan + guardados del editor); el editor lo premarca. OJO: `app.py` hace `refresh_config()` en `before_request` porque con 2 workers un POST de ajustes solo refrescaba el worker que lo atendía |
 | created_at | TEXT | |
 | activity_type | TEXT | senderismo/bicicleta/caminata/correr/esqui/otros |
 | device | TEXT | fabricante/modelo del dispositivo |
@@ -312,6 +464,13 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | start_lat, start_lon | REAL | primer punto del track |
 | thumb_file | TEXT | nombre en `data/thumbs/` (PNG) |
 | bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat | REAL | bounding box del track completo; lo calcula `_route_bbox()` en `create_route`/`rescan_route`. Usado por `/api/routes/geojson?bbox=` (mapa del dashboard) para no cargar rutas fuera de la zona visible |
+
+### Tabla `route_versions`
+Historial del editor de rutas (append-only, ver sección "Editor de rutas").
+`route_id`, `version_n` (UNIQUE juntos), `file` (nombre en
+`data/gpx/versions/<route_id>/`), `summary` (en español), `distance_m`,
+`ascent_m`, `n_points`, `created_at`. Sin filas = ruta nunca editada (versión 0).
+El archivo activo de la ruta es siempre idéntico a la versión más alta.
 
 ### Tabla `photos`
 `route_id`, `file` XOR `immich_id`, `original`, `lat`, `lon`, `taken_at`
@@ -323,8 +482,9 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 
 ### Tabla `settings`
 Clave-valor: `IMMICH_URL`, `IMMICH_API_KEY`, `IMMICH_MARGIN_MIN`, `IMMICH_DIST_M`,
-`GPX_TYPE_CUSTOM` (JSON), `stats_cache` (JSON con estadísticas globales).
-Los ajustes de settings sobreescriben los de `.env`/variables de entorno.
+`DEM_URL` (OpenTopoData para el editor; vacío = botón oculto), `GPX_TYPE_CUSTOM`
+(JSON), `GPS_THRESHOLDS_CUSTOM` (JSON), `stats_cache` (JSON con estadísticas
+globales). Los ajustes de settings sobreescriben los de `.env`/variables de entorno.
 
 ## Quirks conocidos
 - La validación de extensión en `create_route` acepta cualquier nombre que termine en
@@ -365,6 +525,18 @@ Los ajustes de settings sobreescriben los de `.env`/variables de entorno.
   ¿le añadiste también su índice de cobertura en `init_db()`? (ver regla 12).
 - Si tocaste algo en `init_db()`: ¿sobrevive a ejecutarse dos veces en paralelo
   (2 workers de gunicorn)? (ver regla 13).
+- Si tocaste el editor (`core/editing.py`/`api/editor.py`): ¿el orden de aplanado
+  sigue siendo idéntico al de `analyse_gpx()`? ¿El activo sigue siendo igual a la
+  versión más alta tras guardar y tras restaurar? ¿Los `<time>`/HR sobreviven a un
+  recorte? (smoke test en `roadmap/editorplan.md` §8).
 - Si tras `docker compose up -d --build` los cambios no se reflejan en `localhost:8090`
   pese a que el build no falla: revisa el quirk de procesos huérfanos de Docker
   Desktop/WSL2 antes de sospechar del código.
+- Si tocaste el mapa de "Mis Rutas" (`app.html`): ¿las líneas (`ov-lines`) siguen
+  respetando los filtros de actividad/fecha/búsqueda vía `_ovApplyLineFilter()`, o se
+  te ha colado un caso que las muestra sin filtrar? ¿sigue usando `fitMap(true)` en el
+  primer encuadre (sin animación de vuelo)?
+- Si tocaste `renderElev/renderSpeed/renderHR` o el mapa en `sendero.html`: ¿el hover
+  sincronizado sigue funcionando en las 4 direcciones (mapa→gráficos y cada gráfico→resto)?
+  Si añades un `Chart` nuevo, usa `ctx.onmouseleave=...` (asignación directa, no
+  `addEventListener`) para no acumular listeners en cada `renderAll()`.

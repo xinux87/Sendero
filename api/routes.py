@@ -1,5 +1,6 @@
 import json
 import re
+import shutil
 import datetime as dt
 from flask import Blueprint, abort, request, jsonify, render_template, Response
 
@@ -10,6 +11,8 @@ from core.parsers import (
 )
 from core.summaries import auto_summary
 from core.thumbs import generate_thumb
+from core.editing import load_gpx, extract_points
+from core.gps_analysis import detect_gps_anomalies
 from werkzeug.utils import secure_filename
 
 routes_bp = Blueprint("routes", __name__)
@@ -29,10 +32,18 @@ def _build_route_dict(rid):
     d["geojson"]    = json.loads(d["geojson"]    or "[]")
     d["elevation"]  = json.loads(d["elevation"]  or "[]")
     d["heart_rate"] = json.loads(d["heart_rate"] or "[]")
+    d["speed"]      = json.loads(d["speed"]      or "[]")
+    d["gps_issues"] = json.loads(d.get("gps_issues") or "[]")
     d["photos"]     = [dict(p) for p in photos]
     d["auto_summary"]   = auto_summary(r)
     d["device"]         = d.get("device") or None
     d["immich_checked"] = bool(d.get("immich_checked"))
+    # Versión actual del editor (0 = nunca editada). Derivada de route_versions
+    # a propósito: sin columna nueva en routes (ver CLAUDE.md, reglas 12-13).
+    v = db().execute(
+        "SELECT MAX(version_n) AS v FROM route_versions WHERE route_id=?", (rid,)
+    ).fetchone()
+    d["version"] = v["v"] or 0
     return d
 
 
@@ -164,6 +175,22 @@ def get_route_by_name(name):
     return jsonify(_build_route_dict(r["id"]))
 
 
+def _compute_gps_issues(raw, is_fit, activity_type):
+    """Tramos GPS anómalos (velocidad/tasa vertical imposibles) como JSON, o None.
+
+    Usa extract_points (arrays 1:1 por trkpt, con time/ele por punto, que
+    analyse_gpx no extrae) + detect_gps_anomalies con los umbrales de la
+    actividad. Nunca rompe el guardado: ante cualquier fallo devuelve None.
+    """
+    try:
+        pts = extract_points(load_gpx(raw, is_fit))
+        issues = detect_gps_anomalies(pts["lonlat"], pts["ele"], pts["time"],
+                                      activity_type)
+        return json.dumps(issues) if issues else None
+    except Exception:
+        return None
+
+
 def _route_bbox(coords):
     """min_lon, min_lat, max_lon, max_lat a partir de la lista de coordenadas del track."""
     if not coords:
@@ -252,6 +279,15 @@ def create_route():
     if not f or not (is_gpx or is_fit):
         return jsonify({"error": "Sube un archivo .gpx o .fit"}), 400
 
+    stored = secure_filename(f.filename)
+    if not stored:
+        return jsonify({"error": "Nombre de archivo inválido"}), 400
+    if (cfg.GPX_DIR / stored).exists():
+        return jsonify({
+            "error": "Ruta repetida: ya existe un GPX con este nombre, se descarta",
+            "duplicate": True,
+        }), 409
+
     raw = f.read()
     try:
         if is_fit:
@@ -262,9 +298,6 @@ def create_route():
     except Exception as e:
         return jsonify({"error": f"Archivo ilegible: {e}"}), 400
 
-    fname = secure_filename(f.filename)
-    stamp = dt.datetime.now().strftime("%Y%m%d%H%M%S")
-    stored = f"{stamp}_{fname}"
     (cfg.GPX_DIR / stored).write_bytes(raw)
 
     name = (request.form.get("name") or gpx_name
@@ -276,6 +309,7 @@ def create_route():
     hr_profile = stats.pop("_hr_profile", [])
     hr_avg = stats.pop("hr_avg", None)
     hr_max = stats.pop("hr_max", None)
+    speed_profile = stats.pop("_speed_profile", [])
     if not activity_type and gpx_type:
         activity_type = _gpx_type_lookup(gpx_type)
     if not activity_type and fit_sport:
@@ -290,8 +324,8 @@ def create_route():
         (name,notes,gpx_file,distance_m,ascent_m,descent_m,duration_s,moving_s,
          ele_min,ele_max,avg_speed,started_at,geojson,elevation,created_at,
          activity_type,device,start_lat,start_lon,heart_rate,hr_avg,hr_max,
-         bbox_min_lon,bbox_min_lat,bbox_max_lon,bbox_max_lat)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         bbox_min_lon,bbox_min_lat,bbox_max_lon,bbox_max_lat,speed)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (name, "", stored, stats["distance_m"], stats["ascent_m"],
          stats["descent_m"], stats["duration_s"], stats["moving_s"],
          stats["ele_min"], stats["ele_max"], stats["avg_speed"],
@@ -299,13 +333,16 @@ def create_route():
          dt.datetime.now().isoformat(), activity_type, creator,
          start_lat, start_lon,
          json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max,
-         *(bbox or (None, None, None, None))),
+         *(bbox or (None, None, None, None)),
+         json.dumps(speed_profile) if speed_profile else None),
     )
     con.commit()
     rid = cur.lastrowid
-    thumb = generate_thumb(coords, rid)
+    thumb = generate_thumb(coords, stored)
     if thumb:
         con.execute("UPDATE routes SET thumb_file=? WHERE id=?", (thumb, rid))
+    con.execute("UPDATE routes SET gps_issues=? WHERE id=?",
+                (_compute_gps_issues(raw, is_fit, activity_type), rid))
     _mark_stats_dirty(con)
     con.commit()
     return jsonify({"id": rid}), 201
@@ -328,7 +365,9 @@ def delete_route(rid):
     (cfg.GPX_DIR / r["gpx_file"]).unlink(missing_ok=True)
     if r["thumb_file"]:
         (cfg.THUMB_DIR / r["thumb_file"]).unlink(missing_ok=True)
+    shutil.rmtree(cfg.VERSIONS_DIR / str(rid), ignore_errors=True)
     con.execute("DELETE FROM photos WHERE route_id=?", (rid,))
+    con.execute("DELETE FROM route_versions WHERE route_id=?", (rid,))
     con.execute("DELETE FROM routes WHERE id=?", (rid,))
     _mark_stats_dirty(con)
     con.commit()
@@ -352,14 +391,15 @@ def update_route(rid):
     return "", 204
 
 
-@routes_bp.route("/api/routes/<int:rid>/rescan", methods=["POST"])
-def rescan_route(rid):
-    con = db()
-    r = con.execute("SELECT name, gpx_file, activity_type FROM routes WHERE id=?",
-                    (rid,)).fetchone()
-    if not r:
-        abort(404)
+def _reanalyse_and_update(con, rid, row):
+    """Re-parsea el archivo activo de la ruta y actualiza la fila completa
+    (stats, geojson, elevation, heart_rate, speed, bbox, thumb, stats_dirty).
 
+    row necesita al menos name y gpx_file. Devuelve None si todo fue bien, o
+    la tupla (respuesta, status) para que el endpoint la propague. Lo usan
+    rescan_route y el guardado/restauración del editor (api/editor.py).
+    """
+    r = row
     fpath = cfg.GPX_DIR / r["gpx_file"]
     if not fpath.exists():
         return jsonify({"error": "Archivo original no encontrado"}), 404
@@ -380,12 +420,23 @@ def rescan_route(rid):
     hr_profile = stats.pop("_hr_profile", [])
     hr_avg = stats.pop("hr_avg", None)
     hr_max = stats.pop("hr_max", None)
+    speed_profile = stats.pop("_speed_profile", [])
 
     activity_type = _detect_activity(r["name"])
     if not activity_type and gpx_type:
         activity_type = _gpx_type_lookup(gpx_type)
     if not activity_type and fit_sport:
         activity_type = _FIT_SPORT_MAP.get(fit_sport)
+    if not activity_type:
+        # Si la re-detección no da nada (nombre tipo fecha y GPX sin <type> —
+        # lo habitual tras una edición: to_xml() no conserva un <type> que gpxpy
+        # no leyó), CONSERVAR la actividad ya asignada. Si no, cada guardado del
+        # editor/rescan borraba la elegida a mano y los avisos GPS se calculaban
+        # con los umbrales de 'otros' (p.ej. 40 km/h en vez de 15 de senderismo).
+        prev = con.execute("SELECT activity_type FROM routes WHERE id=?",
+                           (rid,)).fetchone()
+        if prev:
+            activity_type = prev["activity_type"]
 
     start_lat = coords[0][1] if coords else None
     start_lon = coords[0][0] if coords else None
@@ -396,7 +447,7 @@ def rescan_route(rid):
            ele_min=?,ele_max=?,avg_speed=?,started_at=?,
            geojson=?,elevation=?,device=?,activity_type=?,
            start_lat=?,start_lon=?,heart_rate=?,hr_avg=?,hr_max=?,
-           bbox_min_lon=?,bbox_min_lat=?,bbox_max_lon=?,bbox_max_lat=?
+           bbox_min_lon=?,bbox_min_lat=?,bbox_max_lon=?,bbox_max_lat=?,speed=?
            WHERE id=?""",
         (stats["distance_m"], stats["ascent_m"], stats["descent_m"],
          stats["duration_s"], stats["moving_s"],
@@ -404,14 +455,28 @@ def rescan_route(rid):
          json.dumps(coords), json.dumps(elev), creator, activity_type,
          start_lat, start_lon,
          json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max,
-         *bbox, rid),
+         *bbox, json.dumps(speed_profile) if speed_profile else None, rid),
     )
     con.commit()
-    thumb = generate_thumb(coords, rid)
+    thumb = generate_thumb(coords, r["gpx_file"])
     if thumb:
         con.execute("UPDATE routes SET thumb_file=? WHERE id=?", (thumb, rid))
+    con.execute("UPDATE routes SET gps_issues=? WHERE id=?",
+                (_compute_gps_issues(raw, is_fit, activity_type), rid))
     _mark_stats_dirty(con)
     con.commit()
+    return None
+
+
+@routes_bp.route("/api/routes/<int:rid>/rescan", methods=["POST"])
+def rescan_route(rid):
+    con = db()
+    r = con.execute("SELECT name, gpx_file FROM routes WHERE id=?", (rid,)).fetchone()
+    if not r:
+        abort(404)
+    err = _reanalyse_and_update(con, rid, r)
+    if err:
+        return err
     return jsonify(_build_route_dict(rid))
 
 

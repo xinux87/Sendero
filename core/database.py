@@ -72,6 +72,10 @@ def init_db():
         con.execute("ALTER TABLE routes ADD COLUMN hr_avg INTEGER")
     if "hr_max" not in route_cols:
         con.execute("ALTER TABLE routes ADD COLUMN hr_max INTEGER")
+    if "speed" not in route_cols:
+        con.execute("ALTER TABLE routes ADD COLUMN speed TEXT")
+    if "gps_issues" not in route_cols:
+        con.execute("ALTER TABLE routes ADD COLUMN gps_issues TEXT")
     if "start_lat" not in route_cols:
         con.execute("ALTER TABLE routes ADD COLUMN start_lat REAL")
         con.execute("ALTER TABLE routes ADD COLUMN start_lon REAL")
@@ -143,6 +147,32 @@ def init_db():
             created_at  TEXT
         );
     """)
+
+    # Historial de versiones del editor de rutas. Los archivos viven en
+    # data/gpx/versions/<route_id>/v<N>.<ext> (inmutables, append-only); aquí solo
+    # metadatos. Una ruta nunca editada no tiene filas (versión efectiva 0).
+    # Invariante: el archivo activo en data/gpx/ == la versión más alta.
+    # Solo CREATE ... IF NOT EXISTS → re-ejecutable por 2 workers en paralelo
+    # sin try/except (regla 13 de CLAUDE.md).
+    con.executescript("""
+        CREATE TABLE IF NOT EXISTS route_versions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            route_id   INTEGER NOT NULL,
+            version_n  INTEGER NOT NULL,
+            file       TEXT NOT NULL,
+            summary    TEXT DEFAULT '',
+            distance_m REAL,
+            ascent_m   REAL,
+            n_points   INTEGER,
+            created_at TEXT,
+            UNIQUE(route_id, version_n)
+        );
+    """)
+    # Índice de cobertura del panel de historial (regla 12): resuelve el listado
+    # completo sin tocar la fila.
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_route_versions_route
+        ON route_versions(route_id, version_n DESC, summary, distance_m,
+                          ascent_m, n_points, created_at, file)""")
 
     con.executescript("""
         CREATE TABLE IF NOT EXISTS settings (

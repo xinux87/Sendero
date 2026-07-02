@@ -48,6 +48,11 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 #btn3d{position:absolute;bottom:10px;left:10px;z-index:10;
   background:var(--panel);border:1px solid var(--line);color:var(--ink);
   padding:5px 11px;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit}
+.hover-infobox{position:absolute;z-index:6;pointer-events:none;display:none;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:6px 10px;font-size:12px;line-height:1.6;white-space:nowrap;
+  box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.hover-infobox .hb-km{font-weight:700;color:var(--pr-yellow);margin-bottom:2px}
 /* lightbox */
 .lb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;align-items:center;
   justify-content:center;z-index:2000}
@@ -119,6 +124,7 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
     </div>
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn ghost sm" onclick="location.href='/Sendero/'+encodeURIComponent(current.name)+'/editor'">✎ Editar</button>
     <button class="btn ghost sm" id="rescan-btn" onclick="rescanRoute(this)">↺ Reescanear</button>
     <button class="btn ghost sm" onclick="downloadGpx()">↓ GPX</button>
     <button class="btn ghost sm" onclick="renameRoute()">Renombrar</button>
@@ -135,6 +141,11 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 <div class="section">
   <h2>Perfil de elevación</h2>
   <canvas id="elev" height="84"></canvas>
+</div>
+
+<div class="section" id="speed-section" style="display:none">
+  <h2>Velocidad</h2>
+  <canvas id="speed-chart" height="84"></canvas>
 </div>
 
 <div class="section" id="hr-section" style="display:none">
@@ -209,7 +220,10 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 {% endblock %}
 
 {% block scripts %}
-let map, map3dMode=false, elevChart, hrChart, current=null;
+let map, map3dMode=false, elevChart, speedChart, hrChart, current=null;
+// Hover sincronizado entre el track del mapa y los 3 gráficos: hoverD es la
+// distancia (km) resaltada ahora mismo, o null si no hay hover activo.
+let hoverD=null, trackCumKm=[], hoverBoxEl=null;
 let IMMICH=false, immichCands=[], immichSel=new Set();
 let photoMarkers={}, lbIdx=0;
 const NEAR_M=500;
@@ -382,8 +396,10 @@ function toggle3D(){
 function renderMap(){
   if(map){map.remove();map=null;}
   map3dMode=false;
+  hoverD=null;hoverBoxEl=null;
   const btn3d=$("#btn3d");if(btn3d)btn3d.textContent="Vista 3D";
   const coords=current.geojson;
+  trackCumKm=_buildCumKm(coords);
   const color=(activityOf(current.activity_type)||{}).color||'#d24a3a';
   let cx=-1.6,cy=42.5;
   if(coords.length){
@@ -434,6 +450,29 @@ function renderMap(){
       data:{type:'Feature',geometry:{type:'LineString',coordinates:coords}}});
     map.addLayer({id:'ruta-linea',type:'line',source:'ruta',
       paint:{'line-color':color,'line-width':4,'line-opacity':0.9}});
+    // Línea invisible más ancha encima, solo para que el hover sea más fácil de
+    // acertar que sobre la línea real de 4px (mismo patrón que dash-lines-hit).
+    map.addLayer({id:'ruta-linea-hit',type:'line',source:'ruta',
+      layout:{'line-join':'round','line-cap':'round'},
+      paint:{'line-color':'#000','line-width':16,'line-opacity':0}});
+    map.addSource('hover-point',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    map.addLayer({id:'hover-point',type:'circle',source:'hover-point',
+      paint:{'circle-radius':7,'circle-color':color,
+        'circle-stroke-width':2,'circle-stroke-color':'#101a14'}});
+    map.on('mousemove','ruta-linea-hit',e=>{
+      const{lng,lat}=e.lngLat;
+      let best=Infinity,bestIdx=0;
+      for(let i=0;i<coords.length;i++){
+        const dx=coords[i][0]-lng,dy=coords[i][1]-lat,d2=dx*dx+dy*dy;
+        if(d2<best){best=d2;bestIdx=i;}
+      }
+      map.getCanvas().style.cursor='crosshair';
+      setHoverD(trackCumKm[bestIdx]);
+    });
+    map.on('mouseleave','ruta-linea-hit',()=>{
+      map.getCanvas().style.cursor='';
+      setHoverD(null);
+    });
     fitRoute();
     new maplibregl.Marker({color:'#e8c44a'})
       .setLngLat(coords[0])
@@ -457,6 +496,101 @@ function haversineM(la1,lo1,la2,lo2){
   const R=6371000,r=Math.PI/180,dLa=(la2-la1)*r,dLo=(lo2-lo1)*r;
   const a=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLo/2)**2;
   return 2*R*Math.asin(Math.sqrt(a));
+}
+function _buildCumKm(coords){
+  const cum=[0];
+  for(let i=1;i<coords.length;i++){
+    const[lo1,la1]=coords[i-1],[lo2,la2]=coords[i];
+    cum.push(cum[i-1]+haversineM(la1,lo1,la2,lo2)/1000);
+  }
+  return cum;
+}
+// elevation/speed/heart_rate son series independientes, cada una con su propio
+// muestreo de "d" (no todos los puntos del track tienen elevación/velocidad/FC):
+// hay que buscar el punto más cercano por distancia, no se puede asumir mismo índice.
+function _nearestByD(arr,d){
+  if(!arr||!arr.length)return null;
+  let lo=0,hi=arr.length-1;
+  while(lo<hi){const mid=(lo+hi)>>1;if(arr[mid].d<d)lo=mid+1;else hi=mid;}
+  if(lo>0&&Math.abs(arr[lo-1].d-d)<Math.abs(arr[lo].d-d))lo--;
+  return arr[lo];
+}
+function _lngLatAtD(d){
+  const cum=trackCumKm,coords=current.geojson;
+  if(!cum.length||!coords.length)return null;
+  if(d<=cum[0])return coords[0];
+  if(d>=cum[cum.length-1])return coords[coords.length-1];
+  let lo=0,hi=cum.length-1;
+  while(lo<hi){const mid=(lo+hi)>>1;if(cum[mid]<d)lo=mid+1;else hi=mid;}
+  if(lo===0)return coords[0];
+  const d0=cum[lo-1],d1=cum[lo],t=d1>d0?(d-d0)/(d1-d0):0;
+  const[lo0,la0]=coords[lo-1],[lo1,la1]=coords[lo];
+  return[lo0+(lo1-lo0)*t,la0+(la1-la0)*t];
+}
+function _ensureHoverBox(){
+  if(!hoverBoxEl){
+    hoverBoxEl=document.createElement('div');
+    hoverBoxEl.className='hover-infobox';
+    map.getContainer().appendChild(hoverBoxEl);
+  }
+  return hoverBoxEl;
+}
+function _updateMapHover(){
+  if(!map)return;
+  const box=_ensureHoverBox();
+  const src=map.getSource&&map.getSource('hover-point');
+  if(hoverD==null||!src){
+    box.style.display='none';
+    if(src)src.setData({type:'FeatureCollection',features:[]});
+    return;
+  }
+  const ll=_lngLatAtD(hoverD);
+  if(!ll){box.style.display='none';return;}
+  src.setData({type:'FeatureCollection',
+    features:[{type:'Feature',geometry:{type:'Point',coordinates:ll}}]});
+  const pt=map.project(ll);
+  const e=_nearestByD(current.elevation,hoverD);
+  const v=_nearestByD(current.speed,hoverD);
+  const hr=_nearestByD(current.heart_rate,hoverD);
+  const parts=[`<div class="hb-km">${hoverD.toFixed(2)} km</div>`];
+  if(e)parts.push(`<div>Alt ${Math.round(e.e)} m</div>`);
+  if(v)parts.push(`<div>Vel ${v.v.toFixed(1)} km/h</div>`);
+  if(hr)parts.push(`<div>FC ${Math.round(hr.hr)} bpm</div>`);
+  box.innerHTML=parts.join('');
+  box.style.left=(pt.x+14)+'px';
+  box.style.top=(pt.y-10)+'px';
+  box.style.display='block';
+}
+// Punto de entrada único del hover: lo llaman tanto el mapa (mousemove sobre la
+// línea) como los 3 gráficos (onHover), así se mantienen sincronizados entre sí.
+function setHoverD(d){
+  hoverD=d;
+  if(elevChart)elevChart.update('none');
+  if(speedChart)speedChart.update('none');
+  if(hrChart)hrChart.update('none');
+  _updateMapHover();
+}
+function _crosshairPlugin(){
+  return{id:'hoverCrosshair',
+    afterDatasetsDraw(chart){
+      if(hoverD==null)return;
+      const xScale=chart.scales.x,yScale=chart.scales.y;
+      if(hoverD<xScale.min||hoverD>xScale.max)return;
+      const ds=chart.data.datasets[0].data;
+      if(!ds||!ds.length)return;
+      let lo=0,hi=ds.length-1;
+      while(lo<hi){const mid=(lo+hi)>>1;if(ds[mid].x<hoverD)lo=mid+1;else hi=mid;}
+      if(lo>0&&Math.abs(ds[lo-1].x-hoverD)<Math.abs(ds[lo].x-hoverD))lo--;
+      const x=xScale.getPixelForValue(hoverD),y=yScale.getPixelForValue(ds[lo].y);
+      const c=chart.ctx;
+      c.save();
+      c.strokeStyle='rgba(255,255,255,.35)';c.lineWidth=1;
+      c.beginPath();c.moveTo(x,chart.chartArea.top);c.lineTo(x,chart.chartArea.bottom);c.stroke();
+      c.fillStyle=chart.data.datasets[0].borderColor;
+      c.beginPath();c.arc(x,y,4,0,Math.PI*2);c.fill();
+      c.strokeStyle='#101a14';c.lineWidth=1.5;c.stroke();
+      c.restore();
+    }};
 }
 function photoElevPoints(){
   const tr=current.geojson,el=current.elevation;
@@ -504,14 +638,18 @@ function renderElev(){
     type:"scatter",data:ppts.map(p=>({x:p.x,y:p.y})),
     pointRadius:14,pointHoverRadius:14,backgroundColor:"transparent",borderColor:"transparent",
   });
-  elevChart=new Chart(ctx,{type:"line",data:{datasets:sets},plugins:[iconPlugin],
+  elevChart=new Chart(ctx,{type:"line",data:{datasets:sets},plugins:[iconPlugin,_crosshairPlugin()],
     options:{
       onClick(e,els){
         if(!els.length||els[0].datasetIndex!==1)return;
         const idx=current.photos.findIndex(p=>p.id===ppts[els[0].index].photoId);
         if(idx>=0)openLightbox(idx);
       },
-      onHover(e,els){ctx.style.cursor=els.length&&els[0].datasetIndex===1?"pointer":"default";},
+      onHover(e,els,chart){
+        ctx.style.cursor=els.length&&els[0].datasetIndex===1?"pointer":"default";
+        const d=chart.scales.x.getValueForPixel(e.x);
+        if(d!=null&&!isNaN(d))setHoverD(Math.max(chart.scales.x.min,Math.min(chart.scales.x.max,d)));
+      },
       plugins:{legend:{display:false},tooltip:{callbacks:{
         label(c){if(c.datasetIndex===1)return`📷 ${Math.round(ppts[c.dataIndex].y)} m`;
                   return`${Math.round(c.raw.y)} m`;},
@@ -523,6 +661,35 @@ function renderElev(){
       }
     }
   });
+  ctx.onmouseleave=()=>setHoverD(null);
+}
+
+function renderSpeed(){
+  const section=$("#speed-section");
+  const data=current.speed;
+  if(!data||!data.length){section.style.display="none";return;}
+  section.style.display="";
+  const ctx=$("#speed-chart");
+  if(speedChart)speedChart.destroy();
+  speedChart=new Chart(ctx,{type:"line",plugins:[_crosshairPlugin()],data:{datasets:[{
+    data:data.map(d=>({x:d.d,y:d.v})),fill:true,
+    borderColor:"#3a9ed8",backgroundColor:"rgba(58,158,216,.12)",
+    pointRadius:0,borderWidth:1.5,tension:.3
+  }]},options:{
+    onHover(e,els,chart){
+      const d=chart.scales.x.getValueForPixel(e.x);
+      if(d!=null&&!isNaN(d))setHoverD(Math.max(chart.scales.x.min,Math.min(chart.scales.x.max,d)));
+    },
+    plugins:{legend:{display:false},tooltip:{callbacks:{
+      label(c){return`${c.raw.y.toFixed(1)} km/h`;},
+      title(items){return`${Number(items[0].raw.x).toFixed(2)} km`;}
+    }}},
+    scales:{
+      x:{type:"linear",min:0,max:data[data.length-1].d,title:{display:true,text:"km",color:"#8aa394"},ticks:{color:"#8aa394",maxTicksLimit:8},grid:{color:"#2c4435"}},
+      y:{title:{display:true,text:"km/h",color:"#8aa394"},ticks:{color:"#8aa394"},grid:{color:"#2c4435"}}
+    }
+  }});
+  ctx.onmouseleave=()=>setHoverD(null);
 }
 
 function renderHR(){
@@ -532,11 +699,15 @@ function renderHR(){
   section.style.display="";
   const ctx=$("#hr-chart");
   if(hrChart)hrChart.destroy();
-  hrChart=new Chart(ctx,{type:"line",data:{datasets:[{
+  hrChart=new Chart(ctx,{type:"line",plugins:[_crosshairPlugin()],data:{datasets:[{
     data:data.map(d=>({x:d.d,y:d.hr})),fill:true,
     borderColor:"#e05252",backgroundColor:"rgba(224,82,82,.12)",
     pointRadius:0,borderWidth:1.5,tension:.3
   }]},options:{
+    onHover(e,els,chart){
+      const d=chart.scales.x.getValueForPixel(e.x);
+      if(d!=null&&!isNaN(d))setHoverD(Math.max(chart.scales.x.min,Math.min(chart.scales.x.max,d)));
+    },
     plugins:{legend:{display:false},tooltip:{callbacks:{
       label(c){return`${Math.round(c.raw.y)} bpm`;},
       title(items){return`${Number(items[0].raw.x).toFixed(2)} km`;}
@@ -546,6 +717,7 @@ function renderHR(){
       y:{title:{display:true,text:"bpm",color:"#8aa394"},ticks:{color:"#8aa394"},grid:{color:"#2c4435"}}
     }
   }});
+  ctx.onmouseleave=()=>setHoverD(null);
 }
 
 function renderGallery(){
@@ -571,7 +743,7 @@ function renderAll(){
   $("#notes").value=current.notes||"";
   $("#immich-btn").classList.toggle("hidden",!IMMICH);
   renderActivity();
-  renderStats();renderMap();renderElev();renderHR();renderGallery();
+  renderStats();renderMap();renderElev();renderSpeed();renderHR();renderGallery();
   if(!current.activity_type) setTimeout(openActivityPicker,350);
   window.scrollTo(0,0);
 }
