@@ -1,7 +1,7 @@
 from flask import Flask
 
 from core.database import init_db, close_db
-from core.config import refresh_config
+from core.config import refresh_config, APP_VERSION
 
 from api.routes import routes_bp
 from api.photos import photos_bp
@@ -14,6 +14,12 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB por subida
 
 app.teardown_appcontext(close_db)
+
+
+@app.context_processor
+def _inject_version():
+    # Disponible como {{ app_version }} en todas las plantillas (pie de Ajustes).
+    return {"app_version": APP_VERSION}
 
 
 @app.before_request
