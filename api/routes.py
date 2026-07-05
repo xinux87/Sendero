@@ -379,7 +379,7 @@ def update_route(rid):
     data = request.get_json(force=True)
     con = db()
     fields, vals = [], []
-    for key in ("name", "notes", "activity_type", "immich_checked"):
+    for key in ("name", "notes", "activity_type", "immich_checked", "device"):
         if key in data:
             fields.append(f"{key}=?")
             vals.append(data[key])
@@ -437,6 +437,16 @@ def _reanalyse_and_update(con, rid, row):
                            (rid,)).fetchone()
         if prev:
             activity_type = prev["activity_type"]
+
+    if not creator:
+        # Mismo criterio que activity_type: si el re-parseo no da dispositivo
+        # (habitual tras una edición, el to_xml() no reescribe el creator que
+        # gpxpy no leyó), conservar el device ya guardado — puede haberse
+        # editado a mano desde el editor.
+        prev = con.execute("SELECT device FROM routes WHERE id=?",
+                           (rid,)).fetchone()
+        if prev:
+            creator = prev["device"]
 
     start_lat = coords[0][1] if coords else None
     start_lon = coords[0][0] if coords else None

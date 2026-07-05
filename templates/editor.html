@@ -51,6 +51,11 @@
 #ver-list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
 #ver-list::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 #ver-list{scrollbar-width:thin;scrollbar-color:var(--line) var(--bg)}
+#issues-list::-webkit-scrollbar{width:6px}
+#issues-list::-webkit-scrollbar-track{background:var(--bg);border-radius:3px}
+#issues-list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+#issues-list::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+#issues-list{scrollbar-width:thin;scrollbar-color:var(--line) var(--bg)}
 .sel-hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
 .handle-a,.handle-b{width:20px;height:20px;border-radius:50%;border:3px solid #101a14;
   box-shadow:0 2px 6px rgba(0,0,0,.7);cursor:grab}
@@ -66,6 +71,16 @@
 .issue-row .meta .det{color:var(--muted);font-size:11px}
 .issue-row.high .ico{filter:drop-shadow(0 0 3px #d24a3a)}
 .issue-row .btn{padding:3px 8px;font-size:11px}
+.issue-row.active{background:rgba(232,196,74,.10);box-shadow:inset 3px 0 0 var(--pr-yellow)}
+.issue-row.active .btn{opacity:.6}
+.issue-row.active .meta .rng{color:var(--pr-yellow)}
+.issue-row.done{opacity:.5}
+.issue-row.done .meta .rng,.issue-row.done .meta .det{text-decoration:line-through}
+.issue-row.done .btn{display:none}
+.issue-row .fixed-tag{display:none;font-size:11px;color:#5fb87a;font-weight:600}
+.issue-row.done .fixed-tag{display:inline}
+.issues-status{font-size:12px;color:#5fb87a;background:rgba(95,184,122,.10);
+  border:1px solid rgba(95,184,122,.3);border-radius:8px;padding:7px 9px;margin-bottom:8px}
 .overlay{position:fixed;inset:0;background:rgba(8,14,11,.78);display:flex;align-items:center;
   justify-content:center;padding:16px;z-index:1000}
 .overlay.hidden{display:none}
@@ -75,6 +90,11 @@
 .modal input[type=text]{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);
   border-radius:8px;padding:10px 12px;font-family:inherit;font-size:14px;margin-bottom:14px}
 .modal-foot{display:flex;justify-content:flex-end;gap:10px}
+.det-fld{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.det-fld label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.det-fld input{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13px;box-sizing:border-box}
+.det-fld input:focus{outline:none;border-color:var(--pr-yellow)}
 #ed-loading{padding:40px;text-align:center;color:var(--muted)}
 .maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
 .maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
@@ -111,13 +131,26 @@
     </div>
     <div style="display:flex;flex-direction:column;gap:14px">
       <div class="ed-panel">
+        <h3>Detalles</h3>
+        <div class="det-fld">
+          <label for="det-name">Nombre</label>
+          <input type="text" id="det-name" maxlength="200" placeholder="Nombre de la ruta">
+        </div>
+        <div class="det-fld">
+          <label for="det-device">Dispositivo que la grabó</label>
+          <input type="text" id="det-device" maxlength="200" placeholder="Sin dispositivo">
+        </div>
+        <button class="btn sm" id="det-save" style="width:100%" onclick="saveDetails()" disabled>Guardar detalles</button>
+      </div>
+      <div class="ed-panel">
         <h3>Estadísticas <span style="text-transform:none" title="Distancia aproximada (2D); el valor exacto se recalcula al guardar">(aprox.)</span></h3>
         <div class="ed-stats" id="ed-stats"></div>
       </div>
       <div class="ed-panel hidden" id="issues-panel">
         <h3>⚠ Avisos GPS</h3>
-        <button class="btn sm" style="width:100%;margin-bottom:8px" onclick="fixAllIssues()">✔ Corregir todo</button>
-        <div id="issues-list"></div>
+        <button class="btn sm" id="fix-all-btn" style="width:100%;margin-bottom:8px" onclick="fixAllIssues()">✔ Corregir todo</button>
+        <div id="issues-status" class="issues-status hidden"></div>
+        <div id="issues-list" style="max-height:320px;overflow-y:auto"></div>
         <div class="sel-hint">Tramos con velocidad, desnivel o altitud imposibles según los
           umbrales de Ajustes → GPS incorrecto. Se ocultan mientras haya cambios sin guardar.</div>
       </div>
@@ -261,6 +294,46 @@ function haversineM(la1,lo1,la2,lo2){
 document.getElementById('ed-name').textContent = R.name;
 document.getElementById('ed-version').textContent = 'v' + R.version;
 
+/* ── detalles (nombre + dispositivo) ────────────────────────────────────── */
+(function initDetails(){
+  const nIn=document.getElementById('det-name');
+  const dIn=document.getElementById('det-device');
+  const btn=document.getElementById('det-save');
+  nIn.value = R.name || '';
+  dIn.value = R.device || '';
+  const dirty=()=>{
+    const changed = nIn.value.trim()!==(R.name||'') || dIn.value.trim()!==(R.device||'');
+    btn.disabled = !changed;
+  };
+  nIn.addEventListener('input',dirty);
+  dIn.addEventListener('input',dirty);
+})();
+
+async function saveDetails(){
+  const nIn=document.getElementById('det-name');
+  const dIn=document.getElementById('det-device');
+  const btn=document.getElementById('det-save');
+  const name=nIn.value.trim(), device=dIn.value.trim();
+  if(!name){toast('El nombre no puede estar vacío');nIn.focus();return;}
+  const payload={};
+  if(name!==(R.name||''))   payload.name=name;
+  if(device!==(R.device||''))payload.device=device;
+  if(!Object.keys(payload).length)return;
+  btn.disabled=true;
+  let res;
+  try{
+    res=await fetch(`/api/routes/${R.id}`,{method:'PATCH',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  }catch(e){toast('Error de red al guardar');btn.disabled=false;return;}
+  if(!res.ok){const j=await res.json().catch(()=>({}));toast(j.error||'No se pudo guardar');btn.disabled=false;return;}
+  const renamed = ('name' in payload);
+  R.name=name; R.device=device;
+  document.getElementById('ed-name').textContent=name;
+  if(renamed) history.replaceState({},'','/Sendero/'+encodeURIComponent(name)+'/editor');
+  try{sessionStorage.setItem('sendero_cache_dirty','1');}catch(e){}
+  toast('Detalles guardados');
+}
+
 async function loadPoints(){
   let res;
   try{ res = await fetch(`/api/routes/${R.id}/points`); }
@@ -363,6 +436,7 @@ function applyState(fit=false){
   updateVerts();
   renderWpts();
   updateIssueOverlays();
+  renderIssues();
   renderChart();
   renderSpeedChart();
   renderStats();
@@ -1303,10 +1377,18 @@ function renderIssues(){
   const issues=R.gps_issues||[];
   if(!issues.length){panel.classList.add('hidden');return;}
   panel.classList.remove('hidden');
+  // Con cambios pendientes, los avisos son del estado GUARDADO y ya no cuadran:
+  // se marcan como corregidos (tachados) y se recalcularán al guardar.
+  const pending=opsList.length>0;
+  document.getElementById('fix-all-btn').disabled=pending;
+  const status=document.getElementById('issues-status');
+  status.classList.toggle('hidden',!pending);
+  if(pending)status.textContent='✔ Correcciones aplicadas. Guarda los cambios para recalcular los avisos.';
   list.innerHTML='';
   issues.forEach((it,k)=>{
     const row=document.createElement('div');
-    row.className='issue-row'+(it.severity==='high'?' high':'');
+    row.className='issue-row'+(it.severity==='high'?' high':'')+(pending?' done':'');
+    row.id='issue-row-'+k;
     const ico=it.type==='speed'?'⚡':(it.type==='altitude'?'🏔':'⛰');
     const unit=it.type==='speed'?'km/h':(it.type==='altitude'?'m':'m/s');
     row.innerHTML=`<span class="ico">${ico}</span>
@@ -1314,6 +1396,7 @@ function renderIssues(){
         <div class="rng">${it.d_from.toFixed(2)}–${it.d_to.toFixed(2)} km</div>
         <div class="det">máx ${it.value_max} ${unit} (umbral ${it.threshold})</div>
       </div>
+      <span class="fixed-tag">✔ corregido</span>
       <button class="btn ghost sm" onclick="fixIssue(${k})">Corregir</button>`;
     list.appendChild(row);
   });
@@ -1394,6 +1477,9 @@ function fixAllIssues(){
 function fixIssue(k){
   const it=(R.gps_issues||[])[k];
   if(!it)return;
+  // marca visualmente el aviso que se está corrigiendo ahora mismo
+  document.querySelectorAll('.issue-row.active').forEach(r=>r.classList.remove('active'));
+  const row=document.getElementById('issue-row-'+k);if(row)row.classList.add('active');
   // zoom de las gráficas al tramo del aviso (con un poco de contexto)
   const total=totalKm(), m=Math.max((it.d_to-it.d_from)*0.5,0.15);
   viewMin=Math.max(0,it.d_from-m);
@@ -1558,12 +1644,14 @@ async function restoreVersion(vn){
 }
 
 /* ── salir ──────────────────────────────────────────────────────────────── */
+let leaving=false;   // salida ya confirmada por la app: no volver a avisar en beforeunload
 function goBack(){
   if(opsList.length && !confirm('Hay cambios sin guardar. ¿Salir de todas formas?'))return;
+  leaving=true;
   location.href='/Sendero/'+encodeURIComponent(R.name);
 }
 window.addEventListener('beforeunload',e=>{
-  if(opsList.length){e.preventDefault();e.returnValue='';}
+  if(opsList.length && !leaving){e.preventDefault();e.returnValue='';}
 });
 
 document.getElementById('dem-btn').style.display = R.dem_enabled ? '' : 'none';

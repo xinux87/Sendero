@@ -103,7 +103,7 @@ def editor_page(name):
     con = db()
     r = con.execute(
         "SELECT id,name,gpx_file,distance_m,ascent_m,descent_m,started_at,activity_type,"
-        "gps_issues FROM routes WHERE name=? ORDER BY COALESCE(started_at,created_at) DESC LIMIT 1",
+        "device,gps_issues FROM routes WHERE name=? ORDER BY COALESCE(started_at,created_at) DESC LIMIT 1",
         (name,),
     ).fetchone()
     if not r:
