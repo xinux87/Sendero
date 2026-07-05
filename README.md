@@ -13,6 +13,11 @@ Sin Immich, sin Wanderer, sin AdventureLog. Backend Flask + SQLite, todo en un c
 ## Conectar con Immich (opcional)
 
 1. En Immich: **Cuenta → Configuración de la cuenta → Claves de API** → crea una clave.
+   Dale al menos los permisos **`asset.read`** (buscar fotos) y **`asset.view`**
+   (ver/descargar las miniaturas), o simplemente marca *todos los permisos*. Sin
+   `asset.view` la búsqueda funciona y aparece el grid, pero **las miniaturas no
+   cargan** (Immich responde con error de permisos y Sendero lo muestra como
+   `502`); ver *Problemas frecuentes* más abajo.
 2. En Sendero: botón **Ajustes** (cabecera) → sección Immich → pega la URL y la API key → Guardar.
 
 Con eso, en cada ruta aparece el botón **⛰ Buscar en Immich**. Sendero toma la hora de inicio y fin del GPX, añade el margen configurado, pregunta a Immich qué fotos se tomaron en esa ventana y te las muestra para seleccionar. Las que tienen GPS se marcan automáticamente si están a menos de la distancia configurada del track; las demás se muestran siempre (muchas fotos de montaña no llevan coordenadas). Las miniaturas se sirven a través de Sendero (proxy), así que tu navegador no necesita acceso directo a Immich ni la API key.
@@ -20,6 +25,17 @@ Con eso, en cada ruta aparece el botón **⛰ Buscar en Immich**. Sendero toma l
 Los ajustes se guardan en la base de datos y persisten entre reinicios. Si prefieres configurarlos como variables de entorno (útil para despliegues automatizados), puedes usar `IMMICH_URL`, `IMMICH_API_KEY`, `IMMICH_MARGIN_MIN` e `IMMICH_DIST_M`; la BD tiene prioridad si el valor también está guardado ahí.
 
 > Cómo funciona el cruce: por **tiempo**, usando las marcas del track y el EXIF de las fotos en Immich. Por eso es importante que el reloj y el teléfono/cámara tengan la hora bien sincronizada.
+
+### Problemas frecuentes con Immich
+
+- **La búsqueda encuentra fotos y sale el grid, pero las miniaturas dan `502`
+  (y no cargan).** La API key no tiene el permiso **`asset.view`**. Búsqueda y
+  miniaturas usan permisos distintos: buscar solo necesita `asset.read`, pero
+  servir cada imagen exige `asset.view`. Edita la clave en Immich (o crea una
+  nueva) añadiendo `asset.view` — o marca todos los permisos — y vuelve a
+  guardarla en Ajustes. No tiene que ver con exponer Sendero a internet ni con el
+  reverse proxy: las miniaturas siempre las sirve el backend de Sendero por proxy,
+  el navegador nunca habla con Immich.
 
 
 ## Arrancar
