@@ -20,8 +20,9 @@ watch/
 *.jpg
 *.jpeg
 *.png
-# Excepción: los assets estáticos de la app sí se versionan
+# Excepción: los assets estáticos de la app y las capturas del README sí se versionan
 !static/**
+!readme_images/**
 
 # Python
 __pycache__/
