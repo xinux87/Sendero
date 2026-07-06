@@ -10,6 +10,19 @@ examples/
 # Carpeta de importación automática (puede contener archivos personales)
 watch/
 
+# Defensa en profundidad: datos personales por extensión, aunque estén fuera de data/
+# (BD, tracks y fotos nunca deben commitearse)
+*.db
+*.sqlite
+*.sqlite3
+*.gpx
+*.fit
+*.jpg
+*.jpeg
+*.png
+# Excepción: los assets estáticos de la app sí se versionan
+!static/**
+
 # Python
 __pycache__/
 *.py[cod]
