@@ -22,19 +22,9 @@
 
 ## Funcionalidades principales
 
-El **Dashboard** es la portada: reúne de un vistazo todo lo que has recorrido y sirve de mapa de todas tus rutas.
-
-![Dashboard de Sendero](readme_images/dasboard_es.png)
-
-> **En esta captura se ve:**
-> - **Totales globales**: número de rutas, distancia total, desnivel acumulado y tiempo en movimiento.
-> - **Mapa mundial** de todas las rutas con agrupación por zonas (*clustering*).
-> - Desglose **«Por actividad»** con kilómetros y número de rutas de cada tipo (senderismo, bicicleta, caminata, correr, esquí, otros).
-> - **Rutas por año** (más abajo en la página).
-
 En resumen, Sendero te permite:
 
-- 📊 **Analíticas globales** — totales, desgloses por actividad y por año, con caché de estadísticas.
+- 📊 **Dashboard con resumen global** — totales, mapa de todas tus rutas, desglose por actividad y por año, y récords personales.
 - 🗺️ **Visualizar cada ruta** en mapa topográfico o satélite con perfil de elevación, velocidad y frecuencia cardíaca.
 - 📈 **Estadísticas automáticas** — distancia, desnivel +/−, tiempo en movimiento, velocidad media, altitud máx/mín, FC media/máx.
 - 📷 **Fotos por ruta** — locales o desde Immich; las que llevan GPS en el EXIF se sitúan solas sobre el mapa.
@@ -42,6 +32,21 @@ En resumen, Sendero te permite:
 - ⚠️ **Avisos de GPS** — detecta tramos con velocidad, desnivel o altitud imposibles y los corrige.
 - 🎯 **Planificación** — sube los GPX de rutas que quieres hacer y tenlas en una lista aparte.
 - 🔄 **Importación automática** — deja caer los GPX en una carpeta vigilada y aparecen solos.
+
+---
+
+## Dashboard
+
+La portada de Sendero: un resumen de todo lo que has recorrido, con las cifras globales, el mapa de todas tus rutas y tus mejores marcas de un vistazo.
+
+![Dashboard de Sendero](readme_images/dasboard_es.png)
+
+> **En esta captura se ve:**
+> - **Totales globales**: número de rutas, distancia total, desnivel acumulado y tiempo en movimiento.
+> - **Mapa mundial** de todas las rutas con agrupación por zonas (*clustering*).
+> - **Rutas por actividad**: kilómetros y número de rutas de cada tipo (senderismo, bicicleta, caminata, correr, esquí, otros).
+> - **Rutas por año**: barras con el reparto de tus salidas por año (más abajo en la página).
+> - **Récords personales**: tus mejores marcas —ruta más larga, mayor desnivel acumulado y velocidad media más alta— cada una enlazada a la ruta correspondiente.
 
 ---
 
