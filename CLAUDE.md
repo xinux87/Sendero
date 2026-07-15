@@ -298,38 +298,6 @@ navegador `mifit-auth`, pendiente). Implementado (fases 1-3):
   Ajustes): token, región, intervalo, toggle, badge de estado y botón "Sincronizar
   ahora" (sondea `/status` cada 3 s hasta que deja de estar `running`).
 
-### Deduplicación de importaciones (`core/dedup.py` + `create_route`)
-Evita rutas repetidas al importar (subida manual, watcher o Mi Fit). Dos niveles,
-ambos funciones puras en `core/dedup.py` (sin BD/Flask, testeadas en `tests/test_dedup.py`):
-
-- **Dura — `content_hash(raw)`**: SHA-256 de los bytes crudos del archivo. Detecta la
-  MISMA subida byte a byte aunque cambie el nombre. Cero falsos positivos. `create_route`
-  la comprueba **antes de parsear/escribir nada** → **409 siempre** (también con `?auto=1`).
-- **Blanda — `route_signature(started_at, distance_m, coords)`**: huella *semántica*
-  tolerante (started_at al minuto + distancia en cubos de 100 m + primer/último punto a 4
-  decimales ≈ 11 m; sin `started_at` cae a geometría + nº de puntos). Pilla el mismo track
-  reexportado en otro formato/fuente (bytes distintos). Puede dar falsos positivos, así que:
-  - **Web** (sin `?auto`): **409 `soft_duplicate`** con `existing_id`/`existing_name`; la UI
-    pregunta y reintenta con **`?force=1`** (un humano lo acepta).
-  - **Ingesta automática** (`?auto=1`: watcher y `mifit_sync`): **importa igual** pero marca
-    la fila con **`dup_suspect_of`** = id de la parecida (nunca borra en silencio). La
-    respuesta 201 lleva `soft_duplicate: true` + `existing_id`.
-
-`create_route` acepta `auto`/`force` por query o form. Columnas nuevas en `routes`:
-`content_hash`, `signature`, `dup_suspect_of` (ver tabla). `init_db()` hace **backfill**
-único de hash/firma de las rutas previas (la firma sale de la BD; el hash lee el archivo
-activo una vez, idempotente y tolerante a archivos ausentes).
-
-**Resolución del aviso** (`dup_suspect_of`): se limpia poniéndolo a NULL — vía
-`PATCH /api/routes/<id>` (`dismissDup()` en `sendero.html`: banda "⚠ posible duplicada"
-con botón "Descartar aviso") o **automáticamente al editar la ruta** (`api/editor.py`
-la borra en cada guardado: editar = revisar). En `app.html`, `makeCard` pinta un badge
-"⚠ posible duplicada" en la tarjeta si `dup_suspect_of` no es NULL.
-
-Índices en `init_db()`: `idx_routes_content_hash` e `idx_routes_signature` (lookups por
-valor exacto en `create_route`); el listado pasó a `idx_routes_list_cov2` (incluye
-`dup_suspect_of` en la cobertura; el `_cov` viejo se hace DROP — ver regla 12).
-
 ### Estado JS relevante en `sendero.html`
 | Variable | Contenido |
 |----------|-----------|
