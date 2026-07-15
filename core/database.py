@@ -17,6 +17,11 @@ def db():
         g.db = sqlite3.connect(cfg.DB_PATH)
         g.db.row_factory = sqlite3.Row
         g.db.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        # En WAL (activado en init_db), NORMAL solo arriesga durabilidad de los
+        # últimos commits ante un corte de luz, nunca corrupción; evita un fsync
+        # por commit. Sin WAL (fallback) sqlite lo trata igual de seguro que FULL
+        # para este patrón de uso.
+        g.db.execute("PRAGMA synchronous=NORMAL")
     return g.db
 
 
@@ -29,6 +34,15 @@ def close_db(exc):
 def init_db():
     con = sqlite3.connect(cfg.DB_PATH)
     con.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    # WAL: lectores no bloquean al escritor ni viceversa — importa con 2 workers
+    # de gunicorn + watcher subiendo rutas. Es persistente (queda grabado en el
+    # archivo), así que basta activarlo aquí. Defensivo: si el filesystem no
+    # soporta WAL (p.ej. un bind mount raro), sqlite devuelve el modo anterior
+    # en vez de fallar — se sigue funcionando en modo delete como hasta ahora.
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        pass
     con.executescript(
         """
         CREATE TABLE IF NOT EXISTS routes (

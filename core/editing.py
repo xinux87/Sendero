@@ -10,15 +10,13 @@ tracks → segments → points que usa analyse_gpx() en core/parsers.py; mientra
 ambos iteren igual, los índices del cliente (que trabaja sobre el geojson
 completo) referencian exactamente el mismo punto.
 """
-import io
 import datetime as dt
 import xml.etree.ElementTree as ET
 
 import gpxpy
 import gpxpy.gpx
-import fitparse
 
-from core.parsers import _hr_from_extensions, _SEMI
+from core.parsers import _hr_from_extensions, _SEMI, _decode_fit, _fit_dt
 
 _GPXTPX_NS = "http://www.garmin.com/xmlschemas/TrackPointExtension/v1"
 
@@ -43,7 +41,7 @@ def fit_to_gpx(raw: bytes):
     gpxtpx:TrackPointExtension — el mismo formato que ya lee
     _hr_from_extensions(), garantizando el round-trip al re-analizar.
     """
-    fitfile = fitparse.FitFile(io.BytesIO(raw))
+    messages = _decode_fit(raw)
     gpx = gpxpy.gpx.GPX()
     gpx.creator = "Sendero"
     gpx.nsmap["gpxtpx"] = _GPXTPX_NS
@@ -53,36 +51,39 @@ def fit_to_gpx(raw: bytes):
     track.segments.append(seg)
     gpx.tracks.append(track)
 
+    fid = (messages.get("file_id_mesgs") or [{}])[0]
+    mfr = fid.get("manufacturer")
+    prod = fid.get("product_name") or fid.get("product")
+    creator = (f"{mfr} {prod}" if prod else str(mfr)).strip() if mfr else None
+
     fit_sport = None
-    creator = None
-    for msg in fitfile.get_messages():
-        if msg.name == "file_id":
-            mfr = msg.get_value("manufacturer")
-            prod = msg.get_value("product_name") or msg.get_value("product")
-            if mfr:
-                creator = (f"{mfr} {prod}" if prod else str(mfr)).strip()
-        elif msg.name in ("sport", "session") and not fit_sport:
-            sport = msg.get_value("sport")
-            if sport:
-                fit_sport = str(sport).lower()
-        elif msg.name == "record":
-            lat_sc = msg.get_value("position_lat")
-            lon_sc = msg.get_value("position_long")
-            if lat_sc is None or lon_sc is None:
-                continue
-            p = gpxpy.gpx.GPXTrackPoint(
-                latitude=lat_sc * _SEMI,
-                longitude=lon_sc * _SEMI,
-                elevation=msg.get_value("enhanced_altitude") or msg.get_value("altitude"),
-                time=msg.get_value("timestamp"),
-            )
-            hr = msg.get_value("heart_rate")
-            if hr is not None:
-                ext = ET.Element(f"{{{_GPXTPX_NS}}}TrackPointExtension")
-                hr_el = ET.SubElement(ext, f"{{{_GPXTPX_NS}}}hr")
-                hr_el.text = str(int(hr))
-                p.extensions.append(ext)
-            seg.points.append(p)
+    for m in (messages.get("sport_mesgs") or []) + (messages.get("session_mesgs") or []):
+        sport = m.get("sport")
+        if sport:
+            fit_sport = str(sport).lower()
+            break
+
+    for rec in messages.get("record_mesgs") or []:
+        lat_sc = rec.get("position_lat")
+        lon_sc = rec.get("position_long")
+        if lat_sc is None or lon_sc is None:
+            continue
+        ele = rec.get("enhanced_altitude") or rec.get("altitude")
+        p = gpxpy.gpx.GPXTrackPoint(
+            latitude=lat_sc * _SEMI,
+            longitude=lon_sc * _SEMI,
+            # float(): el SDK devuelve int cuando la altitud es entera; fitparse
+            # devolvía siempre float y el <ele> serializado debe seguir igual.
+            elevation=float(ele) if ele is not None else None,
+            time=_fit_dt(rec.get("timestamp")),
+        )
+        hr = rec.get("heart_rate")
+        if hr is not None:
+            ext = ET.Element(f"{{{_GPXTPX_NS}}}TrackPointExtension")
+            hr_el = ET.SubElement(ext, f"{{{_GPXTPX_NS}}}hr")
+            hr_el.text = str(int(hr))
+            p.extensions.append(ext)
+        seg.points.append(p)
 
     if creator:
         gpx.creator = creator

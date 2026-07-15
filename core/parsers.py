@@ -1,10 +1,10 @@
-import io
+import datetime as dt
 import math
 import xml.etree.ElementTree as ET
 from collections import deque
 
 import gpxpy
-import fitparse
+from garmin_fit_sdk import Decoder, Stream
 
 import core.config as cfg
 
@@ -219,9 +219,36 @@ def analyse_gpx(text):
     return stats, coords, elev_profile, name, creator
 
 
+def _fit_dt(ts):
+    """Datetime del SDK (aware UTC) → naive UTC, como devolvía fitparse.
+
+    started_at se guarda con .isoformat() y los <time> del GPX materializado se
+    comparan con los de GPX normales (naive) en merge_gpx; mezclar aware y naive
+    rompería esas comparaciones con TypeError.
+    """
+    if ts is not None and getattr(ts, "tzinfo", None) is not None:
+        return ts.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    return ts
+
+
+def _decode_fit(data: bytes):
+    """Decodifica un FIT con el SDK oficial → dict de mensajes agrupados por tipo.
+
+    Lanza ValueError si el archivo no es un FIT legible (el Decoder no lanza:
+    acumula errores y devuelve lo que pudo); los llamadores ya capturan
+    Exception y responden 400/failed como con fitparse.
+    """
+    stream = Stream.from_byte_array(data)
+    decoder = Decoder(stream)
+    messages, errors = decoder.read()
+    if errors:
+        raise ValueError(f"FIT ilegible: {errors[0]}")
+    return messages
+
+
 def analyse_fit(data: bytes):
     """Parsea FIT binario. Devuelve la misma tupla que analyse_gpx."""
-    fitfile = fitparse.FitFile(io.BytesIO(data))
+    messages = _decode_fit(data)
 
     coords = []
     elev_profile = []
@@ -237,62 +264,64 @@ def analyse_fit(data: bytes):
     ele_min = ele_max = avg_speed_ms = None
     fit_sport = None
 
-    for msg in fitfile.get_messages():
-        mname = msg.name
+    fid = (messages.get("file_id_mesgs") or [{}])[0]
+    mfr = fid.get("manufacturer")
+    prod = fid.get("product_name") or fid.get("product")
+    if mfr:
+        creator = (f"{mfr} {prod}" if prod else str(mfr)).strip()
 
-        if mname == "file_id":
-            mfr = msg.get_value("manufacturer")
-            prod = msg.get_value("product_name") or msg.get_value("product")
-            if mfr:
-                creator = (f"{mfr} {prod}" if prod else str(mfr)).strip()
+    for m in messages.get("sport_mesgs") or []:
+        sport = m.get("sport")
+        if sport:
+            fit_sport = str(sport).lower()
+            break
 
-        elif mname == "sport":
-            sport = msg.get_value("sport")
-            if sport:
-                fit_sport = str(sport).lower()
+    for rec in messages.get("record_mesgs") or []:
+        lat_sc = rec.get("position_lat")
+        lon_sc = rec.get("position_long")
+        ele    = rec.get("enhanced_altitude") or rec.get("altitude")
+        dist   = rec.get("distance")
+        hr     = rec.get("heart_rate")
+        spd    = rec.get("enhanced_speed")
+        if spd is None:
+            spd = rec.get("speed")
+        ts     = _fit_dt(rec.get("timestamp"))
 
-        elif mname == "session":
-            total_distance = msg.get_value("total_distance")
-            total_ascent   = msg.get_value("total_ascent")
-            total_descent  = msg.get_value("total_descent")
-            total_elapsed  = msg.get_value("total_elapsed_time")
-            total_moving   = msg.get_value("total_timer_time")
-            avg_speed_ms   = msg.get_value("avg_speed")
-            ele_min = msg.get_value("enhanced_min_altitude") or msg.get_value("min_altitude")
-            ele_max = msg.get_value("enhanced_max_altitude") or msg.get_value("max_altitude")
-            ts = msg.get_value("start_time")
+        if lat_sc is not None and lon_sc is not None:
+            lat = lat_sc * _SEMI
+            lon = lon_sc * _SEMI
+            coords.append([lon, lat])
+            if ele is not None and dist is not None:
+                elev_profile.append({"d": round(dist / 1000, 3),
+                                     "e": round(float(ele), 1)})
             if ts and started_at is None:
                 started_at = ts.isoformat()
-            if not fit_sport:
-                sport = msg.get_value("sport")
-                if sport:
-                    fit_sport = str(sport).lower()
+        if hr is not None and dist is not None:
+            hr_profile.append({"d": round(dist / 1000, 3), "hr": int(hr)})
+        if spd is not None and dist is not None:
+            speed_profile.append({"d": round(dist / 1000, 3),
+                                  "v": round(float(spd) * 3.6, 2)})
 
-        elif mname == "record":
-            lat_sc = msg.get_value("position_lat")
-            lon_sc = msg.get_value("position_long")
-            ele    = msg.get_value("enhanced_altitude") or msg.get_value("altitude")
-            dist   = msg.get_value("distance")
-            hr     = msg.get_value("heart_rate")
-            spd    = msg.get_value("enhanced_speed")
-            if spd is None:
-                spd = msg.get_value("speed")
-            ts     = msg.get_value("timestamp")
-
-            if lat_sc is not None and lon_sc is not None:
-                lat = lat_sc * _SEMI
-                lon = lon_sc * _SEMI
-                coords.append([lon, lat])
-                if ele is not None and dist is not None:
-                    elev_profile.append({"d": round(dist / 1000, 3),
-                                         "e": round(float(ele), 1)})
-                if ts and started_at is None:
-                    started_at = ts.isoformat()
-            if hr is not None and dist is not None:
-                hr_profile.append({"d": round(dist / 1000, 3), "hr": int(hr)})
-            if spd is not None and dist is not None:
-                speed_profile.append({"d": round(dist / 1000, 3),
-                                      "v": round(float(spd) * 3.6, 2)})
+    # Como con fitparse: si hay varias sesiones (multisport), los totales de la
+    # última pisan a las anteriores; started_at solo cae aquí si ningún record
+    # con posición traía timestamp (los record van antes que la session en el
+    # archivo, así que el primero con GPS ganaba también con el parser antiguo).
+    for s in messages.get("session_mesgs") or []:
+        total_distance = s.get("total_distance")
+        total_ascent   = s.get("total_ascent")
+        total_descent  = s.get("total_descent")
+        total_elapsed  = s.get("total_elapsed_time")
+        total_moving   = s.get("total_timer_time")
+        avg_speed_ms   = s.get("avg_speed")
+        ele_min = s.get("enhanced_min_altitude") or s.get("min_altitude")
+        ele_max = s.get("enhanced_max_altitude") or s.get("max_altitude")
+        ts = _fit_dt(s.get("start_time"))
+        if ts and started_at is None:
+            started_at = ts.isoformat()
+        if not fit_sport:
+            sport = s.get("sport")
+            if sport:
+                fit_sport = str(sport).lower()
 
     if fit_sport and not name:
         name = fit_sport.replace("_", " ").title()

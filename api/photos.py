@@ -44,8 +44,15 @@ def photo_file(pid):
         r = immich_get(f"/api/assets/{p['immich_id']}/thumbnail", params={"size": size})
         if r.status_code != 200:
             abort(502)
-        return Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))
-    return send_file(cfg.PHOTO_DIR / p["file"])
+        resp = Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))
+        # El asset de Immich es inmutable para un mismo id; cachear el proxy
+        # 7 días evita re-pedirlo a Immich en cada visita. private: es una
+        # instancia personal, no queremos proxies intermedios cacheando fotos.
+        resp.headers["Cache-Control"] = "private, max-age=604800"
+        return resp
+    # Las fotos locales son inmutables: el nombre lleva timestamp único y nunca
+    # se reescriben (solo se borran) → caché larga sin riesgo de rancio.
+    return send_file(cfg.PHOTO_DIR / p["file"], max_age=31536000)
 
 
 @photos_bp.route("/api/photos/<int:pid>", methods=["DELETE"])

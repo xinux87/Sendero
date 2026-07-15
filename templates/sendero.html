@@ -93,7 +93,47 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 .pick.on .check{background:var(--gr-red)}
 .pick .gps{position:absolute;bottom:5px;left:5px;font-size:11px;background:rgba(8,14,11,.7);
   color:var(--pr-yellow);padding:1px 5px;border-radius:4px;font-family:var(--mono)}
-@media(max-width:560px){.stat .v{font-size:19px}}
+#d-name{font-size:34px}
+/* contenedor de gráficas con altura explícita (los charts usan
+   maintainAspectRatio:false; sin esto en móvil quedarían enanas) */
+.chart-box{position:relative;height:260px}
+/* menú "⋯" de acciones secundarias (solo móvil; en desktop display:contents
+   deja los botones en línea como siempre) */
+.detail-actions{display:flex;gap:8px;flex-wrap:wrap;position:relative}
+#more-btn{display:none}
+.d-more{display:contents}
+@media(max-width:600px){
+  .stat .v{font-size:19px}
+  #d-name{font-size:24px}
+  #map{height:45vh;height:45dvh;min-height:280px}
+  .section{padding:14px}
+  .section h2{font-size:20px}
+  .chart-box{height:180px}
+  .wrap{overflow-x:clip}
+  /* acciones secundarias tras el botón ⋯ */
+  #more-btn{display:inline-flex;align-items:center}
+  .d-more{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:100;
+    flex-direction:column;gap:6px;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:10px;box-shadow:0 8px 28px #00000080;min-width:170px}
+  .d-more.open{display:flex}
+  .d-more .btn{text-align:left}
+  /* lightbox a pantalla completa */
+  .lb-img{max-width:100vw;max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);border-radius:0}
+  .lb-nav{width:44px;height:64px;font-size:32px;background:rgba(16,26,20,.45)}
+  /* modal Immich a pantalla completa */
+  #immich-modal{padding:0}
+  #immich-modal .modal{max-width:none;height:100vh;height:100dvh;max-height:none;
+    border-radius:0;border:0;padding:12px}
+  .modal-foot{flex-wrap:wrap}
+  #activity-modal .modal{max-height:88vh;max-height:88dvh;overflow-y:auto}
+}
+@media(hover:none) and (pointer:coarse){
+  .thumb .del{opacity:1;padding:6px 10px}   /* sin hover no habría forma de borrar */
+  .lb-close{padding:10px 14px}
+  #btn3d{padding:9px 13px}
+  .act-badge{min-height:40px}
+  .act-opt:hover{transform:none}
+}
 /* actividad */
 .act-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 10px;
   border-radius:20px;font-size:13px;font-weight:700;border:2px solid;cursor:pointer;
@@ -117,18 +157,22 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 
 <div class="detail-head">
   <div>
-    <h1 id="d-name" style="font-size:34px"></h1>
+    <h1 id="d-name"></h1>
     <div style="display:flex;align-items:center;gap:10px">
       <div id="d-date" class="mono" style="color:var(--muted);font-size:13px"></div>
       <div id="d-device" class="mono" style="color:var(--muted);font-size:12px;opacity:.7"></div>
     </div>
   </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">
+  <div class="detail-actions">
     <button class="btn ghost sm" onclick="location.href='/Sendero/'+encodeURIComponent(current.name)+'/editor'">✎ Editar</button>
-    <button class="btn ghost sm" id="rescan-btn" onclick="rescanRoute(this)">↺ Reescanear</button>
-    <button class="btn ghost sm" onclick="downloadGpx()">↓ GPX</button>
-    <button class="btn ghost sm" onclick="renameRoute()">Renombrar</button>
-    <button class="btn ghost sm" onclick="removeRoute()" style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
+    <button class="btn ghost sm" id="more-btn" aria-label="Más acciones"
+            onclick="$('#d-actions-more').classList.toggle('open')">⋯</button>
+    <div id="d-actions-more" class="d-more">
+      <button class="btn ghost sm" id="rescan-btn" onclick="rescanRoute(this)">↺ Reescanear</button>
+      <button class="btn ghost sm" onclick="downloadGpx()">↓ GPX</button>
+      <button class="btn ghost sm" onclick="renameRoute()">Renombrar</button>
+      <button class="btn ghost sm" onclick="removeRoute()" style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
+    </div>
   </div>
 </div>
 
@@ -140,17 +184,17 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 
 <div class="section">
   <h2>Perfil de elevación</h2>
-  <canvas id="elev" height="84"></canvas>
+  <div class="chart-box"><canvas id="elev"></canvas></div>
 </div>
 
 <div class="section" id="speed-section" style="display:none">
   <h2>Velocidad</h2>
-  <canvas id="speed-chart" height="84"></canvas>
+  <div class="chart-box"><canvas id="speed-chart"></canvas></div>
 </div>
 
 <div class="section" id="hr-section" style="display:none">
   <h2>Frecuencia cardíaca</h2>
-  <canvas id="hr-chart" height="84"></canvas>
+  <div class="chart-box"><canvas id="hr-chart"></canvas></div>
 </div>
 
 <div class="section">
@@ -229,68 +273,7 @@ let photoMarkers={}, lbIdx=0;
 const NEAR_M=500;
 let IMMICH_DIST_M=100;
 
-const ACTIVITIES=[
-  {id:'senderismo',label:'Senderismo',color:'#c97a3a',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="white" stroke-width="1.3" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-  {id:'bicicleta',label:'Bicicleta',color:'#3a9ed8',symbol:`
-    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
-    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
-    <path d="M9.5,17.5 L13,14 L16.5,17.5 M13,14 L11.5,17.5"
-      stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="15.5" cy="10" r="1.5" fill="white"/>
-    <line x1="15.5" y1="11.5" x2="13" y2="14"  stroke="white" stroke-width="1.7" stroke-linecap="round"/>
-    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
-  `},
-  {id:'caminata',label:'Caminata',color:'#5ab87a',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-  {id:'correr',label:'Correr',color:'#e05252',symbol:`
-    <circle cx="14" cy="8" r="1.6" fill="white"/>
-    <line x1="14" y1="9.6"  x2="12" y2="15"    stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="16" y2="10"    stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="10" y2="13"    stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="12" y1="15"   x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="12" y1="15"   x2="9.5"  y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-  {id:'esqui',label:'Esquí',color:'#9b6fd4',symbol:`
-    <circle cx="13" cy="8" r="1.6" fill="white"/>
-    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
-    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
-  `},
-  {id:'otros',label:'Otros',color:'#e0559e',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="8.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="17.5" y2="11" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="11"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-];
-function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
-function iconSvg(a,size=26){
-  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="13" cy="13" r="11" fill="${a.color}" stroke="#101a14" stroke-width="2.5"/>
-    ${a.symbol}
-  </svg>`;}
+/* ACTIVITIES, activityOf e iconSvg viven en static/shared.js */
 
 // ---------- actividad ----------
 function renderActivity(){
@@ -360,16 +343,7 @@ function renderStats(){
     `<div class="stat"><div class="v">${v} <small>${u}</small></div><div class="l">${l}</div></div>`).join("");
 }
 
-function buildStyle(capa){
-  const T={
-    'Topográfico':['https://a.tile.opentopomap.org/{z}/{x}/{y}.png','https://b.tile.opentopomap.org/{z}/{x}/{y}.png','https://c.tile.opentopomap.org/{z}/{x}/{y}.png'],
-    'Callejero':  ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png','https://b.tile.openstreetmap.org/{z}/{x}/{y}.png','https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'],
-    'Satélite':   ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-    'Oscuro':     ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png']
-  };
-  return {version:8,sources:{basemap:{type:'raster',tiles:T[capa]||T['Callejero'],tileSize:256,maxzoom:19}},
-          layers:[{id:'basemap',type:'raster',source:'basemap'}]};
-}
+/* buildStyle y BASEMAP_TILES viven en static/shared.js */
 
 function fitRoute(){
   const coords=current.geojson;if(!coords.length)return;
@@ -557,9 +531,14 @@ function _updateMapHover(){
   if(v)parts.push(`<div>Vel ${v.v.toFixed(1)} km/h</div>`);
   if(hr)parts.push(`<div>FC ${Math.round(hr.hr)} bpm</div>`);
   box.innerHTML=parts.join('');
-  box.style.left=(pt.x+14)+'px';
+  box.style.display='block';   // antes de medir: con display:none offsetWidth es 0
+  // clamp al contenedor del mapa: el white-space:nowrap desborda por la derecha
+  // en pantallas estrechas; si no cabe, el cuadro se pone a la izquierda del punto
+  const cw=map.getContainer().clientWidth,bw=box.offsetWidth||120;
+  let left=pt.x+14;
+  if(left+bw>cw-6)left=pt.x-14-bw;
+  box.style.left=Math.max(6,left)+'px';
   box.style.top=(pt.y-10)+'px';
-  box.style.display='block';
 }
 // Punto de entrada único del hover: lo llaman tanto el mapa (mousemove sobre la
 // línea) como los 3 gráficos (onHover), así se mantienen sincronizados entre sí.
@@ -615,8 +594,8 @@ function photoElevPoints(){
 function renderElev(){
   const ctx=$("#elev");if(elevChart)elevChart.destroy();
   const data=current.elevation;
-  if(!data.length){ctx.parentElement.style.display="none";return;}
-  ctx.parentElement.style.display="";
+  if(!data.length){ctx.closest(".section").style.display="none";return;}
+  ctx.closest(".section").style.display="";
 
   const iconSvg=`<svg width="26" height="26" xmlns="http://www.w3.org/2000/svg"><circle cx="13" cy="13" r="11" fill="#e8c44a" stroke="#101a14" stroke-width="2.5"/><g transform="translate(6.5,7.5)"><rect x="0" y="2" width="13" height="9" rx="1.5" fill="#101a14"/><path d="M4 0h5l1 2H3z" fill="#101a14"/><circle cx="6.5" cy="6.5" r="2.3" fill="#e8c44a"/><circle cx="6.5" cy="6.5" r="1.1" fill="#101a14"/></g></svg>`;
   const photoIcon=new Image(26,26);
@@ -640,6 +619,7 @@ function renderElev(){
   });
   elevChart=new Chart(ctx,{type:"line",data:{datasets:sets},plugins:[iconPlugin,_crosshairPlugin()],
     options:{
+      maintainAspectRatio:false,
       onClick(e,els){
         if(!els.length||els[0].datasetIndex!==1)return;
         const idx=current.photos.findIndex(p=>p.id===ppts[els[0].index].photoId);
@@ -662,6 +642,7 @@ function renderElev(){
     }
   });
   ctx.onmouseleave=()=>setHoverD(null);
+  ctx.ontouchend=()=>setHoverD(null);   // en táctil no hay mouseleave
 }
 
 function renderSpeed(){
@@ -676,6 +657,7 @@ function renderSpeed(){
     borderColor:"#3a9ed8",backgroundColor:"rgba(58,158,216,.12)",
     pointRadius:0,borderWidth:1.5,tension:.3
   }]},options:{
+    maintainAspectRatio:false,
     onHover(e,els,chart){
       const d=chart.scales.x.getValueForPixel(e.x);
       if(d!=null&&!isNaN(d))setHoverD(Math.max(chart.scales.x.min,Math.min(chart.scales.x.max,d)));
@@ -690,6 +672,7 @@ function renderSpeed(){
     }
   }});
   ctx.onmouseleave=()=>setHoverD(null);
+  ctx.ontouchend=()=>setHoverD(null);
 }
 
 function renderHR(){
@@ -704,6 +687,7 @@ function renderHR(){
     borderColor:"#e05252",backgroundColor:"rgba(224,82,82,.12)",
     pointRadius:0,borderWidth:1.5,tension:.3
   }]},options:{
+    maintainAspectRatio:false,
     onHover(e,els,chart){
       const d=chart.scales.x.getValueForPixel(e.x);
       if(d!=null&&!isNaN(d))setHoverD(Math.max(chart.scales.x.min,Math.min(chart.scales.x.max,d)));
@@ -718,6 +702,7 @@ function renderHR(){
     }
   }});
   ctx.onmouseleave=()=>setHoverD(null);
+  ctx.ontouchend=()=>setHoverD(null);
 }
 
 function renderGallery(){
@@ -938,6 +923,26 @@ document.addEventListener("keydown",e=>{
   if(e.key==="ArrowLeft")lbNav(-1);
   else if(e.key==="ArrowRight")lbNav(1);
   else if(e.key==="Escape")closeLightbox();
+});
+// Cierre por tap/click en el fondo y swipe táctil en el lightbox
+$("#lb-overlay").addEventListener("click",e=>{if(e.target.id==="lb-overlay")closeLightbox();});
+let _lbTx=null,_lbTy=null;
+$("#lb-overlay").addEventListener("touchstart",e=>{
+  const t=e.touches[0];_lbTx=t.clientX;_lbTy=t.clientY;
+},{passive:true});
+$("#lb-overlay").addEventListener("touchend",e=>{
+  if(_lbTx==null)return;
+  const t=e.changedTouches[0],dx=t.clientX-_lbTx,dy=t.clientY-_lbTy;
+  _lbTx=null;
+  if(Math.abs(dx)>40&&Math.abs(dx)>Math.abs(dy)*1.5&&current.photos.length>1)lbNav(dx<0?1:-1);
+},{passive:true});
+// Cierre por backdrop y Escape de los modales (antes solo lo tenía #cfg-overlay)
+$("#immich-modal").addEventListener("click",e=>{if(e.target.id==="immich-modal")closeImmich();});
+$("#activity-modal").addEventListener("click",e=>{if(e.target.id==="activity-modal")closeActivityPicker();});
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Escape"||!$("#lb-overlay").classList.contains("hidden"))return;
+  if(!$("#immich-modal").classList.contains("hidden"))closeImmich();
+  else if(!$("#activity-modal").classList.contains("hidden"))closeActivityPicker();
 });
 
 function downloadGpx(){

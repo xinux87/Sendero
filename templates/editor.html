@@ -98,6 +98,29 @@
 #ed-loading{padding:40px;text-align:center;color:var(--muted)}
 .maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
 .maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
+
+/* ── responsive móvil ──────────────────────────────────────────────────── */
+/* contenedores de gráfica con altura explícita (los charts usan
+   maintainAspectRatio:false; sin esto en móvil quedarían enanas) */
+.ed-chart-box{position:relative;height:250px}
+#speed-panel .ed-chart-box{height:200px}
+/* zoom por botones: sustituto táctil de la rueda (solo se muestra sin ratón) */
+.chart-zoom{display:none;gap:6px;margin-bottom:8px}
+@media(max-width:600px){
+  .ed-title h1{font-size:20px}
+  #edmap{height:50vh;height:50dvh;min-height:300px}
+  .ed-chart-box{height:170px}
+  #speed-panel .ed-chart-box{height:150px}
+  .ed-profile{padding:10px}
+}
+@media(hover:none) and (pointer:coarse){
+  .chart-zoom{display:flex}
+  /* la edición de vértices necesita ratón (arrastre fino, Alt+click, Shift+click) */
+  #mtab-verts{display:none}
+  .mtab{min-height:44px}
+  .handle-a,.handle-b{width:28px;height:28px}
+  .ver-row .acts .btn,.issue-row .btn{min-height:36px}
+}
 {% endblock %}
 
 {% block content %}
@@ -122,11 +145,16 @@
       <div id="edmap"></div>
       <div class="ed-profile" id="profile-panel">
         <h3>Perfil de elevación — arrastra para seleccionar · rueda: zoom · Shift+arrastre: panear · doble click: todo</h3>
-        <canvas id="edelev" height="110"></canvas>
+        <div class="chart-zoom">
+          <button class="btn ghost sm" onclick="edZoomStep(0.75)">＋ Acercar</button>
+          <button class="btn ghost sm" onclick="edZoomStep(1.33)">− Alejar</button>
+          <button class="btn ghost sm" onclick="viewMin=null;viewMax=null;applyZoom()">⤢ Todo</button>
+        </div>
+        <div class="ed-chart-box"><canvas id="edelev"></canvas></div>
       </div>
       <div class="ed-profile" id="speed-panel">
         <h3>Velocidad <span style="text-transform:none" title="Derivada de los tiempos del track con ventana móvil de 15 s (aprox.)">(aprox.)</span></h3>
-        <canvas id="edspeed" height="90"></canvas>
+        <div class="ed-chart-box"><canvas id="edspeed"></canvas></div>
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:14px">
@@ -257,8 +285,8 @@
 {% block scripts %}
 const R = {{ route_json | safe }};
 
-const ACT_COLORS = {senderismo:'#c97a3a', bicicleta:'#3a9ed8', caminata:'#5ab87a',
-                    correr:'#e05252', esqui:'#9b6fd4', otros:'#e0559e'};
+// Colores derivados de ACTIVITIES (static/shared.js): una sola fuente de verdad.
+const ACT_COLORS = Object.fromEntries(ACTIVITIES.map(a=>[a.id,a.color]));
 const LINE_COLOR = ACT_COLORS[R.activity_type] || '#d24a3a';
 
 /* ── estado ─────────────────────────────────────────────────────────────── */
@@ -467,16 +495,7 @@ function effB(){ if(selA==null && selB==null) return null;
   if(selA!=null && selB!=null) return Math.max(selA,selB); return selA ?? selB; }
 
 /* ── mapa ───────────────────────────────────────────────────────────────── */
-function buildStyle(capa){
-  const T={
-    'Topográfico':['https://a.tile.opentopomap.org/{z}/{x}/{y}.png','https://b.tile.opentopomap.org/{z}/{x}/{y}.png','https://c.tile.opentopomap.org/{z}/{x}/{y}.png'],
-    'Callejero':  ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png','https://b.tile.openstreetmap.org/{z}/{x}/{y}.png','https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'],
-    'Satélite':   ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-    'Oscuro':     ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png']
-  };
-  return {version:8,sources:{basemap:{type:'raster',tiles:T[capa]||T['Callejero'],tileSize:256,maxzoom:19}},
-          layers:[{id:'basemap',type:'raster',source:'basemap'}]};
-}
+/* buildStyle y BASEMAP_TILES viven en static/shared.js */
 
 function fitRoute(){
   if(!cur.length) return;
@@ -797,6 +816,21 @@ function bindChartZoom(canvas,getChart){
   canvas.addEventListener('dblclick',()=>{viewMin=null;viewMax=null;applyZoom();});
 }
 
+// Zoom por pasos alrededor del centro de la ventana visible: sustituto táctil
+// de la rueda (botones .chart-zoom, visibles solo en @media(hover:none)).
+function edZoomStep(f){
+  const [mn,mx]=xRange(), total=totalKm();
+  const center=(mn+mx)/2;
+  const minW=Math.max(total*0.002,0.02);
+  const w=Math.max(minW,Math.min((mx-mn)*f,total));
+  let nmn=center-w/2, nmx=nmn+w;
+  if(nmn<0){nmx-=nmn;nmn=0;}
+  if(nmx>total){nmn-=(nmx-total);nmx=total;nmn=Math.max(0,nmn);}
+  if(w>=total-1e-9){viewMin=null;viewMax=null;}
+  else{viewMin=nmn;viewMax=nmx;}
+  applyZoom();
+}
+
 function elevData(){
   const [mnV,mxV]=xRange();
   const n=idxMap.length;
@@ -821,7 +855,7 @@ function renderChart(){
   chart=new Chart(ctx,{type:'line',plugins:[bandPlugin,issueBandsPlugin],
     data:{datasets:[{data,fill:true,borderColor:'#d24a3a',
       backgroundColor:'rgba(210,74,58,.15)',pointRadius:0,borderWidth:2,tension:.3}]},
-    options:{animation:false,maintainAspectRatio:true,
+    options:{animation:false,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{enabled:false}},
       scales:{
         x:{type:'linear',min:xRange()[0],max:xRange()[1],
@@ -879,7 +913,7 @@ function renderSpeedChart(){
   speedChart = new Chart(ctx,{type:'line',plugins:[bandPlugin,issueBandsPlugin],
     data:{datasets:[{data,fill:true,borderColor:'#3a9ed8',
       backgroundColor:'rgba(58,158,216,.12)',pointRadius:0,borderWidth:1.5,tension:.3}]},
-    options:{animation:false,maintainAspectRatio:true,
+    options:{animation:false,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{enabled:false}},
       scales:{
         x:{type:'linear',min:xRange()[0],max:xRange()[1],

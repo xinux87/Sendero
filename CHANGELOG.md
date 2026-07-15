@@ -5,6 +5,45 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.4.0] — 2026-07-15
+
+### Añadido
+- **Interfaz móvil** (pantallas ≤600 px y dispositivos táctiles):
+  - **Tab bar inferior** en la SPA (Dashboard · Rutas · Planes · Ajustes) con
+    soporte de *safe areas* (notch/gestos); sustituye a la navegación del header,
+    que en móvil quedaba oculta sin alternativa.
+  - **Botón flotante (＋)** para añadir rutas y planificar (en móvil no existe el
+    arrastrar-y-soltar de archivos).
+  - **Filtros de «Mis Rutas» colapsables** tras un botón «☰ Filtros»; la Vista B
+    «Panel» se fuerza a Cuadrícula en móvil.
+  - **Lightbox táctil**: swipe para cambiar de foto, cierre con tap en el fondo y
+    foto a pantalla completa.
+  - **Modal Immich a pantalla completa** en móvil, con cierre por fondo y Escape
+    (también el selector de actividad).
+  - **Menú «⋯»** en el detalle de ruta que agrupa las acciones secundarias
+    (reescanear, GPX, renombrar, eliminar).
+  - **Editor en móvil (subconjunto)**: botones ＋/−/⤢ de zoom en las gráficas
+    (sustituto táctil de la rueda) y manejadores A/B más grandes. El modo
+    «Editar puntos» se oculta en táctil (requiere ratón: arrastre fino,
+    Alt+click, Shift+click).
+  - Modal de **Ajustes a pantalla completa** con pestañas horizontales y tablas
+    con scroll lateral.
+
+### Cambiado
+- Breakpoints unificados del proyecto: 900 px (tablet) y 600 px (móvil).
+- Targets táctiles ≥40-44 px y barra de edición fija sobre la tab bar en móvil
+  (vía `@media (hover:none) and (pointer:coarse)`).
+- Las gráficas (detalle, plan y editor) pasan a `maintainAspectRatio:false` con
+  contenedor de altura fija: en pantallas estrechas ya no quedan diminutas.
+- Alturas de mapa relativas al viewport (`dvh` con fallback `vh`) en todas las
+  páginas; inputs a 16 px en móvil para evitar el auto-zoom de iOS Safari.
+- El botón de borrar miniaturas de fotos es siempre visible en táctil (antes
+  solo aparecía con *hover* y era inaccesible).
+- El cuadro flotante del hover del mapa del detalle ya no desborda por la
+  derecha en pantallas estrechas; el crosshair de las gráficas también se limpia
+  al terminar el toque.
+- El datepicker de filtros se ajusta al viewport y agranda sus celdas en táctil.
+
 ## [0.3.0] — 2026-07-05
 
 ### Añadido

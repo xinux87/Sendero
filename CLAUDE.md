@@ -11,8 +11,9 @@ Immich por referencia), genera thumbnails PNG de cada track y guarda un resumen 
 ## Comandos
 ```bash
 # desarrollo
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # incluye requirements.txt + pytest
 python app.py                      # http://localhost:8080, init_db() automático
+python -m pytest                   # tests unitarios (tests/): editing, parsers, FIT, gps_analysis
 
 # producción / como se despliega de verdad
 docker compose up -d --build       # servicio 'sendero' + servicio 'watcher'
@@ -36,7 +37,9 @@ La lógica real está repartida en dos paquetes:
 core/
   config.py     — paths (GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR, DB_PATH) y variables Immich
   database.py   — init_db(), close_db(), helper db() (conexión por request vía g.db)
-  parsers.py    — analyse_gpx() y analyse_fit() → devuelven (stats, coords, elev, name, creator)
+  parsers.py    — analyse_gpx() y analyse_fit() → devuelven (stats, coords, elev, name, creator).
+                  FIT con garmin-fit-sdk (SDK oficial); _fit_dt() normaliza datetimes a naive-UTC
+                  como hacía fitparse — no devolver datetimes aware (rompe merge_gpx e Immich)
   thumbs.py     — generate_thumb(coords, gpx_file) → PNG 400px en data/thumbs/
   editing.py    — lógica pura del editor: extract_points(), apply_ops(), fit_to_gpx()
   summaries.py  — auto_summary() y auto_summary_planned()
@@ -54,6 +57,15 @@ api/
 
 `watch.py` — importador de carpeta. Proceso **independiente**, no parte del server.
 
+`tests/` — pytest sin BD ni Flask (funciones puras): `conftest.py` trae un constructor
+de GPX sintéticos (`make_gpx_xml`) y un FIT de muestra (`tests/fixtures/Activity.fit`).
+Si tocas una op del editor o el aplanado, añade/ajusta el test correspondiente.
+
+Rendimiento transversal: la BD corre en WAL (`init_db()`), las respuestas de texto van
+con gzip/brotli (flask-compress en `app.py`, mínimo 500 bytes), y los binarios llevan
+caché: thumbs con ETag/304 (revalidación: se regeneran con el mismo nombre), fotos
+locales inmutables con max-age 1 año, proxys Immich con caché privada de 7 días.
+
 ### Frontend — SPA en `app.html`
 
 **La app es un SPA** servido desde una sola plantilla `templates/app.html`.
@@ -67,7 +79,7 @@ secciones y actualiza el `history` sin recargar la página.
 
 | Archivo | Ruta Flask | Contenido |
 |---------|-----------|-----------|
-| `templates/base.html` | — | CSS global, header, toast, helpers JS (`$`, `fmtKm`, `fmtDur`, `fmtDate`, `esc`) |
+| `templates/base.html` | — | CSS global, header, toast, helpers JS (`$`, `fmtKm`, `fmtDur`, `fmtDate`, `esc`). Carga `static/shared.js` ANTES del script inline: ahí viven `ACTIVITIES`/`activityOf`/`iconSvg`/`genericIconSvg`/`_loadActImages` y `BASEMAP_TILES`/`buildStyle` — no los redeclares en una plantilla (dos `const` globales con el mismo nombre en scripts distintos = SyntaxError) |
 | `templates/app.html` | `GET /dashboard` · `/rutas` · `/planificacion` | SPA con tres secciones: Dashboard, Mis Rutas, Mis Planes. Usa MapLibre GL para el mapa de visión general. |
 | `templates/sendero.html` | `GET /Sendero/<nombre>` | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación (Chart.js), notas, fotos, modal Immich, lightbox. Botón "✎ Editar" → editor. |
 | `templates/editor.html` | `GET /Sendero/<nombre>/editor` | Editor de rutas (F1+F2): recorte/eliminación de tramos, invertir, editar vértices, simplificar, corregir picos, dividir, undo/redo, historial de versiones, zoom en gráficas. |

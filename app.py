@@ -1,4 +1,5 @@
 from flask import Flask
+from flask_compress import Compress
 
 from core.database import init_db, close_db
 from core.config import refresh_config, APP_VERSION
@@ -12,6 +13,11 @@ from api.editor import editor_bp
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB por subida
+
+# gzip/brotli en respuestas de texto (HTML y, sobre todo, los JSON grandes de
+# /api/routes y /api/routes/geojson). Imágenes y binarios quedan fuera por
+# mimetype. En LAN apenas se nota; vía VPN/Tailscale reduce ~80% el JSON.
+Compress(app)
 
 app.teardown_appcontext(close_db)
 

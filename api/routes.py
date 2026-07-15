@@ -2,7 +2,7 @@ import json
 import re
 import shutil
 import datetime as dt
-from flask import Blueprint, abort, request, jsonify, render_template, Response
+from flask import Blueprint, abort, request, jsonify, render_template, Response, send_file
 
 import core.config as cfg
 from core.database import db
@@ -498,7 +498,10 @@ def route_thumb(rid):
     fpath = cfg.THUMB_DIR / r["thumb_file"]
     if not fpath.exists():
         abort(404)
-    return Response(fpath.read_bytes(), content_type="image/png")
+    # send_file (no Response manual): emite ETag/Last-Modified y responde 304 a
+    # revalidaciones. No lleva max_age porque el PNG se regenera CON EL MISMO
+    # nombre en cada rescan/edición — un max_age largo mostraría el thumb viejo.
+    return send_file(fpath, mimetype="image/png")
 
 
 @routes_bp.route("/api/routes/<int:rid>/gpx", methods=["GET"])

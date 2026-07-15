@@ -83,4 +83,8 @@ def immich_thumb(asset_id):
     r = immich_get(f"/api/assets/{asset_id}/thumbnail", params={"size": size})
     if r.status_code != 200:
         abort(502)
-    return Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))
+    resp = Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))
+    # Mismo criterio que el proxy de fotos: asset inmutable por id, caché
+    # privada de 7 días para no golpear a Immich en cada apertura del modal.
+    resp.headers["Cache-Control"] = "private, max-age=604800"
+    return resp

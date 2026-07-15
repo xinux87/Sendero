@@ -33,7 +33,22 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 .leaflet-control-layers-separator{border-top-color:var(--line)!important}
 .fit-btn{width:30px!important;height:30px!important;font-size:18px;line-height:28px;
   background:var(--panel)!important;color:var(--ink)!important;border:none!important;cursor:pointer}
-@media(max-width:560px){.stat .v{font-size:19px}}
+#d-name{font-size:34px}
+/* contenedor de la gráfica con altura explícita (el chart usa
+   maintainAspectRatio:false; sin esto en móvil quedaría enana) */
+.chart-box{position:relative;height:260px}
+@media(max-width:600px){
+  .stat .v{font-size:19px}
+  #d-name{font-size:24px}
+  #map{height:45vh;height:45dvh;min-height:280px}
+  .section{padding:14px}
+  .section h2{font-size:20px}
+  .chart-box{height:180px}
+}
+@media(hover:none) and (pointer:coarse){
+  .act-badge{min-height:40px}
+  .act-opt:hover{transform:none}
+}
 /* badge actividad */
 .act-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 10px;
   border-radius:20px;font-size:13px;font-weight:700;border:2px solid;cursor:pointer;
@@ -68,7 +83,7 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 
 <div class="detail-head">
   <div>
-    <h1 id="d-name" style="font-size:34px"></h1>
+    <h1 id="d-name"></h1>
     <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
       <div id="d-date" class="mono" style="color:var(--muted);font-size:13px"></div>
       <div id="d-source"></div>
@@ -89,7 +104,7 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 
 <div class="section">
   <h2>Perfil de elevación</h2>
-  <canvas id="elev" height="84"></canvas>
+  <div class="chart-box"><canvas id="elev"></canvas></div>
 </div>
 
 <div class="section">
@@ -122,68 +137,7 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 {% block scripts %}
 let map, trackLayer, elevChart, current = {{ plan_json | safe }};
 
-const ACTIVITIES=[
-  {id:'senderismo',label:'Senderismo',color:'#c97a3a',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="white" stroke-width="1.3" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-  {id:'bicicleta',label:'Bicicleta',color:'#3a9ed8',symbol:`
-    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
-    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
-    <path d="M9.5,17.5 L13,14 L16.5,17.5 M13,14 L11.5,17.5"
-      stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="15.5" cy="10" r="1.5" fill="white"/>
-    <line x1="15.5" y1="11.5" x2="13" y2="14"   stroke="white" stroke-width="1.7" stroke-linecap="round"/>
-    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
-  `},
-  {id:'caminata',label:'Caminata',color:'#5ab87a',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-  {id:'correr',label:'Correr',color:'#e05252',symbol:`
-    <circle cx="14" cy="8" r="1.6" fill="white"/>
-    <line x1="14" y1="9.6"  x2="12" y2="15"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="16" y2="10"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="10" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="12" y1="15"   x2="15.5" y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="12" y1="15"   x2="9.5"  y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-  {id:'esqui',label:'Esquí',color:'#9b6fd4',symbol:`
-    <circle cx="13" cy="8" r="1.6" fill="white"/>
-    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
-    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
-  `},
-  {id:'otros',label:'Otros',color:'#e0559e',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="8.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="17.5" y2="11" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="11"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-];
-function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
-function iconSvg(a,size=26){
-  return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="13" cy="13" r="11" fill="${a.color}" stroke="#101a14" stroke-width="2.5"/>
-    ${a.symbol}
-  </svg>`;}
+/* ACTIVITIES, activityOf e iconSvg viven en static/shared.js */
 
 /* ── mapa ────────────────────────────────────────────────────────────────── */
 function initMap() {
@@ -249,7 +203,7 @@ function drawElevation() {
       }]
     },
     options:{
-      responsive:true, maintainAspectRatio:true,
+      responsive:true, maintainAspectRatio:false,
       plugins:{legend:{display:false}, tooltip:{
         callbacks:{
           title: i => `${i[0].label} km`,

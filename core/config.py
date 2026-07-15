@@ -16,7 +16,7 @@ DB_PATH = DATA / "sendero.db"
 # Versión de la aplicación. Única fuente de verdad: se muestra en Ajustes y en
 # /api/config. Al publicar, el tag de git (vX.Y.Z) y la etiqueta de la imagen
 # Docker (xinux87/sendero:X.Y.Z) deben coincidir con este número.
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 
 for d in (DATA, GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR):
     d.mkdir(parents=True, exist_ok=True)
