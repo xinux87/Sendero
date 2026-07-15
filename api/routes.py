@@ -13,9 +13,14 @@ from core.summaries import auto_summary
 from core.thumbs import generate_thumb
 from core.editing import load_gpx, extract_points
 from core.gps_analysis import detect_gps_anomalies
+from core.dedup import content_hash, route_signature
 from werkzeug.utils import secure_filename
 
 routes_bp = Blueprint("routes", __name__)
+
+
+def _truthy(v):
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _build_route_dict(rid):
@@ -44,6 +49,14 @@ def _build_route_dict(rid):
         "SELECT MAX(version_n) AS v FROM route_versions WHERE route_id=?", (rid,)
     ).fetchone()
     d["version"] = v["v"] or 0
+    # Aviso de posible duplicada (marcada por la ingesta automática). Se resuelve
+    # de una PATCH poniendo dup_suspect_of=null ("descartar aviso").
+    d["dup_suspect_of"] = d.get("dup_suspect_of")
+    d["dup_suspect_name"] = None
+    if d["dup_suspect_of"]:
+        s = db().execute("SELECT name FROM routes WHERE id=?",
+                         (d["dup_suspect_of"],)).fetchone()
+        d["dup_suspect_name"] = s["name"] if s else None
     return d
 
 
@@ -261,7 +274,7 @@ def list_routes():
     offset = request.args.get("offset", 0, type=int)
     total  = con.execute("SELECT COUNT(*) FROM routes").fetchone()[0]
     q = ("SELECT id,name,distance_m,ascent_m,duration_s,moving_s,"
-         "started_at,activity_type,start_lat,start_lon,thumb_file "
+         "started_at,activity_type,start_lat,start_lon,thumb_file,dup_suspect_of "
          "FROM routes ORDER BY COALESCE(started_at,created_at) DESC")
     if limit is not None:
         rows = con.execute(q + " LIMIT ? OFFSET ?", (limit, offset)).fetchall()
@@ -289,6 +302,20 @@ def create_route():
         }), 409
 
     raw = f.read()
+    con = db()
+
+    # Dedup dura: mismos bytes exactos (aunque el nombre difiera) → 409 siempre,
+    # también en la ingesta automática. Antes de parsear ni escribir nada.
+    chash = content_hash(raw)
+    dup = con.execute(
+        "SELECT id, name FROM routes WHERE content_hash=?", (chash,)
+    ).fetchone()
+    if dup:
+        return jsonify({
+            "error": f"Ruta repetida: ya existe «{dup['name']}» con el mismo contenido",
+            "duplicate": True, "existing_id": dup["id"], "existing_name": dup["name"],
+        }), 409
+
     try:
         if is_fit:
             stats, coords, elev, gpx_name, creator = analyse_fit(raw)
@@ -297,6 +324,27 @@ def create_route():
                 raw.decode("utf-8", errors="replace"))
     except Exception as e:
         return jsonify({"error": f"Archivo ilegible: {e}"}), 400
+
+    # Dedup blanda: mismo entrenamiento reexportado (bytes distintos, misma firma).
+    # `force` = un humano ya lo aceptó en la web; `auto` = importador automático.
+    auto  = _truthy(request.args.get("auto")  or request.form.get("auto"))
+    force = _truthy(request.args.get("force") or request.form.get("force"))
+    sig = route_signature(stats.get("started_at"), stats.get("distance_m"), coords)
+    dup_suspect_of = None
+    if sig and not force:
+        soft = con.execute(
+            "SELECT id, name FROM routes WHERE signature=? LIMIT 1", (sig,)
+        ).fetchone()
+        if soft:
+            if not auto:
+                # Web: no escribimos nada; la UI pregunta y reintenta con ?force=1.
+                return jsonify({
+                    "error": f"Esta ruta se parece mucho a «{soft['name']}».",
+                    "soft_duplicate": True,
+                    "existing_id": soft["id"], "existing_name": soft["name"],
+                }), 409
+            # Automático: importar igual, pero marcada para revisión humana.
+            dup_suspect_of = soft["id"]
 
     (cfg.GPX_DIR / stored).write_bytes(raw)
 
@@ -318,14 +366,14 @@ def create_route():
     start_lat = coords[0][1] if coords else None
     start_lon = coords[0][0] if coords else None
     bbox = _route_bbox(coords)
-    con = db()
     cur = con.execute(
         """INSERT INTO routes
         (name,notes,gpx_file,distance_m,ascent_m,descent_m,duration_s,moving_s,
          ele_min,ele_max,avg_speed,started_at,geojson,elevation,created_at,
          activity_type,device,start_lat,start_lon,heart_rate,hr_avg,hr_max,
-         bbox_min_lon,bbox_min_lat,bbox_max_lon,bbox_max_lat,speed)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         bbox_min_lon,bbox_min_lat,bbox_max_lon,bbox_max_lat,speed,
+         content_hash,signature,dup_suspect_of)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (name, "", stored, stats["distance_m"], stats["ascent_m"],
          stats["descent_m"], stats["duration_s"], stats["moving_s"],
          stats["ele_min"], stats["ele_max"], stats["avg_speed"],
@@ -334,7 +382,8 @@ def create_route():
          start_lat, start_lon,
          json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max,
          *(bbox or (None, None, None, None)),
-         json.dumps(speed_profile) if speed_profile else None),
+         json.dumps(speed_profile) if speed_profile else None,
+         chash, sig, dup_suspect_of),
     )
     con.commit()
     rid = cur.lastrowid
@@ -345,7 +394,10 @@ def create_route():
                 (_compute_gps_issues(raw, is_fit, activity_type), rid))
     _mark_stats_dirty(con)
     con.commit()
-    return jsonify({"id": rid}), 201
+    resp = {"id": rid}
+    if dup_suspect_of:
+        resp.update({"soft_duplicate": True, "existing_id": dup_suspect_of})
+    return jsonify(resp), 201
 
 
 @routes_bp.route("/api/routes/<int:rid>", methods=["GET"])
@@ -379,7 +431,8 @@ def update_route(rid):
     data = request.get_json(force=True)
     con = db()
     fields, vals = [], []
-    for key in ("name", "notes", "activity_type", "immich_checked", "device"):
+    for key in ("name", "notes", "activity_type", "immich_checked", "device",
+                "dup_suspect_of"):
         if key in data:
             fields.append(f"{key}=?")
             vals.append(data[key])

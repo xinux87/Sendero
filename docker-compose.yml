@@ -26,6 +26,24 @@ services:
       - sendero
     restart: unless-stopped
 
+  # Auto-importación desde Mi Fit / Zepp (Huami). Descarga los entrenamientos
+  # nuevos del reloj como GPX y los sube a Sendero. El token, el intervalo y el
+  # botón "Sincronizar ahora" se controlan desde Ajustes → Mi Fit / Zepp.
+  # Si no usas relojes Amazfit/Zepp/Mi Fit, puedes borrar este servicio.
+  mifit-sync:
+    build: .
+    container_name: sendero-mifit-sync
+    command: ["python", "mifit_sync.py"]
+    volumes:
+      - ./data:/data            # lee/escribe los ajustes y el estado de sync en la BD
+    environment:
+      - SENDERO_API=http://sendero:8080
+      - SENDERO_DATA=/data
+      - MIFIT_POLL=30
+    depends_on:
+      - sendero
+    restart: unless-stopped
+
   # Servicio DEM opcional para "Recalcular elevación" en el editor de rutas.
   # 1) Descomenta el bloque, 2) descarga un dataset (p.ej. EU-DEM) siguiendo
   #    https://www.opentopodata.org/datasets/eudem/ en ./demdata/eudem25m/,

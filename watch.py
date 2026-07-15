@@ -27,13 +27,20 @@ DUP = WATCH / "duplicated"
 def process(path: Path):
     try:
         with open(path, "rb") as fh:
-            r = requests.post(f"{API}/api/routes",
+            # auto=1: una posible duplicada semántica se importa marcada para
+            # revisión (dup_suspect_of) en vez de bloquear; solo la dup EXACTA da 409.
+            r = requests.post(f"{API}/api/routes?auto=1",
                               files={"gpx": (path.name, fh, "application/gpx+xml")},
                               timeout=60)
         if r.status_code == 201:
             DONE.mkdir(exist_ok=True)
             shutil.move(str(path), DONE / path.name)
-            print(f"[ok] importado {path.name} -> ruta {r.json().get('id')}", flush=True)
+            body = r.json()
+            if body.get("soft_duplicate"):
+                print(f"[dup?] importado {path.name} -> ruta {body.get('id')} "
+                      f"(posible duplicada de {body.get('existing_id')}, marcada)", flush=True)
+            else:
+                print(f"[ok] importado {path.name} -> ruta {body.get('id')}", flush=True)
         elif r.status_code == 409:
             # Ruta repetida (colisión de nombre de GPX): se descarta, no es un fallo real.
             DUP.mkdir(exist_ok=True)

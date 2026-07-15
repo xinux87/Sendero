@@ -45,6 +45,10 @@ core/
   summaries.py  — auto_summary() y auto_summary_planned()
   exif.py       — extrae lat/lon/taken_at de fotos subidas
   immich.py     — cliente HTTP para Immich (immich_get, immich_search, min_dist_to_track)
+  mifit/        — cliente Huami (Mi Fit/Zepp) vendorizado de roadmap/mifit exporter:
+                  api.py (HTTP+modelos), points.py (decodifica el detalle crudo),
+                  gpx.py (build_gpx/workout_filename), sync.py (iter_new_workouts).
+                  Solo el camino GPX-por-token; añade únicamente 'pydantic' a deps.
 
 api/
   routes.py     — CRUD de rutas + rescan + thumb + stats
@@ -53,9 +57,17 @@ api/
   planned.py    — CRUD de rutas planificadas
   immich_api.py — candidatos Immich, selección, proxy de miniaturas
   settings.py   — lectura/escritura de ajustes (Immich, tipos GPX personalizados)
+  mifit.py      — ajustes/estado/disparo de la auto-importación Mi Fit/Zepp
 ```
 
 `watch.py` — importador de carpeta. Proceso **independiente**, no parte del server.
+
+`mifit_sync.py` — sincronizador Mi Fit/Zepp. Proceso **independiente** (servicio
+`mifit-sync` en docker-compose), como el watcher: cada `MIFIT_POLL` s lee settings
+y, si toca (por intervalo o por el flag manual `MIFIT_SYNC_REQUESTED`), descarga los
+entrenamientos nuevos con `core.mifit` y los sube a `/api/routes` (201/409/err, misma
+semántica que watch.py). Escribe el estado en settings para que la UI lo lea. NO es
+un hilo de gunicorn (evita duplicar el importador con 2 workers).
 
 `tests/` — pytest sin BD ni Flask (funciones puras): `conftest.py` trae un constructor
 de GPX sintéticos (`make_gpx_xml`) y un FIT de muestra (`tests/fixtures/Activity.fit`).
@@ -107,9 +119,9 @@ secciones y actualiza el `history` sin recargar la página.
 | GET | `/Plan/<name>` | `plan_detalle.html` con JSON inyectado |
 | GET | `/api/routes` | lista paginada (incluye `thumb_file`); sin `limit` devuelve todas (es barata, ~130 KB/500 rutas) |
 | GET | `/api/routes/geojson` | FeatureCollection de líneas decimadas (props: id, name, activity, year, km). Acepta `?bbox=minLon,minLat,maxLon,maxLat`; sin él devuelve todas (no lo usa el dashboard salvo fallback) |
-| POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb |
+| POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb. Dedup (ver sección): 409 exacta (hash) o blanda (firma); `?auto=1` importa la blanda marcada (`dup_suspect_of`) en vez de bloquear; `?force=1` la importa limpia (el usuario ya la aceptó en la web) |
 | GET | `/api/routes/<id>` | dict completo de la ruta |
-| PATCH | `/api/routes/<id>` | actualiza name/notes/activity_type/immich_checked |
+| PATCH | `/api/routes/<id>` | actualiza name/notes/activity_type/immich_checked/device; `dup_suspect_of=null` descarta el aviso de posible duplicada |
 | DELETE | `/api/routes/<id>` | borra ruta + fotos + GPX + thumb + versiones |
 | POST | `/api/routes/<id>/rescan` | re-parsea GPX/FIT; regenera thumb |
 | GET | `/api/routes/<id>/thumb` | sirve el PNG del track (image/png) |
@@ -142,6 +154,9 @@ secciones y actualiza el `history` sin recargar la página.
 | GET/POST | `/api/settings/gpx-types` | tipos GPX personalizados |
 | GET/POST | `/api/settings/gps-thresholds` | umbrales GPS por actividad (vel. máx km/h, ascenso máx m/s, altitud máx m); GET devuelve los efectivos (custom con fallback a defaults) |
 | GET | `/api/immich/thumb/<asset_id>` | proxy miniatura Immich |
+| GET/POST | `/api/mifit/settings` | ajustes Mi Fit/Zepp (GET enmascara el token) |
+| POST | `/api/mifit/sync` | encola sincronización manual (flag en settings); body `{reset:true}` reinicia la marca (reimportar desde fecha) |
+| GET | `/api/mifit/status` | estado de la última sincronización Mi Fit/Zepp |
 
 ### Helper `_build_route_dict(rid)` en `api/routes.py`
 Construye el dict completo de una ruta (geojson, elevation, heart_rate, speed, photos,
@@ -203,6 +218,36 @@ iteración en un sitio, cámbialo en los dos** (`core/parsers.py` y `core/editin
   `MAX(version_n)` → 409 `version_conflict`.
 - `DELETE /api/routes/<id>` borra también `route_versions` y `versions/<id>/`.
 
+### Deduplicación de importaciones (`core/dedup.py` + `create_route`)
+Para no importar dos veces el mismo track. Dos niveles, ambos funciones puras en
+`core/dedup.py` (tests en `tests/test_dedup.py`):
+
+1. **Dura — `content_hash(raw)`** (SHA-256 de los bytes crudos): reimportar los
+   MISMOS bytes, aunque con otro nombre → **409 siempre**, en la web y en la ingesta
+   automática. Cero falsos positivos. Se comprueba tras leer el archivo, antes de
+   parsear ni escribir nada.
+2. **Blanda — `route_signature(...)`** (firma semántica): pilla el mismo entreno
+   reexportado en otro formato/fuente (bytes distintos). Puede tener falsos positivos,
+   así que la respuesta depende de quién sube:
+   - **Web** (sin flags): **409 `{soft_duplicate, existing_id, existing_name}`**; la UI
+     de subida pregunta y reintenta con `?force=1` (importa limpia, sin marca).
+   - **Automático** (`?auto=1`, lo mandan `mifit_sync.py` y `watch.py`): **importa igual
+     (201)** pero deja `dup_suspect_of` apuntando a la ruta parecida — nada se pierde en
+     silencio ni se fusiona sin revisión humana. La respuesta lleva `soft_duplicate` +
+     `existing_id` para que el importador la cuente/logee.
+
+**Política de diseño (no romper):** la ingesta automática **nunca** borra ni fusiona
+por su cuenta; el exacto se descarta (seguro), el semántico se conserva **marcado** y
+lo revisa una persona (badge en `makeCard`, banner en `sendero.html` con "descartar
+aviso"/ir a la parecida → borrar o `POST /api/routes/merge`).
+
+`content_hash`/`signature` se fijan **al importar y no se recalculan** al editar/
+reescanear: la pregunta que responden es "¿ya vi este archivo/entreno?", referida al
+original. Backfill único de las rutas previas en `init_db()` (firma desde la BD,
+hash leyendo el archivo; solo filas con `content_hash IS NULL`). Al añadir la columna
+`dup_suspect_of` al listado se creó `idx_routes_list_cov2` (regla 12) y se dejó de usar
+`idx_routes_list_cov`.
+
 ### Thumbnails de track (`core/thumbs.py`)
 `generate_thumb(coords, gpx_file)` genera un PNG:
 - Fondo `#17241c` (= `--panel`), línea blanca, 400 px de alto, ancho proporcional
@@ -215,6 +260,75 @@ iteración en un sitio, cámbialo en los dos** (`core/parsers.py` y `core/editin
 - Al borrar una ruta, se borra también el thumb.
 - En `makeCard` de `app.html`: se muestra como elemento absoluto en el lateral derecho
   de la tarjeta con degradado izquierda→transparente para no tapar el texto.
+
+### Auto-importación Mi Fit / Zepp (`core/mifit/` + `mifit_sync.py` + `api/mifit.py`)
+Descarga los entrenamientos del reloj Amazfit/Zepp/Mi Fit (API de Huami) y los
+importa como rutas. Plan completo en `roadmap/mifit-sync.md` (fase 4 = auth por
+navegador `mifit-auth`, pendiente). Implementado (fases 1-3):
+- **`core/mifit/`** — vendorizado de `roadmap/mifit exporter` (solo GPX-por-token).
+  `iter_new_workouts(api, since_trackid)` genera `(trackid, nombre, gpx_str)` de lo
+  nuevo con GPS, en orden ascendente; salta los indoor (sin puntos). El GPX nombra el
+  track `"DD-MM-YYYY hiking"` etc.: esas palabras inglesas ya están en las keywords de
+  `_detect_activity()`, así que Sendero asigna la actividad española **sin adaptador**.
+- **Dedup por nombre de archivo**: `workout_filename()` es determinista
+  (`Workout--YYYY-MM-DD--HH-MM-SS.gpx`), así que reimportar el mismo workout choca con
+  el 409 de `create_route` por nombre (antes incluso de leer el cuerpo). Sobre eso
+  actúa la dedup general (hash/firma, ver sección "Deduplicación de importaciones");
+  la sync manda `?auto=1`, así que una posible duplicada semántica se importa marcada
+  (`dup_suspect_of`) y cuenta como `sospechosas` en `MIFIT_LAST_RESULT`.
+- **`mifit_sync.py`** (servicio aparte): bucle que sube a `/api/routes`.
+  `MIFIT_LAST_TRACKID` avanza solo por un **prefijo contiguo de éxitos** (un fallo no
+  hace saltar por encima; se reintenta) y se **persiste cada `WATERMARK_FLUSH_EVERY`
+  (10) rutas** durante un backfill (más en las ramas de error/token caducado), para que
+  una interrupción no obligue a re-descargar todo. El suelo de importación lo da
+  `effective_since(rows) = max(MIFIT_LAST_TRACKID, MIFIT_SINCE_DATE)`; con la marca a 0
+  y sin fecha, la **primera sync trae todo el historial** (backfill), por eso existe el
+  campo "Importar desde" (`MIFIT_SINCE_DATE`, `trackid` = timestamp de inicio).
+- **Reimportar desde fecha**: `POST /api/mifit/sync {reset:true}` borra
+  `MIFIT_LAST_TRACKID` antes de encolar, de modo que el suelo vuelve a ser
+  `MIFIT_SINCE_DATE` (la única forma de bajar la marca; la dedup evita duplicados). En la
+  UI, botón "⟳ Reimportar desde la fecha" (con confirm). "↻ Sincronizar ahora" es
+  incremental (`{reset:false}`). Estado en settings: `MIFIT_STATUS`
+  (`ok`/`running`/`no_token`/`token_expired`/`needs_login`/`error`),
+  `MIFIT_LAST_SYNC`, `MIFIT_LAST_RESULT` (JSON `{nuevas,duplicadas,errores,mensaje}`).
+- **`api/mifit.py`**: `GET/POST /api/mifit/settings` (token enmascarado en el GET:
+  `has_token`+`token_last4`; el POST solo sobrescribe el token si viene no vacío),
+  `POST /api/mifit/sync` (encola: pone `MIFIT_SYNC_REQUESTED`, no hace trabajo pesado),
+  `GET /api/mifit/status`. UI en `base.html` (sección "Mi Fit / Zepp" del modal de
+  Ajustes): token, región, intervalo, toggle, badge de estado y botón "Sincronizar
+  ahora" (sondea `/status` cada 3 s hasta que deja de estar `running`).
+
+### Deduplicación de importaciones (`core/dedup.py` + `create_route`)
+Evita rutas repetidas al importar (subida manual, watcher o Mi Fit). Dos niveles,
+ambos funciones puras en `core/dedup.py` (sin BD/Flask, testeadas en `tests/test_dedup.py`):
+
+- **Dura — `content_hash(raw)`**: SHA-256 de los bytes crudos del archivo. Detecta la
+  MISMA subida byte a byte aunque cambie el nombre. Cero falsos positivos. `create_route`
+  la comprueba **antes de parsear/escribir nada** → **409 siempre** (también con `?auto=1`).
+- **Blanda — `route_signature(started_at, distance_m, coords)`**: huella *semántica*
+  tolerante (started_at al minuto + distancia en cubos de 100 m + primer/último punto a 4
+  decimales ≈ 11 m; sin `started_at` cae a geometría + nº de puntos). Pilla el mismo track
+  reexportado en otro formato/fuente (bytes distintos). Puede dar falsos positivos, así que:
+  - **Web** (sin `?auto`): **409 `soft_duplicate`** con `existing_id`/`existing_name`; la UI
+    pregunta y reintenta con **`?force=1`** (un humano lo acepta).
+  - **Ingesta automática** (`?auto=1`: watcher y `mifit_sync`): **importa igual** pero marca
+    la fila con **`dup_suspect_of`** = id de la parecida (nunca borra en silencio). La
+    respuesta 201 lleva `soft_duplicate: true` + `existing_id`.
+
+`create_route` acepta `auto`/`force` por query o form. Columnas nuevas en `routes`:
+`content_hash`, `signature`, `dup_suspect_of` (ver tabla). `init_db()` hace **backfill**
+único de hash/firma de las rutas previas (la firma sale de la BD; el hash lee el archivo
+activo una vez, idempotente y tolerante a archivos ausentes).
+
+**Resolución del aviso** (`dup_suspect_of`): se limpia poniéndolo a NULL — vía
+`PATCH /api/routes/<id>` (`dismissDup()` en `sendero.html`: banda "⚠ posible duplicada"
+con botón "Descartar aviso") o **automáticamente al editar la ruta** (`api/editor.py`
+la borra en cada guardado: editar = revisar). En `app.html`, `makeCard` pinta un badge
+"⚠ posible duplicada" en la tarjeta si `dup_suspect_of` no es NULL.
+
+Índices en `init_db()`: `idx_routes_content_hash` e `idx_routes_signature` (lookups por
+valor exacto en `create_route`); el listado pasó a `idx_routes_list_cov2` (incluye
+`dup_suspect_of` en la cobertura; el `_cov` viejo se hace DROP — ver regla 12).
 
 ### Estado JS relevante en `sendero.html`
 | Variable | Contenido |
@@ -476,6 +590,9 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | start_lat, start_lon | REAL | primer punto del track |
 | thumb_file | TEXT | nombre en `data/thumbs/` (PNG) |
 | bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat | REAL | bounding box del track completo; lo calcula `_route_bbox()` en `create_route`/`rescan_route`. Usado por `/api/routes/geojson?bbox=` (mapa del dashboard) para no cargar rutas fuera de la zona visible |
+| content_hash | TEXT | SHA-256 de los bytes crudos del archivo importado (`core/dedup.py`). Dedup DURA: reimportar los mismos bytes (aunque con otro nombre) → 409. Índice propio `idx_routes_content_hash`. Solo se fija al importar; NO se recalcula al editar/reescanear (la pregunta es "¿ya vi este archivo?", referida al original) |
+| signature | TEXT | Huella SEMÁNTICA del entreno (`route_signature`): `started_at` al minuto + primer/último punto a 4 decimales (~11 m). Sin timestamps cae a distancia(100 m)+nº puntos. Dedup BLANDA. Índice propio `idx_routes_signature`. Deliberadamente NO incluye distancia cuando hay hora (el hash por igualdad daría falsos negativos en las fronteras de cubo). Solo al importar, no se recalcula |
+| dup_suspect_of | INTEGER | id de la ruta a la que se parece, cuando la ingesta AUTOMÁTICA (`?auto=1`) la importó pese al aviso semántico. NULL = limpia. Se lee en el listado → va en `idx_routes_list_cov2` (regla 12). Se limpia al editar la ruta o con `PATCH {dup_suspect_of:null}` ("descartar aviso") |
 
 ### Tabla `route_versions`
 Historial del editor de rutas (append-only, ver sección "Editor de rutas").
@@ -502,6 +619,14 @@ Clave-valor: `IMMICH_URL`, `IMMICH_API_KEY`, `IMMICH_MARGIN_MIN`, `IMMICH_DIST_M
 brouter-web), `GPX_TYPE_CUSTOM` (JSON), `GPS_THRESHOLDS_CUSTOM` (JSON),
 `stats_cache` (JSON con estadísticas globales). Los ajustes de settings
 sobreescriben los de `.env`/variables de entorno.
+
+Mi Fit/Zepp (auto-importación): editables por `api/mifit.py` y en `_SETTINGS_KEYS`
+(refrescadas por `refresh_config`): `MIFIT_ENABLED` (0/1), `MIFIT_TOKEN` (apptoken),
+`MIFIT_ENDPOINT` (región Huami), `MIFIT_INTERVAL_MIN` (0 = solo manual),
+`MIFIT_SINCE_DATE` (YYYY-MM-DD; suelo de fecha, vacío = todo el historial). De solo
+estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por UI):
+`MIFIT_SYNC_REQUESTED`, `MIFIT_LAST_SYNC`, `MIFIT_LAST_TRACKID`, `MIFIT_LAST_RESULT`,
+`MIFIT_STATUS`.
 
 ## Quirks conocidos
 - La validación de extensión en `create_route` acepta cualquier nombre que termine en

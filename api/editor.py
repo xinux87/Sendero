@@ -199,6 +199,8 @@ def edit_route(rid):
                           (rid,)).fetchone()
     _insert_version(con, rid, new_v, vname, summary,
                     updated["distance_m"], updated["ascent_m"], n_points)
+    # Editar la ruta cuenta como revisión: se limpia el aviso de posible duplicada.
+    con.execute("UPDATE routes SET dup_suspect_of=NULL WHERE id=?", (rid,))
     con.commit()
     return jsonify(_build_route_dict(rid))
 

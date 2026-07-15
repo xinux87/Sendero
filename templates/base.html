@@ -85,6 +85,23 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
   border:1px solid var(--line);border-radius:7px;padding:8px 11px;
   font-family:inherit;font-size:13px}
 .cfg-input:focus{outline:none;border-color:var(--pr-yellow)}
+/* input[type=date] en tema oscuro. color-scheme:dark hace que el popup y el texto
+   se rendericen acordes a la paleta oscura. El icono de calendario nativo es gris y
+   no se puede recolorear de forma fiable (Firefox no soporta ::-webkit-*), así que lo
+   ocultamos y ponemos uno propio en verde (.cfg-date-btn) que abre el selector con
+   showPicker(). Funciona en Chromium y Firefox. */
+.cfg-input[type=date]{
+  -webkit-appearance:none;-moz-appearance:none;appearance:none;  /* sin esto el fondo nativo (gris) no se puede tematizar */
+  background:var(--bg);color:var(--ink);
+  color-scheme:dark;accent-color:#8fdca8}
+.cfg-input[type=date]::-webkit-datetime-edit{color:var(--ink)}     /* texto de la fecha */
+.cfg-input[type=date]::-webkit-calendar-picker-indicator{opacity:0;display:none;-webkit-appearance:none}
+.cfg-datewrap{position:relative;max-width:200px}
+.cfg-datewrap .cfg-input{width:100%;padding-right:34px}
+.cfg-date-btn{position:absolute;right:3px;top:50%;transform:translateY(-50%);
+  background:none;border:0;padding:4px;cursor:pointer;color:#8fdca8;
+  display:inline-flex;align-items:center;line-height:0}
+.cfg-date-btn:hover{color:#b6ead0}
 .cfg-textarea{width:100%;background:var(--bg);color:var(--ink);
   border:1px solid var(--line);border-radius:7px;padding:8px 11px;
   font-family:var(--mono);font-size:11px;resize:vertical;min-height:56px;max-height:110px}
@@ -151,6 +168,12 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
   .nav-link{min-height:40px;display:inline-flex;align-items:center}
   .cfg-nav-item{min-height:44px}
 }
+.mifit-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
+.mifit-badge.ok{color:#8fdca8;border-color:#2f6b45;background:rgba(47,107,69,.18)}
+.mifit-badge.warn{color:var(--pr-yellow);border-color:#7a6a1f;background:rgba(122,106,31,.18)}
+.mifit-badge.err{color:#f0a0a0;border-color:var(--gr-red);background:rgba(160,40,40,.18)}
+.mifit-badge.run{color:#9ec2f0;border-color:#2f5a8a;background:rgba(47,90,138,.18)}
 {% block styles %}{% endblock %}
 </style>
 </head>
@@ -204,6 +227,8 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
                 onclick="cfgSection('gps',this)">GPS incorrecto</button>
         <button id="cfg-nav-editor" class="cfg-nav-item"
                 onclick="cfgSection('editor',this)">Editor</button>
+        <button id="cfg-nav-mifit" class="cfg-nav-item"
+                onclick="cfgSection('mifit',this)">Mi Fit / Zepp</button>
       </nav>
       <div class="cfg-sidebar-ver mono">Sendero v{{ app_version }}</div>
     </div>
@@ -317,6 +342,105 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
         <button class="btn" onclick="saveSettings()">Guardar ajustes</button>
       </div>
 
+      <!-- sección Mi Fit / Zepp -->
+      <div id="cfg-sec-mifit" class="cfg-sec-content hidden">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.6">
+          Importa automáticamente los entrenamientos de tu reloj Amazfit/Zepp/Mi Fit
+          como rutas. Necesita el <strong style="color:var(--ink)">apptoken</strong> de tu
+          cuenta Huami. Las rutas nuevas se descargan como GPX y se importan igual que
+          cualquier otra (con miniatura y detección de actividad).
+        </p>
+
+        <div id="mifit-status-box" style="margin:0 0 18px;padding:12px 14px;border:1px solid var(--line);
+             border-radius:10px;background:var(--bg)">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span id="mifit-status-badge" class="mifit-badge">…</span>
+            <span id="mifit-status-detail" style="font-size:13px;color:var(--muted)"></span>
+          </div>
+          <div style="font-size:12.5px;margin-top:8px">
+            <span style="color:var(--muted)">Última sincronización:</span>
+            <span id="mifit-last-sync-dt" style="color:var(--ink);font-weight:600">Nunca</span>
+          </div>
+          <div id="mifit-last-sync-result" style="font-size:12px;color:var(--muted);margin-top:3px"></div>
+        </div>
+
+        <div class="cfg-field">
+          <label class="cfg-label" for="cfg-mifit-token">apptoken de Huami</label>
+          <div style="display:flex;gap:6px">
+            <input id="cfg-mifit-token" class="cfg-input" type="password"
+                   placeholder="pega aquí el apptoken" style="flex:1">
+            <button class="btn ghost sm" style="flex-shrink:0;padding:0 10px"
+              onclick="const i=$('#cfg-mifit-token');i.type=i.type==='password'?'text':'password'">👁</button>
+          </div>
+          <div class="cfg-hint">
+            Sácalo de la <a href="https://user.huami.com/privacy2/index.html?loginPlatform=web&platform_app=com.xiaomi.hm.health"
+            target="_blank" rel="noopener">página GDPR de Huami</a> → "Export data" → inicia sesión →
+            F12 → pestaña Network → busca la cabecera/cookie <code style="font-size:11px">apptoken</code>.
+            Déjalo vacío para conservar el token ya guardado.
+          </div>
+        </div>
+
+        <div class="cfg-field">
+          <label class="cfg-label" for="cfg-mifit-endpoint">Servidor (región)</label>
+          <select id="cfg-mifit-endpoint" class="cfg-input" style="width:100%;max-width:360px">
+            <option value="https://api-mifit.huami.com">Global (api-mifit.huami.com)</option>
+            <option value="https://api-mifit-de.huami.com">Europa (api-mifit-de.huami.com)</option>
+            <option value="https://api-mifit-us2.huami.com">EE. UU. (api-mifit-us2.huami.com)</option>
+            <option value="https://api-mifit-cn.huami.com">China (api-mifit-cn.huami.com)</option>
+          </select>
+          <div class="cfg-hint">Las cuentas europeas suelen usar el servidor de Europa.</div>
+        </div>
+
+        <div class="cfg-field">
+          <label class="cfg-label" for="cfg-mifit-interval">Sincronización automática</label>
+          <select id="cfg-mifit-interval" class="cfg-input" style="width:100%;max-width:360px">
+            <option value="0">Solo manual</option>
+            <option value="60">Cada hora</option>
+            <option value="360">Cada 6 horas</option>
+            <option value="720">Cada 12 horas</option>
+            <option value="1440">Cada día</option>
+          </select>
+          <div class="cfg-hint">Con qué frecuencia el sincronizador busca entrenamientos nuevos.</div>
+        </div>
+
+        <div class="cfg-field">
+          <label class="cfg-label" for="cfg-mifit-since">Importar desde (opcional)</label>
+          <div class="cfg-datewrap">
+            <input id="cfg-mifit-since" class="cfg-input" type="date">
+            <button type="button" class="cfg-date-btn" aria-label="Abrir calendario"
+              onclick="const i=$('#cfg-mifit-since'); (i.showPicker?i.showPicker():i.focus())">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            </button>
+          </div>
+          <div class="cfg-hint">Solo se importan entrenamientos a partir de esta fecha. Déjalo
+            vacío para traer <strong>todo el historial</strong> en la primera sincronización.
+            No afecta a lo ya importado.</div>
+        </div>
+
+        <div class="cfg-field" style="margin-bottom:22px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px">
+            <input type="checkbox" id="cfg-mifit-enabled" style="width:auto">
+            Activar sincronización automática
+          </label>
+          <div class="cfg-hint">Si lo desactivas, solo se sincroniza con el botón "Sincronizar ahora".</div>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn" onclick="saveMifitSettings()">Guardar ajustes</button>
+          <button class="btn ghost" id="mifit-sync-btn" onclick="mifitSyncNow(false)">↻ Sincronizar ahora</button>
+          <button class="btn ghost" id="mifit-reimport-btn" onclick="mifitReimport()">⟳ Reimportar desde la fecha</button>
+        </div>
+        <div class="cfg-hint" style="margin-top:8px">
+          <strong style="color:var(--ink)">Sincronizar ahora</strong>: trae solo lo posterior a la última
+          sincronización (incremental). <strong style="color:var(--ink)">Reimportar desde la fecha</strong>:
+          reinicia la marca y vuelve a revisar el historial desde la fecha de "Importar desde" (lo ya existente
+          se omite como duplicado).
+        </div>
+      </div>
+
     </div><!-- /cfg-body -->
   </div><!-- /cfg-fullscreen -->
 </div>
@@ -401,11 +525,12 @@ async function openSettings(){
     _gpsThresholds=await r.json();
   }catch(e){_gpsThresholds={};}
   renderGpsThrTable();
+  loadMifit();
   cfgSection('immich',$('#cfg-nav-immich'));
   $('#cfg-overlay').classList.remove('hidden');
 }
 
-function closeSettings(){ $('#cfg-overlay').classList.add('hidden'); }
+function closeSettings(){ clearInterval(_mifitPoll); $('#cfg-overlay').classList.add('hidden'); }
 
 function cfgSection(name,btn){
   document.querySelectorAll('.cfg-nav-item').forEach(b=>b.classList.remove('on'));
@@ -430,6 +555,104 @@ async function saveSettings(){
   });
   if(res.ok){ closeSettings(); toast('Ajustes guardados'); }
   else toast('Error al guardar los ajustes');
+}
+
+/* ── Mi Fit / Zepp ───────────────────────────────────────────────────────── */
+const MIFIT_STATUS_LABELS={
+  ok:           ['ok',  'Conectado ✓'],
+  running:      ['run', 'Sincronizando…'],
+  no_token:     ['warn','Sin token'],
+  token_expired:['err', 'Token caducado — vuelve a pegarlo'],
+  needs_login:  ['err', 'Sesión caducada — reconecta'],
+  error:        ['err', 'Error en la última sincronización'],
+};
+let _mifitPoll=null;
+
+function _mifitDateTime(iso){
+  try{ return new Date(iso).toLocaleString('es-ES',{day:'2-digit',month:'short',
+    year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return iso; }
+}
+
+function _mifitApplyStatus(st){
+  const badge=$('#mifit-status-badge'), detail=$('#mifit-status-detail');
+  const dtEl=$('#mifit-last-sync-dt'), resEl=$('#mifit-last-sync-result');
+  if(!badge) return;
+  const key=st.status || (st.has_token?'ok':'no_token');
+  const [cls,label]=MIFIT_STATUS_LABELS[key] || ['','—'];
+  badge.className='mifit-badge '+cls;
+  badge.textContent=label;
+  detail.textContent = st.has_token ? '' : 'Añade tu apptoken para empezar.';
+  dtEl.textContent = st.last_sync ? _mifitDateTime(st.last_sync) : 'Nunca';
+  resEl.textContent = (st.last_result && st.last_result.mensaje) ? st.last_result.mensaje : '';
+}
+
+async function refreshMifitStatus(){
+  try{ const st=await (await fetch('/api/mifit/status')).json(); _mifitApplyStatus(st); return st; }
+  catch(e){ return null; }
+}
+
+async function loadMifit(){
+  try{
+    const s=await (await fetch('/api/mifit/settings')).json();
+    $('#cfg-mifit-endpoint').value = s.endpoint || 'https://api-mifit.huami.com';
+    $('#cfg-mifit-interval').value = String(s.interval_min ?? 0);
+    $('#cfg-mifit-since').value = s.since_date || '';
+    $('#cfg-mifit-enabled').checked = !!s.enabled;
+    $('#cfg-mifit-token').value='';
+    $('#cfg-mifit-token').placeholder = s.has_token
+      ? ('token guardado ••••'+(s.token_last4||''))
+      : 'pega aquí el apptoken';
+  }catch(e){}
+  refreshMifitStatus();
+}
+
+async function saveMifitSettings(silent){
+  const body={
+    enabled:      $('#cfg-mifit-enabled').checked,
+    endpoint:     $('#cfg-mifit-endpoint').value,
+    interval_min: parseInt($('#cfg-mifit-interval').value,10)||0,
+    since_date:   $('#cfg-mifit-since').value || '',
+  };
+  const tok=$('#cfg-mifit-token').value.trim();
+  if(tok) body.token=tok;
+  const res=await fetch('/api/mifit/settings',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(res.ok){ if(!silent){ toast('Ajustes de Mi Fit guardados'); loadMifit(); } }
+  else{ const j=await res.json().catch(()=>({})); toast(j.error||'Error al guardar los ajustes'); }
+  return res.ok;
+}
+
+async function mifitReimport(){
+  const since=$('#cfg-mifit-since').value;
+  const msg = since
+    ? `Se reiniciará la marca y se reimportará desde ${since}. El historial ya existente se omite por duplicado. ¿Continuar?`
+    : 'No has puesto fecha en "Importar desde": se reimportará TODO tu historial. ¿Continuar?';
+  if(!confirm(msg)) return;
+  await mifitSyncNow(true);
+}
+
+async function mifitSyncNow(reset){
+  const btns=[$('#mifit-sync-btn'), $('#mifit-reimport-btn')];
+  // Siempre persistimos el formulario (fecha/región/intervalo/token) antes de
+  // disparar: así el botón respeta lo que hay en pantalla aunque no hayas
+  // pulsado "Guardar ajustes".
+  if(!await saveMifitSettings(true)) return;
+  const res=await fetch('/api/mifit/sync',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({reset:!!reset})});
+  if(!res.ok){ const j=await res.json().catch(()=>({})); toast(j.error||'No se pudo encolar la sincronización'); return; }
+  toast(reset ? 'Reimportación encolada…' : 'Sincronización encolada…');
+  btns.forEach(b=>b&&(b.disabled=true));
+  clearInterval(_mifitPoll);
+  let ticks=0;
+  _mifitPoll=setInterval(async()=>{
+    ticks++;
+    const st=await refreshMifitStatus();
+    const busy = st && (st.status==='running' || st.requested);
+    if(!busy || ticks>200){                      // ~10 min de sondeo como tope (un backfill puede tardar)
+      clearInterval(_mifitPoll); btns.forEach(b=>b&&(b.disabled=false));
+      if(st && st.last_result && st.last_result.mensaje) toast(st.last_result.mensaje);
+    }
+  },3000);
 }
 
 /* ── ingesta ─────────────────────────────────────────────────────────────── */

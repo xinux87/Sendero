@@ -37,8 +37,25 @@ DEM_URL = os.environ.get("DEM_URL", "").rstrip("/")
 # desde Ajustes → Editor.
 PLANNER_URL = os.environ.get("PLANNER_URL", "https://brouter.de/brouter-web").rstrip("/")
 
+# Auto-importación desde Mi Fit / Zepp (Huami). El servicio aparte mifit_sync.py
+# lee estas claves de settings y descarga los entrenamientos nuevos como GPX.
+# MIFIT_TOKEN es el apptoken de Huami (lo pega el usuario o lo escribe mifit-auth).
+# MIFIT_INTERVAL_MIN = minutos entre sincronizaciones automáticas (0 = solo manual).
+MIFIT_ENABLED = os.environ.get("MIFIT_ENABLED", "0") == "1"
+MIFIT_TOKEN = os.environ.get("MIFIT_TOKEN", "")
+MIFIT_ENDPOINT = os.environ.get("MIFIT_ENDPOINT", "https://api-mifit.huami.com").rstrip("/")
+# Suelo de fecha para la importación (YYYY-MM-DD; vacío = todo el historial). Evita
+# que la primera sync se traiga entrenamientos anteriores a esta fecha de golpe.
+MIFIT_SINCE_DATE = os.environ.get("MIFIT_SINCE_DATE", "")
+try:
+    MIFIT_INTERVAL_MIN = int(os.environ.get("MIFIT_INTERVAL_MIN", "360"))
+except (ValueError, TypeError):
+    MIFIT_INTERVAL_MIN = 360
+
 _SETTINGS_KEYS = {"IMMICH_URL", "IMMICH_API_KEY", "IMMICH_MARGIN_MIN", "IMMICH_DIST_M",
-                  "DEM_URL", "PLANNER_URL"}
+                  "DEM_URL", "PLANNER_URL",
+                  "MIFIT_ENABLED", "MIFIT_TOKEN", "MIFIT_ENDPOINT", "MIFIT_INTERVAL_MIN",
+                  "MIFIT_SINCE_DATE"}
 _CUSTOM_GPX_TYPES: dict = {}
 
 # Umbrales por defecto para detectar tramos GPS incorrectos (core/gps_analysis.py):
@@ -66,6 +83,7 @@ def gps_thresholds_for(activity_type):
 
 def refresh_config():
     global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_DIST_M, IMMICH_ENABLED, _CUSTOM_GPX_TYPES, _GPS_THRESHOLDS_CUSTOM, DEM_URL, PLANNER_URL
+    global MIFIT_ENABLED, MIFIT_TOKEN, MIFIT_ENDPOINT, MIFIT_INTERVAL_MIN, MIFIT_SINCE_DATE
     try:
         con = sqlite3.connect(DB_PATH)
         con.execute("PRAGMA busy_timeout=20000")
@@ -91,6 +109,17 @@ def refresh_config():
     DEM_URL = (rows.get("DEM_URL") or os.environ.get("DEM_URL", "")).rstrip("/")
     PLANNER_URL = (rows.get("PLANNER_URL") or os.environ.get("PLANNER_URL", "")
                    or "https://brouter.de/brouter-web").rstrip("/")
+    MIFIT_ENABLED = (rows.get("MIFIT_ENABLED") or os.environ.get("MIFIT_ENABLED", "0")) == "1"
+    MIFIT_TOKEN = rows.get("MIFIT_TOKEN") or os.environ.get("MIFIT_TOKEN", "")
+    MIFIT_ENDPOINT = (rows.get("MIFIT_ENDPOINT") or os.environ.get("MIFIT_ENDPOINT", "")
+                      or "https://api-mifit.huami.com").rstrip("/")
+    MIFIT_SINCE_DATE = rows.get("MIFIT_SINCE_DATE") or os.environ.get("MIFIT_SINCE_DATE", "")
+    try:
+        MIFIT_INTERVAL_MIN = int(
+            rows.get("MIFIT_INTERVAL_MIN") or os.environ.get("MIFIT_INTERVAL_MIN", "360")
+        )
+    except (ValueError, TypeError):
+        MIFIT_INTERVAL_MIN = 360
     try:
         raw = rows.get("GPX_TYPE_CUSTOM", "")
         parsed = json.loads(raw) if raw else {}

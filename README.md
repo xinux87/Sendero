@@ -32,6 +32,8 @@ En resumen, Sendero te permite:
 - ⚠️ **Avisos de GPS** — detecta tramos con velocidad, desnivel o altitud imposibles y los corrige.
 - 🎯 **Planificación** — sube los GPX de rutas que quieres hacer y tenlas en una lista aparte.
 - 🔄 **Importación automática** — deja caer los GPX en una carpeta vigilada y aparecen solos.
+- ⌚ **Sincronización con Mi Fit / Zepp** — baja los entrenamientos de tu reloj Amazfit/Zepp directamente de la cuenta Huami, sin exportar a mano.
+- 🧹 **Sin rutas duplicadas** — detecta reimportaciones del mismo archivo o del mismo entrenamiento y evita repetirlas.
 
 ---
 
@@ -162,6 +164,8 @@ Los ajustes se guardan en la base de datos y persisten entre reinicios. Si prefi
 3. En Sendero pulsas **+ Añadir ruta**, eliges el GPX y listo. O lo haces automático (abajo).
 
 > El paso 1 sigue usando la app Zepp porque Gadgetbridge aún no extrae de forma fiable el track del T-Rex 3. Pero los archivos no salen de tu infraestructura.
+>
+> **Atajo sin exportar a mano:** si usas reloj Amazfit/Zepp/Mi Fit, la [auto-importación desde Mi Fit / Zepp](#importación-automática-desde-mi-fit--zepp) baja los entrenamientos directamente de la cuenta Huami, sin el paso de exportar GPX uno a uno.
 
 ## Importación automática (carpeta vigilada)
 
@@ -169,14 +173,34 @@ El servicio `watcher` del `docker-compose.yml` vigila la carpeta `./watch`. Apun
 
 Variables (en el `docker-compose.yml`): `SENDERO_POLL` es cada cuántos segundos mira la carpeta (30 por defecto). El watcher espera a que el archivo deje de crecer antes de importarlo, para no pillar una copia de Syncthing a medias. Si no quieres importación automática, borra el servicio `watcher` del compose.
 
+## Importación automática desde Mi Fit / Zepp
+
+Si tienes un reloj **Amazfit / Zepp / Mi Fit**, Sendero puede bajar tus entrenamientos directamente de la cuenta **Huami** y crearlos como rutas, sin exportar GPX a mano. Lo hace el servicio `mifit-sync` del `docker-compose.yml` (proceso aparte, opcional: bórralo si no lo usas).
+
+Configuración en **Ajustes → Mi Fit / Zepp**:
+
+1. **apptoken de Huami**: pégalo (lo sacas de la [página GDPR de Huami](https://user.huami.com/privacy2/index.html?loginPlatform=web&platform_app=com.xiaomi.hm.health) → «Export data» → inicia sesión → F12 → pestaña Network → cabecera/cookie `apptoken`).
+2. **Región**: Global / Europa / EE. UU. / China (las cuentas europeas suelen ser Europa).
+3. **Importar desde** (opcional): fecha a partir de la cual importar. Vacío = todo el historial en la primera sincronización.
+4. **Intervalo**: Manual, o cada 1 / 6 / 12 / 24 h con el interruptor de auto-sync.
+
+Luego **↻ Sincronizar ahora** (trae lo nuevo desde la última vez) o **⟳ Reimportar desde la fecha** (vuelve a revisar el historial desde la fecha elegida). El panel muestra el estado y la **fecha y hora de la última sincronización**. Los entrenamientos indoor sin GPS se ignoran.
+
+> **Nota:** el token de Huami caduca cada cierto tiempo; cuando pase, el panel avisa y basta con pegar uno nuevo. La captura del token con un clic (navegador integrado) está planificada, aún no disponible.
+
+### Deduplicación (no se repiten rutas)
+
+Al importar (a mano, por carpeta o desde Mi Fit) Sendero evita duplicados en dos niveles: el **mismo archivo** (idéntico byte a byte, aunque cambie el nombre) se rechaza siempre; y el **mismo entrenamiento reexportado** en otro formato se detecta por una huella (fecha + distancia + recorrido). En la web te pregunta antes de crear el duplicado; en la importación automática lo crea igual pero lo marca con **«⚠ posible duplicada»** (badge en la tarjeta y aviso en el detalle con «Descartar aviso») para que lo revises tú — nunca borra nada solo.
+
 ## Estructura
 
 ```
 sendero/
 ├── app.py              # entrada Flask: registra blueprints, init_db() y refresh_config()
 ├── watch.py            # importador automático de carpeta (servicio aparte, no parte del server)
-├── core/               # lógica: config, BD, parseo GPX/FIT, thumbnails, edición, EXIF, Immich, análisis GPS
-├── api/                # blueprints REST: rutas, editor, fotos, planificación, Immich, ajustes
+├── mifit_sync.py       # sincronizador Mi Fit/Zepp (servicio aparte, opcional)
+├── core/               # lógica: config, BD, parseo GPX/FIT, thumbnails, edición, EXIF, Immich, análisis GPS, dedup, cliente Mi Fit (core/mifit/)
+├── api/                # blueprints REST: rutas, editor, fotos, planificación, Immich, ajustes, Mi Fit
 ├── templates/
 │   ├── app.html            # SPA: Dashboard, Mis Rutas y Mis Planes (MapLibre GL)
 │   ├── sendero.html        # detalle de ruta: mapa, perfil, fotos, Immich
@@ -194,7 +218,7 @@ sendero/
 | Método | Ruta | Acción |
 |--------|------|--------|
 | `GET`  | `/api/routes` | lista de rutas |
-| `POST` | `/api/routes` | sube un GPX o FIT (campo `gpx`) |
+| `POST` | `/api/routes` | sube un GPX o FIT (campo `gpx`). Rechaza duplicados (`?force=1` fuerza; `?auto=1` importa marcando posibles duplicadas) |
 | `GET`  | `/api/routes/{id}` | detalle: stats, track, perfil, fotos |
 | `PATCH`| `/api/routes/{id}` | renombrar / guardar notas / actividad |
 | `DELETE`| `/api/routes/{id}` | borrar ruta |
@@ -206,6 +230,9 @@ sendero/
 | `POST` | `/api/routes/{id}/immich/select` | asocia los assets de Immich elegidos |
 | `GET`  | `/api/planned` | lista de rutas planificadas |
 | `POST` | `/api/planned` | añade una ruta planificada (campo `gpx`) |
+| `GET`/`POST` | `/api/mifit/settings` | ajustes de Mi Fit/Zepp (token, región, intervalo, fecha) |
+| `POST` | `/api/mifit/sync` | lanza una sincronización con Mi Fit (`{reset:true}` para reimportar) |
+| `GET`  | `/api/mifit/status` | estado y fecha de la última sincronización |
 
 El endpoint `POST /api/routes` permite automatizar la importación: un script que vigile la carpeta de Syncthing puede hacer `curl -F "gpx=@ruta.gpx"` por cada archivo nuevo.
 

@@ -9,6 +9,10 @@
 
 {% block styles %}
 .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.dup-banner{align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  background:rgba(214,69,65,.12);border:1px solid rgba(214,69,65,.45);
+  border-radius:9px;padding:10px 14px;margin-bottom:16px;font-size:14px;color:var(--text)}
+.dup-banner a{color:var(--gr-red);font-weight:600}
 #map{height:380px;border-radius:11px;border:1px solid var(--line);z-index:0;overflow:hidden}
 .stats-row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
 .stat{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);
@@ -175,6 +179,8 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
     </div>
   </div>
 </div>
+
+<div id="dup-banner" class="dup-banner" style="display:none"></div>
 
 <div style="position:relative">
   <div id="map"></div>
@@ -727,10 +733,28 @@ function renderAll(){
   $("#auto").textContent=current.auto_summary;
   $("#notes").value=current.notes||"";
   $("#immich-btn").classList.toggle("hidden",!IMMICH);
-  renderActivity();
+  renderActivity();renderDupBanner();
   renderStats();renderMap();renderElev();renderSpeed();renderHR();renderGallery();
   if(!current.activity_type) setTimeout(openActivityPicker,350);
   window.scrollTo(0,0);
+}
+
+function renderDupBanner(){
+  const b=$("#dup-banner");
+  if(!current.dup_suspect_of){b.style.display="none";return;}
+  const nm=current.dup_suspect_name||("ruta #"+current.dup_suspect_of);
+  b.innerHTML=`<span>⚠ Importada automáticamente y se parece mucho a `
+    +`<a href="/Sendero/${encodeURIComponent(nm)}">«${esc(nm)}»</a>. `
+    +`Revísala: si es la misma, bórrala o fusiónala; si no, descarta el aviso.</span>`
+    +`<button class="btn ghost sm" onclick="dismissDup()">Descartar aviso</button>`;
+  b.style.display="flex";
+}
+async function dismissDup(){
+  await fetch(`/api/routes/${current.id}`,{method:"PATCH",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({dup_suspect_of:null})});
+  current.dup_suspect_of=null;markCacheDirty();renderDupBanner();
+  toast("Aviso descartado");
 }
 
 function markCacheDirty(){

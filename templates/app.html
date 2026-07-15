@@ -76,6 +76,9 @@
   height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .card .date{color:var(--muted);font-size:12px;margin:2px 0 0;text-transform:uppercase;letter-spacing:.08em}
 .card-act{position:absolute;top:12px;right:12px;line-height:0}
+.card-dup{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;
+  color:var(--gr-red);background:rgba(214,69,65,.14);border:1px solid rgba(214,69,65,.4);
+  border-radius:6px;padding:1px 7px;text-transform:uppercase;letter-spacing:.04em}
 .card-thumb{position:absolute;right:0;top:0;bottom:0;width:42%;
   pointer-events:none;overflow:hidden;border-radius:0 11px 11px 0}
 .card-thumb::before{content:'';position:absolute;top:0;left:0;bottom:0;width:70%;
@@ -961,7 +964,7 @@ let sortOrder='desc',viewMode='a';
 let editMode=false,selectedIds=new Set(),visibleRoutes=[];
 let monthDomMap=new Map();
 const PAGE_SIZE=30;
-const ROUTE_CACHE='sendero_routes_v1',FILTER_CACHE='sendero_filters_v1';
+const ROUTE_CACHE='sendero_routes_v2',FILTER_CACHE='sendero_filters_v1';
 
 function saveRouteCache(){try{sessionStorage.setItem(ROUTE_CACHE,JSON.stringify({ts:Date.now(),routes:allRoutes}));}catch(e){}}
 function loadRouteCache(){
@@ -1225,11 +1228,14 @@ function makeCard(r){
   }else{c.onclick=()=>location.href='/Sendero/'+encodeURIComponent(r.name);}
   const thumbHtml=!editMode&&r.thumb_file
     ?`<div class="card-thumb"><img src="/api/routes/${r.id}/thumb" alt="" loading="lazy"></div>`:'';
+  const dupBadge=r.dup_suspect_of
+    ?`<div class="card-dup" title="Importada automáticamente, se parece a otra ruta. Ábrela para revisarla.">⚠ posible duplicada</div>`:'';
   c.innerHTML=`${thumbHtml}
     ${editMode?`<div class="card-check">${sel?"✓":""}</div>`:(act?`<div class="card-act">${iconSvg(act,26)}</div>`:"")}
     <div class="card-body">
       <h3>${esc(r.name)}</h3>
       <div class="date">${fmtDate(r.started_at)}</div>
+      ${dupBadge}
     </div>`;
   return c;
 }
@@ -1407,7 +1413,7 @@ async function loadList(){
   allRoutes=all.items;buildPills();renderList();saveRouteCache();
 }
 async function uploadFiles(files){
-  const total=files.length;let ok=0;const dups=[];const errors=[];
+  const total=files.length;let ok=0;const dups=[];const errors=[];const softs=[];
   const loader=document.createElement("div");loader.className="upload-loader";
   loader.innerHTML=`<div class="upload-loader-title">Subiendo rutas <span class="upload-loader-count" id="up-count">0 / ${total}</span></div>
     <div class="upload-bar-bg"><div class="upload-bar-fill" id="up-bar"></div></div>
@@ -1424,10 +1430,25 @@ async function uploadFiles(files){
       if(res.ok){ok++;}
       else{
         const j=await res.json().catch(()=>({}));
-        if(j.duplicate)dups.push(f.name);
+        if(j.soft_duplicate)softs.push({file:f,name:f.name,existing:j.existing_name});
+        else if(j.duplicate)dups.push(f.name);
         else errors.push(`${f.name}: ${j.error||"Error"}`);
       }
     }catch{errors.push(`${f.name}: Error de red`);}
+  }
+  // Duplicados blandos (misma firma, bytes distintos): la ingesta manual pregunta;
+  // si el usuario acepta, se reimportan con ?force=1 (entran limpias, sin marca).
+  if(softs.length){
+    const lista=softs.map(s=>`• «${s.name}» se parece a «${s.existing||"otra ruta"}»`).join("\n");
+    if(confirm(`${softs.length} ruta${softs.length!==1?"s":""} ya podría${softs.length!==1?"n":""} estar importada${softs.length!==1?"s":""}:\n\n${lista}\n\n¿Importar de todos modos?`)){
+      for(const s of softs){
+        document.getElementById("up-name").textContent=s.name;
+        const fd=new FormData();fd.append("gpx",s.file);
+        try{const res=await fetch("/api/routes?force=1",{method:"POST",body:fd});
+          if(res.ok)ok++;else errors.push(`${s.name}: ${(await res.json().catch(()=>({}))).error||"Error"}`);
+        }catch{errors.push(`${s.name}: Error de red`);}
+      }
+    }else{softs.forEach(s=>dups.push(s.name));}
   }
   document.getElementById("up-bar").style.width="100%";
   document.getElementById("up-count").textContent=`${ok} / ${total}`;

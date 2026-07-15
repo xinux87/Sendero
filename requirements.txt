@@ -3,5 +3,6 @@ Flask-Compress==1.24
 gpxpy==1.6.2
 garmin-fit-sdk==21.208.0
 Pillow==10.4.0
+pydantic==2.10.6
 requests==2.32.3
 gunicorn==23.0.0

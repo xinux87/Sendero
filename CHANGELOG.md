@@ -5,6 +5,40 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [Sin publicar]
+
+### Añadido
+- **Auto-importación desde Mi Fit / Zepp (Huami)**: descarga los entrenamientos del
+  reloj (Amazfit/Zepp/Mi Fit) como GPX y los importa como rutas, sin exportar a mano.
+  - Nuevo servicio `mifit-sync` en `docker-compose.yml` (proceso aparte, como el
+    watcher): sincroniza por intervalo o bajo demanda y sube cada GPX por
+    `POST /api/routes` (con miniatura y detección de actividad automáticas).
+  - Sección **«Mi Fit / Zepp»** en Ajustes: apptoken de Huami, región/endpoint,
+    intervalo (Manual/1 h/6 h/12 h/24 h), activar auto-sync, campo **«Importar
+    desde»** (suelo de fecha, evita traerse todo el historial), **fecha y hora de la
+    última sincronización**, botón **«↻ Sincronizar ahora»** (incremental) y
+    **«⟳ Reimportar desde la fecha»** (reinicia la marca).
+  - Cliente Huami vendorizado en `core/mifit/` (solo el camino GPX-por-token; añade
+    `pydantic` a las dependencias). Los tipos indoor sin GPS se saltan solos.
+  - Endpoints nuevos: `GET/POST /api/mifit/settings`, `POST /api/mifit/sync`
+    (`{reset:true}` para reimportar), `GET /api/mifit/status`.
+- **Deduplicación de importaciones** (subida manual, watcher y Mi Fit):
+  - Dura por **SHA-256 de los bytes** (`content_hash`): reimportar el mismo archivo
+    da 409 aunque cambie el nombre.
+  - Blanda por **huella semántica** (`signature`: fecha al minuto + distancia + puntos
+    extremos): pilla el mismo track reexportado en otro formato. En la web pide
+    confirmación; en la ingesta automática lo importa **marcado como «posible
+    duplicada»** (`dup_suspect_of`) para revisión humana, nunca borra en silencio.
+  - Aviso visual: badge **«⚠ posible duplicada»** en la tarjeta y banda en el detalle
+    con **«Descartar aviso»**; editar la ruta también limpia el aviso.
+
+### Cambiado
+- El campo de fecha «Importar desde» respeta el tema oscuro (`appearance:none` +
+  `color-scheme:dark`) con icono de calendario verde propio (funciona en Chromium y
+  Firefox; el resaltado del día en el popup de Firefox no es recoloreable por CSS).
+- La marca incremental de Mi Fit se persiste cada 10 rutas durante un backfill, para
+  que una interrupción no obligue a re-descargar todo el historial.
+
 ## [0.4.0] — 2026-07-15
 
 ### Añadido

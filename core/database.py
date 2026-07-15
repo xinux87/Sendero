@@ -99,6 +99,22 @@ def init_db():
                        WHERE geojson IS NOT NULL AND geojson != '[]'""")
     if "thumb_file" not in route_cols:
         con.execute("ALTER TABLE routes ADD COLUMN thumb_file TEXT")
+    # Deduplicación de importaciones (ver core/dedup.py y CLAUDE.md):
+    #   content_hash   — SHA-256 de los bytes crudos (dup exacta → 409 duro)
+    #   signature      — huella semántica del track (dup blanda)
+    #   dup_suspect_of — id de la ruta a la que se parece, si la ingesta AUTO la
+    #                    importó pese al aviso semántico (NULL = limpia)
+    # ALTER TABLE envuelto por si 2 workers corren init_db() a la vez (regla 13).
+    for _col, _decl in (("content_hash", "TEXT"),
+                        ("signature", "TEXT"),
+                        ("dup_suspect_of", "INTEGER")):
+        if _col not in route_cols:
+            try:
+                con.execute(f"ALTER TABLE routes ADD COLUMN {_col} {_decl}")
+                con.commit()
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e):
+                    raise
     # Bounding box de cada track, para poder pedir al mapa del dashboard solo las
     # rutas que caen dentro de la zona visible (en vez de las líneas de todas
     # siempre). create_route/rescan_route la rellenan al guardar cada ruta; no
@@ -131,14 +147,50 @@ def init_db():
     # KB por ruta) solo para llegar a estas columnas pequeñas, lo que hace que listar las
     # rutas (sin pedir geojson) tarde segundos en vez de milisegundos a partir de unas
     # pocas centenas de rutas.
-    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_list_cov ON routes(
+    # Nombre nuevo (_cov2) porque el listado ahora lee también dup_suspect_of: un
+    # CREATE ... IF NOT EXISTS sobre el nombre viejo no lo recrearía con la columna
+    # añadida, así que se crea el nuevo y se descarta el anterior (regla 12).
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_list_cov2 ON routes(
         COALESCE(started_at,created_at) DESC,
         id, name, distance_m, ascent_m, duration_s, moving_s, started_at,
-        activity_type, start_lat, start_lon, thumb_file
+        activity_type, start_lat, start_lon, thumb_file, dup_suspect_of
     )""")
+    con.execute("DROP INDEX IF EXISTS idx_routes_list_cov")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_stats_cov ON routes(
         activity_type, distance_m, ascent_m, moving_s, avg_speed, started_at, name
     )""")
+    # Lookups de dedup por valor exacto (create_route): su propio índice, no de
+    # cobertura — solo se busca "¿existe una fila con este hash / esta firma?".
+    con.execute("CREATE INDEX IF NOT EXISTS idx_routes_content_hash ON routes(content_hash)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_routes_signature ON routes(signature)")
+    # Backfill único de las rutas ya existentes (las importadas antes de esta
+    # migración tienen hash/firma NULL y no se detectarían al reimportarse). La
+    # firma sale de la BD (barata); el content_hash requiere leer el archivo
+    # activo una vez. Idempotente: solo toca filas con content_hash NULL, así que
+    # tras la primera pasada no vuelve a leer archivos. Tolera archivos ausentes.
+    from core.dedup import content_hash as _chash, route_signature as _sig
+    pending = con.execute(
+        "SELECT id, gpx_file, started_at, distance_m, geojson "
+        "FROM routes WHERE content_hash IS NULL"
+    ).fetchall()
+    for _r in pending:
+        _sets, _params = [], []
+        try:
+            _coords = json.loads(_r[4] or "[]")
+        except (ValueError, TypeError):
+            _coords = []
+        _s = _sig(_r[2], _r[3], _coords)
+        if _s:
+            _sets.append("signature=?"); _params.append(_s)
+        try:
+            _sets.append("content_hash=?")
+            _params.append(_chash((cfg.GPX_DIR / _r[1]).read_bytes()))
+        except OSError:
+            _sets.pop()  # no se pudo leer el archivo: deja content_hash NULL
+        if _sets:
+            _params.append(_r[0])
+            con.execute(f"UPDATE routes SET {', '.join(_sets)} WHERE id=?", _params)
+    con.commit()
 
     con.executescript("""
         CREATE TABLE IF NOT EXISTS planned_routes (
