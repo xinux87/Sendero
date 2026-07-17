@@ -1,6 +1,10 @@
+# Despliegue de producción con imagen publicada en Docker Hub (no build local).
+# La etiqueta de imagen se fija a la versión publicada (APP_VERSION en
+# core/config.py). REGLA: en cada publicación de versión, actualiza el tag
+# xinux87/sendero:X.Y.Z de TODOS los servicios de este archivo a la nueva versión.
 services:
   sendero:
-    image: xinux87/sendero:latest
+    image: xinux87/sendero:0.5.0
     container_name: sendero
     ports:
       - "8090:8080"
@@ -13,7 +17,7 @@ services:
   # Importación automática: vigila ./watch y sube los GPX que Syncthing deje ahí.
   # Si no usas importación automática, puedes borrar este servicio.
   watcher:
-    image: xinux87/sendero:latest
+    image: xinux87/sendero:0.5.0
     container_name: sendero-watcher
     command: ["python", "watch.py"]
     volumes:
@@ -22,6 +26,23 @@ services:
       - SENDERO_API=http://sendero:8080
       - SENDERO_WATCH_DIR=/watch
       - SENDERO_POLL=30
+    depends_on:
+      - sendero
+    restart: unless-stopped
+
+  # Auto-importación desde Mi Fit / Zepp (Huami). Token, intervalo y sincronización
+  # se controlan desde Ajustes → Mi Fit / Zepp. Si no usas reloj Amazfit/Zepp/Mi Fit,
+  # puedes borrar este servicio.
+  mifit-sync:
+    image: xinux87/sendero:0.5.0
+    container_name: sendero-mifit-sync
+    command: ["python", "mifit_sync.py"]
+    volumes:
+      - ./data:/data            # lee/escribe los ajustes y el estado de sync en la BD
+    environment:
+      - SENDERO_API=http://sendero:8080
+      - SENDERO_DATA=/data
+      - MIFIT_POLL=30
     depends_on:
       - sendero
     restart: unless-stopped

@@ -27,6 +27,16 @@ docker compose up -d --build       # servicio 'sendero' + servicio 'watcher'
 # La lógica de Immich se prueba con unittest.mock parcheando requests.
 ```
 
+## Publicar una versión
+`APP_VERSION` en `core/config.py` es la única fuente de verdad. Al publicar `X.Y.Z`,
+todos estos deben coincidir con ese número (si no, quedan desincronizados):
+1. `APP_VERSION` en `core/config.py`.
+2. Entrada nueva en `CHANGELOG.md` (`## [X.Y.Z] — AAAA-MM-DD`, pasando lo de "Sin publicar").
+3. **`docker-compose.prod.yml`**: el tag `xinux87/sendero:X.Y.Z` de **todos** los servicios
+   (`sendero`, `watcher`, `mifit-sync`) — el prod pinea versión, no usa `:latest`.
+4. Tag de git `vX.Y.Z` y la imagen Docker `xinux87/sendero:X.Y.Z` (+ `:X.Y` y `:latest`)
+   publicada en Docker Hub.
+
 ## Mapa del código
 
 ### Backend — blueprints, no monolito
