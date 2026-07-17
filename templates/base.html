@@ -174,6 +174,12 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 .mifit-badge.warn{color:var(--pr-yellow);border-color:#7a6a1f;background:rgba(122,106,31,.18)}
 .mifit-badge.err{color:#f0a0a0;border-color:var(--gr-red);background:rgba(160,40,40,.18)}
 .mifit-badge.run{color:#9ec2f0;border-color:#2f5a8a;background:rgba(47,90,138,.18)}
+.cfg-subhead{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--ink);margin:0 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px}
+.cfg-subhead .n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;
+  border-radius:50%;background:var(--pr-yellow);color:#1a1a1a;font-size:11px;font-weight:700}
+.cfg-actions-sep{border:0;border-top:1px dashed var(--line);margin:16px 0}
 {% block styles %}{% endblock %}
 </style>
 </head>
@@ -344,24 +350,18 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 
       <!-- sección Mi Fit / Zepp -->
       <div id="cfg-sec-mifit" class="cfg-sec-content hidden">
-        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.6">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 20px;line-height:1.6">
           Importa automáticamente los entrenamientos de tu reloj Amazfit/Zepp/Mi Fit
-          como rutas. Necesita el <strong style="color:var(--ink)">apptoken</strong> de tu
-          cuenta Huami. Las rutas nuevas se descargan como GPX y se importan igual que
-          cualquier otra (con miniatura y detección de actividad).
+          como rutas. Se descargan como GPX y se importan igual que cualquier otra
+          (con miniatura y detección de actividad).
         </p>
 
-        <div id="mifit-status-box" style="margin:0 0 18px;padding:12px 14px;border:1px solid var(--line);
-             border-radius:10px;background:var(--bg)">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span id="mifit-status-badge" class="mifit-badge">…</span>
-            <span id="mifit-status-detail" style="font-size:13px;color:var(--muted)"></span>
-          </div>
-          <div style="font-size:12.5px;margin-top:8px">
-            <span style="color:var(--muted)">Última sincronización:</span>
-            <span id="mifit-last-sync-dt" style="color:var(--ink);font-weight:600">Nunca</span>
-          </div>
-          <div id="mifit-last-sync-result" style="font-size:12px;color:var(--muted);margin-top:3px"></div>
+        <!-- ── Bloque 1: Conexión ── -->
+        <div class="cfg-subhead"><span class="n">1</span> Conexión</div>
+
+        <div style="margin:0 0 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span id="mifit-status-badge" class="mifit-badge">…</span>
+          <span id="mifit-status-detail" style="font-size:13px;color:var(--muted)"></span>
         </div>
 
         <div class="cfg-field">
@@ -391,17 +391,33 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
           <div class="cfg-hint">Las cuentas europeas suelen usar el servidor de Europa.</div>
         </div>
 
+        <button class="btn" onclick="saveMifitConexion()">Guardar conexión</button>
+
+        <!-- ── Bloque 2: Sincronización ── -->
+        <div class="cfg-subhead" style="margin-top:28px"><span class="n">2</span> Sincronización</div>
+
         <div class="cfg-field">
-          <label class="cfg-label" for="cfg-mifit-interval">Sincronización automática</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px">
+            <input type="checkbox" id="cfg-mifit-enabled" style="width:auto" onchange="_mifitToggleFreq()">
+            Sincronización automática
+          </label>
+          <div class="cfg-hint">Si está desactivada, solo se sincroniza con los botones de abajo.</div>
+        </div>
+
+        <div class="cfg-field" id="cfg-mifit-freq-field">
+          <label class="cfg-label" for="cfg-mifit-interval">Frecuencia</label>
           <select id="cfg-mifit-interval" class="cfg-input" style="width:100%;max-width:360px">
-            <option value="0">Solo manual</option>
             <option value="60">Cada hora</option>
             <option value="360">Cada 6 horas</option>
             <option value="720">Cada 12 horas</option>
             <option value="1440">Cada día</option>
           </select>
-          <div class="cfg-hint">Con qué frecuencia el sincronizador busca entrenamientos nuevos.</div>
+          <div class="cfg-hint">Cada cuánto busca entrenamientos nuevos (solo con la sincronización automática activada).</div>
         </div>
+
+        <button class="btn" onclick="saveMifitOpciones()">Guardar opciones</button>
+
+        <hr class="cfg-actions-sep">
 
         <div class="cfg-field">
           <label class="cfg-label" for="cfg-mifit-since">Importar desde (opcional)</label>
@@ -415,29 +431,25 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
                 <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             </button>
           </div>
-          <div class="cfg-hint">Solo se importan entrenamientos a partir de esta fecha. Déjalo
-            vacío para traer <strong>todo el historial</strong> en la primera sincronización.
+          <div class="cfg-hint">Punto de partida de <strong style="color:var(--ink)">Reimportar</strong>:
+            solo se traen entrenamientos a partir de esta fecha. Vacío = todo el historial.
             No afecta a lo ya importado.</div>
         </div>
 
-        <div class="cfg-field" style="margin-bottom:22px">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px">
-            <input type="checkbox" id="cfg-mifit-enabled" style="width:auto">
-            Activar sincronización automática
-          </label>
-          <div class="cfg-hint">Si lo desactivas, solo se sincroniza con el botón "Sincronizar ahora".</div>
+        <div style="font-size:12.5px;margin:0 0 4px">
+          <span style="color:var(--muted)">Última sincronización:</span>
+          <span id="mifit-last-sync-dt" style="color:var(--ink);font-weight:600">Nunca</span>
         </div>
+        <div id="mifit-last-sync-result" style="font-size:12px;color:var(--muted);margin:0 0 12px"></div>
 
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <button class="btn" onclick="saveMifitSettings()">Guardar ajustes</button>
           <button class="btn ghost" id="mifit-sync-btn" onclick="mifitSyncNow(false)">↻ Sincronizar ahora</button>
           <button class="btn ghost" id="mifit-reimport-btn" onclick="mifitReimport()">⟳ Reimportar desde la fecha</button>
         </div>
         <div class="cfg-hint" style="margin-top:8px">
           <strong style="color:var(--ink)">Sincronizar ahora</strong>: trae solo lo posterior a la última
           sincronización (incremental). <strong style="color:var(--ink)">Reimportar desde la fecha</strong>:
-          reinicia la marca y vuelve a revisar el historial desde la fecha de "Importar desde" (lo ya existente
-          se omite como duplicado).
+          reinicia la marca y revisa el historial desde "Importar desde" (lo ya existente se omite como duplicado).
         </div>
       </div>
 
@@ -558,14 +570,6 @@ async function saveSettings(){
 }
 
 /* ── Mi Fit / Zepp ───────────────────────────────────────────────────────── */
-const MIFIT_STATUS_LABELS={
-  ok:           ['ok',  'Conectado ✓'],
-  running:      ['run', 'Sincronizando…'],
-  no_token:     ['warn','Sin token'],
-  token_expired:['err', 'Token caducado — vuelve a pegarlo'],
-  needs_login:  ['err', 'Sesión caducada — reconecta'],
-  error:        ['err', 'Error en la última sincronización'],
-};
 let _mifitPoll=null;
 
 function _mifitDateTime(iso){
@@ -577,13 +581,19 @@ function _mifitApplyStatus(st){
   const badge=$('#mifit-status-badge'), detail=$('#mifit-status-detail');
   const dtEl=$('#mifit-last-sync-dt'), resEl=$('#mifit-last-sync-result');
   if(!badge) return;
-  const key=st.status || (st.has_token?'ok':'no_token');
-  const [cls,label]=MIFIT_STATUS_LABELS[key] || ['','—'];
+  // Bloque 1 (badge): SOLO salud de conexión, no estado de sincronización.
+  let cls='ok', label='Conectado ✓', hint='';
+  if(!st.has_token){ cls='warn'; label='Sin token'; hint='Añade tu apptoken para empezar.'; }
+  else if(st.status==='token_expired' || st.status==='needs_login'){
+    cls='err'; label='Token caducado — reconecta';
+  }
   badge.className='mifit-badge '+cls;
   badge.textContent=label;
-  detail.textContent = st.has_token ? '' : 'Añade tu apptoken para empezar.';
+  detail.textContent=hint;
+  // Bloque 2 (registro): última sincronización + resultado (o "Sincronizando…").
   dtEl.textContent = st.last_sync ? _mifitDateTime(st.last_sync) : 'Nunca';
-  resEl.textContent = (st.last_result && st.last_result.mensaje) ? st.last_result.mensaje : '';
+  if(st.status==='running' || st.requested) resEl.textContent='Sincronizando…';
+  else resEl.textContent = (st.last_result && st.last_result.mensaje) ? st.last_result.mensaje : '';
 }
 
 async function refreshMifitStatus(){
@@ -591,11 +601,20 @@ async function refreshMifitStatus(){
   catch(e){ return null; }
 }
 
+function _mifitToggleFreq(){
+  // La frecuencia solo aplica con la sincronización automática activada: se
+  // atenúa/deshabilita cuando el toggle está off, para que se entienda.
+  const on=$('#cfg-mifit-enabled').checked, f=$('#cfg-mifit-freq-field');
+  $('#cfg-mifit-interval').disabled=!on;
+  if(f) f.style.opacity=on?'1':'.5';
+}
+
 async function loadMifit(){
   try{
     const s=await (await fetch('/api/mifit/settings')).json();
     $('#cfg-mifit-endpoint').value = s.endpoint || 'https://api-mifit.huami.com';
-    $('#cfg-mifit-interval').value = String(s.interval_min ?? 0);
+    // El desplegable ya no tiene "0" (el toggle gobierna on/off); si venía 0, muestra 6 h.
+    $('#cfg-mifit-interval').value = String(s.interval_min || 360);
     $('#cfg-mifit-since').value = s.since_date || '';
     $('#cfg-mifit-enabled').checked = !!s.enabled;
     $('#cfg-mifit-token').value='';
@@ -603,23 +622,48 @@ async function loadMifit(){
       ? ('token guardado ••••'+(s.token_last4||''))
       : 'pega aquí el apptoken';
   }catch(e){}
+  _mifitToggleFreq();
   refreshMifitStatus();
 }
 
+async function _mifitPost(body, okMsg){
+  const res=await fetch('/api/mifit/settings',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(res.ok){ if(okMsg){ toast(okMsg); loadMifit(); } }
+  else{ const j=await res.json().catch(()=>({})); toast(j.error||'Error al guardar los ajustes'); }
+  return res.ok;
+}
+
+// Bloque 1: token (solo si se ha escrito uno nuevo) + región.
+async function saveMifitConexion(){
+  const body={endpoint:$('#cfg-mifit-endpoint').value};
+  const tok=$('#cfg-mifit-token').value.trim();
+  if(tok) body.token=tok;
+  await _mifitPost(body, 'Conexión guardada');
+}
+
+// Bloque 2: auto on/off + frecuencia + fecha "Importar desde".
+async function saveMifitOpciones(){
+  await _mifitPost({
+    enabled:      $('#cfg-mifit-enabled').checked,
+    interval_min: parseInt($('#cfg-mifit-interval').value,10)||360,
+    since_date:   $('#cfg-mifit-since').value || '',
+  }, 'Opciones guardadas');
+}
+
+// Guardado silencioso de TODO el formulario, usado por los botones de sync para
+// persistir lo que hay en pantalla antes de disparar (aunque no hayas pulsado Guardar).
 async function saveMifitSettings(silent){
   const body={
     enabled:      $('#cfg-mifit-enabled').checked,
     endpoint:     $('#cfg-mifit-endpoint').value,
-    interval_min: parseInt($('#cfg-mifit-interval').value,10)||0,
+    interval_min: parseInt($('#cfg-mifit-interval').value,10)||360,
     since_date:   $('#cfg-mifit-since').value || '',
   };
   const tok=$('#cfg-mifit-token').value.trim();
   if(tok) body.token=tok;
-  const res=await fetch('/api/mifit/settings',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(res.ok){ if(!silent){ toast('Ajustes de Mi Fit guardados'); loadMifit(); } }
-  else{ const j=await res.json().catch(()=>({})); toast(j.error||'Error al guardar los ajustes'); }
-  return res.ok;
+  const ok=await _mifitPost(body, silent?null:'Ajustes de Mi Fit guardados');
+  return ok;
 }
 
 async function mifitReimport(){
