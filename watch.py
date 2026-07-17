@@ -57,8 +57,27 @@ def process(path: Path):
             pass
 
 
+def looks_like_data_dir(path: Path) -> bool:
+    """True si `path` parece ser la carpeta de DATOS de Sendero (p.ej. si por error
+    SENDERO_DATA_DIR y SENDERO_WATCH_DIR apuntan al mismo host path). Señales: la BD
+    en la raíz, o la combinación de subcarpetas gpx/ + thumbs/ que crea la app.
+    Vigilar la carpeta de datos no cumple ninguna función y la ensuciaría con las
+    subcarpetas imported/failed/duplicated."""
+    return (path / "sendero.db").exists() or (
+        (path / "gpx").is_dir() and (path / "thumbs").is_dir())
+
+
 def main():
     WATCH.mkdir(parents=True, exist_ok=True)
+    if looks_like_data_dir(WATCH):
+        # Controladamente: no vigilamos, pero mantenemos el proceso vivo e idle
+        # (evita el crash-loop de 'restart: unless-stopped' si saliéramos).
+        print(f"[abort] {WATCH} parece la carpeta de datos de Sendero "
+              "(sendero.db / gpx+thumbs). El watcher NO se ejecuta para no "
+              "ensuciarla. Apunta SENDERO_WATCH_DIR a un buzón aparte, o borra el "
+              "servicio 'watcher' del compose.", flush=True)
+        while True:
+            time.sleep(3600)
     print(f"Vigilando {WATCH} (cada {POLL}s) -> {API}", flush=True)
     seen_incomplete = {}
     while True:
