@@ -1,6 +1,9 @@
 # Secretos y configuración local
 .env
 
+# Compose personal/local (no versionado): copia editable para tu despliegue
+docker-compose.un.yml
+
 # Datos de usuario (BD, GPX subidos, fotos)
 data/
 
