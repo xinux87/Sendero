@@ -32,10 +32,14 @@ docker compose up -d --build       # servicio 'sendero' + servicio 'watcher'
 todos estos deben coincidir con ese número (si no, quedan desincronizados):
 1. `APP_VERSION` en `core/config.py`.
 2. Entrada nueva en `CHANGELOG.md` (`## [X.Y.Z] — AAAA-MM-DD`, pasando lo de "Sin publicar").
-3. **`docker-compose.prod.yml`**: el tag `xinux87/sendero:X.Y.Z` de **todos** los servicios
-   (`sendero`, `watcher`, `mifit-sync`) — el prod pinea versión, no usa `:latest`.
+3. El default de `SENDERO_VERSION` en los compose (`${SENDERO_VERSION:-X.Y.Z}` en
+   `docker-compose.prod.yml` y `.un.yml`) y en **`.env.example`**. El tag real de
+   despliegue lo fija `.env` (`SENDERO_VERSION=`), que no se versiona.
 4. Tag de git `vX.Y.Z` y la imagen Docker `xinux87/sendero:X.Y.Z` (+ `:X.Y` y `:latest`)
    publicada en Docker Hub.
+
+Rutas host configurables por `.env` (`SENDERO_DATA_DIR` → `/data`, `SENDERO_WATCH_DIR`
+→ `/watch`); los compose usan `${VAR:-default}`, así funcionan sin `.env`.
 
 ## Mapa del código
 

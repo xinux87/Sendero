@@ -5,7 +5,7 @@ services:
     ports:
       - "8090:8080"
     volumes:
-      - ./data:/data            # rutas GPX, fotos locales y base de datos
+      - ${SENDERO_DATA_DIR:-./data}:/data      # rutas GPX, fotos locales y base de datos
     environment:
       - SENDERO_DATA=/data
     restart: unless-stopped
@@ -17,7 +17,7 @@ services:
     container_name: sendero-watcher
     command: ["python", "watch.py"]
     volumes:
-      - ./watch:/watch          # apunta aquí tu carpeta sincronizada con Syncthing
+      - ${SENDERO_WATCH_DIR:-./watch}:/watch   # apunta aquí tu carpeta sincronizada con Syncthing
     environment:
       - SENDERO_API=http://sendero:8080
       - SENDERO_WATCH_DIR=/watch
@@ -35,7 +35,7 @@ services:
     container_name: sendero-mifit-sync
     command: ["python", "mifit_sync.py"]
     volumes:
-      - ./data:/data            # lee/escribe los ajustes y el estado de sync en la BD
+      - ${SENDERO_DATA_DIR:-./data}:/data      # lee/escribe los ajustes y el estado de sync en la BD
     environment:
       - SENDERO_API=http://sendero:8080
       - SENDERO_DATA=/data
