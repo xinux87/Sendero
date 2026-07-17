@@ -5,7 +5,7 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
-## [Sin publicar]
+## [0.5.0] — 2026-07-17
 
 ### Añadido
 - **Auto-importación desde Mi Fit / Zepp (Huami)**: descarga los entrenamientos del
