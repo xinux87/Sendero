@@ -17,6 +17,7 @@ def get_settings():
         "IMMICH_DIST_M":     str(cfg.IMMICH_DIST_M),
         "DEM_URL":           cfg.DEM_URL,
         "PLANNER_URL":       cfg.PLANNER_URL,
+        "GEOCODE_URL":       cfg.GEOCODE_URL,
     })
 
 

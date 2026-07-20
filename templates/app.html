@@ -73,8 +73,13 @@
   padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px;overflow:hidden}
 .card:hover{filter:brightness(1.06);transform:translateY(-2px)}
 .card h3{font-size:22px;font-weight:600;padding-right:34px;line-height:1.2;
-  height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.card .date{color:var(--muted);font-size:12px;margin:2px 0 0;text-transform:uppercase;letter-spacing:.08em}
+  max-height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .date{color:var(--muted);font-size:12px;margin:1px 0 0;text-transform:uppercase;letter-spacing:.08em}
+.card-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:14.5px}
+.card-dist{color:var(--pr-yellow);font-weight:700;font-family:'Saira Condensed',sans-serif;letter-spacing:.02em}
+.card-loc{color:var(--muted);display:inline-flex;align-items:center;gap:3px;min-width:0;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-loc svg{flex-shrink:0;opacity:.7}
 .card-act{position:absolute;top:12px;right:12px;line-height:0}
 .card-dup{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;
   color:var(--gr-red);background:rgba(214,69,65,.14);border:1px solid rgba(214,69,65,.4);
@@ -405,6 +410,9 @@
       <span class="sort-label" style="color:var(--pr-yellow)">EDITAR</span>
       <button class="btn ghost sm" onclick="selectAllVisible()">Seleccionar todos</button>
       <button class="btn ghost sm" onclick="deselectAll()">Deseleccionar</button>
+      <button class="btn ghost sm" id="dedup-btn" onclick="deleteDuplicates()"
+              title="Elimina las rutas marcadas como posibles duplicadas por la importación automática"
+              style="display:none;border-color:rgba(214,69,65,.5);color:var(--gr-red)">⚠ Borrar duplicados (<span id="dedup-count">0</span>)</button>
       <button class="btn ghost sm" id="rescan-sel-btn" onclick="rescanSelected()" style="margin-left:auto">↻ Re-escanear (<span id="rescan-count">0</span>)</button>
       <button class="btn sm" id="delete-sel-btn" onclick="deleteSelected()" style="background:var(--gr-red)">Eliminar (<span id="sel-count">0</span>)</button>
       <button class="btn ghost sm" onclick="toggleEdit()">Cancelar</button>
@@ -964,7 +972,7 @@ let sortOrder='desc',viewMode='a';
 let editMode=false,selectedIds=new Set(),visibleRoutes=[];
 let monthDomMap=new Map();
 const PAGE_SIZE=30;
-const ROUTE_CACHE='sendero_routes_v2',FILTER_CACHE='sendero_filters_v1';
+const ROUTE_CACHE='sendero_routes_v3',FILTER_CACHE='sendero_filters_v1';
 
 function saveRouteCache(){try{sessionStorage.setItem(ROUTE_CACHE,JSON.stringify({ts:Date.now(),routes:allRoutes}));}catch(e){}}
 function loadRouteCache(){
@@ -1212,6 +1220,7 @@ function buildPills(){
   });
 }
 function clearFilters(){activeActs=new Set(ACTIVITIES.map(a=>a.id));dpFrom.set(null);dpTo.set(null);buildPills();renderList();}
+function _pinSvg(){return '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';}
 function makeCard(r){
   const act=activityOf(r.activity_type);const sel=selectedIds.has(r.id);
   const c=document.createElement("div");
@@ -1230,11 +1239,16 @@ function makeCard(r){
     ?`<div class="card-thumb"><img src="/api/routes/${r.id}/thumb" alt="" loading="lazy"></div>`:'';
   const dupBadge=r.dup_suspect_of
     ?`<div class="card-dup" title="Importada automáticamente, se parece a otra ruta. Ábrela para revisarla.">⚠ posible duplicada</div>`:'';
+  const distHtml=r.distance_m?`<span class="card-dist">${fmtKm(r.distance_m)} km</span>`:'';
+  const locHtml=r.locality
+    ?`<span class="card-loc" title="${esc(r.locality)}">${_pinSvg()}${esc(r.locality)}</span>`:'';
+  const metaHtml=(distHtml||locHtml)?`<div class="card-meta">${distHtml}${locHtml}</div>`:'';
   c.innerHTML=`${thumbHtml}
     ${editMode?`<div class="card-check">${sel?"✓":""}</div>`:(act?`<div class="card-act">${iconSvg(act,26)}</div>`:"")}
     <div class="card-body">
       <h3>${esc(r.name)}</h3>
       <div class="date">${fmtDate(r.started_at)}</div>
+      ${metaHtml}
       ${dupBadge}
     </div>`;
   return c;
@@ -1243,7 +1257,24 @@ function toggleEdit(){
   editMode=!editMode;selectedIds.clear();
   $("#edit-toggle-btn").classList.toggle("on",editMode);
   $("#edit-bar").classList.toggle("on",editMode);
+  updateDedupBtn();updateSelCount();renderList();
+}
+function updateDedupBtn(){
+  const n=allRoutes.filter(r=>r.dup_suspect_of).length;
+  const btn=$("#dedup-btn");if(!btn)return;
+  $("#dedup-count").textContent=n;
+  btn.style.display=(editMode&&n>0)?"":"none";
+}
+async function deleteDuplicates(){
+  const dups=allRoutes.filter(r=>r.dup_suspect_of);
+  if(!dups.length){toast("No hay rutas marcadas como posibles duplicadas");return;}
+  // Selecciona las duplicadas para que se resalten y el usuario vea exactamente
+  // qué se va a borrar; la confirmación con el recuento la hace deleteSelected().
+  selectedIds=new Set(dups.map(r=>r.id));
   updateSelCount();renderList();
+  // Deja pintar el resaltado antes de que el confirm bloquee el hilo.
+  await new Promise(r=>setTimeout(r,60));
+  deleteSelected();
 }
 function updateSelCount(){
   const n=selectedIds.size;

@@ -58,6 +58,10 @@ core/
   editing.py    — lógica pura del editor: extract_points(), apply_ops(), fit_to_gpx()
   summaries.py  — auto_summary() y auto_summary_planned()
   exif.py       — extrae lat/lon/taken_at de fotos subidas
+  geocode.py    — reverse_geocode(lat,lon) → 'Localidad, Región' o None. Best-effort
+                  (nunca rompe import/rescan, como thumbs/gps_issues). Endpoint
+                  compatible Nominatim configurable (GEOCODE_URL, Ajustes → Editor;
+                  vacío = desactivado). _format_locality() es pura (tests/test_geocode.py)
   immich.py     — cliente HTTP para Immich (immich_get, immich_search, min_dist_to_track)
   mifit/        — cliente Huami (Mi Fit/Zepp) vendorizado de roadmap/mifit exporter:
                   api.py (HTTP+modelos), points.py (decodifica el detalle crudo),
@@ -255,12 +259,20 @@ por su cuenta; el exacto se descarta (seguro), el semántico se conserva **marca
 lo revisa una persona (badge en `makeCard`, banner en `sendero.html` con "descartar
 aviso"/ir a la parecida → borrar o `POST /api/routes/merge`).
 
+**Borrado masivo de duplicadas (frontend):** el modo edición de "Mis Rutas" tiene un
+botón "⚠ Borrar duplicados (N)" (`deleteDuplicates()` en `app.html`, visible solo si hay
+`dup_suspect_of` en `allRoutes`). NO es un endpoint nuevo: selecciona las rutas marcadas
+y reusa `deleteSelected()` (mismo confirm con recuento + barra de progreso + `DELETE
+/api/routes/<id>`). Se borra la ruta MARCADA (la sospechosa), no la original a la que se
+parece.
+
 `content_hash`/`signature` se fijan **al importar y no se recalculan** al editar/
 reescanear: la pregunta que responden es "¿ya vi este archivo/entreno?", referida al
 original. Backfill único de las rutas previas en `init_db()` (firma desde la BD,
 hash leyendo el archivo; solo filas con `content_hash IS NULL`). Al añadir la columna
-`dup_suspect_of` al listado se creó `idx_routes_list_cov2` (regla 12) y se dejó de usar
-`idx_routes_list_cov`.
+`dup_suspect_of` al listado se creó `idx_routes_list_cov2` (regla 12); al añadir después
+`locality` se sustituyó por `idx_routes_list_cov3` (se descartan `idx_routes_list_cov` y
+`idx_routes_list_cov2`).
 
 ### Thumbnails de track (`core/thumbs.py`)
 `generate_thumb(coords, gpx_file)` genera un PNG:
@@ -418,6 +430,11 @@ zoom** en vez de cargar siempre las 500 líneas completas:
   segundo plano, sin loader que bloquee.
 
 ### Listado de rutas en `app.html` (sección Mis Rutas) — scroll infinito
+Cada tarjeta (`makeCard`) muestra nombre, fecha, **distancia** (`fmtKm(r.distance_m)`) y
+**localidad** (`r.locality`, con icono de pin `_pinSvg()`) en una línea `.card-meta`, más
+el badge de posible duplicada. `distance_m` y `locality` vienen ya en `/api/routes` (por
+eso al añadir `locality` se subió la clave de caché a `sendero_routes_v3`, regla 11).
+
 `loadList()` trae **todas** las rutas en una sola llamada a `/api/routes` (sin `limit`;
 es barata, no hace falta paginar la red). Lo que se pagina es el **renderizado de
 tarjetas**, no la petición:
@@ -574,7 +591,8 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat | REAL | bounding box del track completo; lo calcula `_route_bbox()` en `create_route`/`rescan_route`. Usado por `/api/routes/geojson?bbox=` (mapa del dashboard) para no cargar rutas fuera de la zona visible |
 | content_hash | TEXT | SHA-256 de los bytes crudos del archivo importado (`core/dedup.py`). Dedup DURA: reimportar los mismos bytes (aunque con otro nombre) → 409. Índice propio `idx_routes_content_hash`. Solo se fija al importar; NO se recalcula al editar/reescanear (la pregunta es "¿ya vi este archivo?", referida al original) |
 | signature | TEXT | Huella SEMÁNTICA del entreno (`route_signature`): `started_at` al minuto + primer/último punto a 4 decimales (~11 m). Sin timestamps cae a distancia(100 m)+nº puntos. Dedup BLANDA. Índice propio `idx_routes_signature`. Deliberadamente NO incluye distancia cuando hay hora (el hash por igualdad daría falsos negativos en las fronteras de cubo). Solo al importar, no se recalcula |
-| dup_suspect_of | INTEGER | id de la ruta a la que se parece, cuando la ingesta AUTOMÁTICA (`?auto=1`) la importó pese al aviso semántico. NULL = limpia. Se lee en el listado → va en `idx_routes_list_cov2` (regla 12). Se limpia al editar la ruta o con `PATCH {dup_suspect_of:null}` ("descartar aviso") |
+| dup_suspect_of | INTEGER | id de la ruta a la que se parece, cuando la ingesta AUTOMÁTICA (`?auto=1`) la importó pese al aviso semántico. NULL = limpia. Se lee en el listado → va en `idx_routes_list_cov3` (regla 12). Se limpia al editar la ruta o con `PATCH {dup_suspect_of:null}` ("descartar aviso") |
+| locality | TEXT | Sitio donde se hizo la ruta ("Localidad, Región"), por geocoding inverso del punto de inicio (`core/geocode.py`, `GEOCODE_URL` en Ajustes → Editor). Se rellena best-effort al importar (`create_route`) y al reescanear una ruta que aún no la tenga (`_reanalyse_and_update`, backfill vía "Re-escanear"); NULL = servicio desactivado o geocoding fallido. Se lee en el listado y se muestra en la tarjeta de "Mis Rutas" y en el detalle → va en `idx_routes_list_cov3` (regla 12) |
 
 ### Tabla `route_versions`
 Historial del editor de rutas (append-only, ver sección "Editor de rutas").
@@ -598,7 +616,10 @@ reconstruir la tabla, ver `init_db()`)
 Clave-valor: `IMMICH_URL`, `IMMICH_API_KEY`, `IMMICH_MARGIN_MIN`, `IMMICH_DIST_M`,
 `DEM_URL` (OpenTopoData para el editor; vacío = desactivado),
 `PLANNER_URL` (web externa que abre "Dibujar ruta nueva"; por defecto
-brouter-web), `GPX_TYPE_CUSTOM` (JSON), `GPS_THRESHOLDS_CUSTOM` (JSON),
+brouter-web), `GEOCODE_URL` (servicio Nominatim-compatible para la localidad de
+cada ruta; por defecto el Nominatim público de OSM, vacío = desactivado — a
+diferencia de PLANNER_URL, un valor vacío SÍ desactiva, no cae al default),
+`GPX_TYPE_CUSTOM` (JSON), `GPS_THRESHOLDS_CUSTOM` (JSON),
 `stats_cache` (JSON con estadísticas globales). Los ajustes de settings
 sobreescriben los de `.env`/variables de entorno.
 

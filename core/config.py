@@ -17,7 +17,7 @@ DB_PATH = DATA / "sendero.db"
 # /api/config. Al publicar, deben coincidir con este número: el tag de git
 # (vX.Y.Z), la etiqueta de la imagen Docker (xinux87/sendero:X.Y.Z) y el default
 # de SENDERO_VERSION en los compose (${SENDERO_VERSION:-X.Y.Z}) y en .env.example.
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.5.1"
 
 for d in (DATA, GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -38,6 +38,17 @@ DEM_URL = os.environ.get("DEM_URL", "").rstrip("/")
 # desde Ajustes → Editor.
 PLANNER_URL = os.environ.get("PLANNER_URL", "https://brouter.de/brouter-web").rstrip("/")
 
+# Geocodificación inversa (lat/lon → localidad) para etiquetar cada ruta con el
+# sitio donde se hizo. Endpoint compatible con Nominatim; por defecto el público
+# de OpenStreetMap. Vacío = desactivado (la ruta se queda sin localidad). Para
+# uso intensivo conviene apuntar a un Nominatim/Photon autoalojado (la política de
+# OSM desaconseja el geocoding masivo). Editable desde Ajustes → Editor.
+GEOCODE_URL = os.environ.get("GEOCODE_URL", "https://nominatim.openstreetmap.org").rstrip("/")
+try:
+    GEOCODE_TIMEOUT = int(os.environ.get("GEOCODE_TIMEOUT", "8"))
+except (ValueError, TypeError):
+    GEOCODE_TIMEOUT = 8
+
 # Auto-importación desde Mi Fit / Zepp (Huami). El servicio aparte mifit_sync.py
 # lee estas claves de settings y descarga los entrenamientos nuevos como GPX.
 # MIFIT_TOKEN es el apptoken de Huami (lo pega el usuario o lo escribe mifit-auth).
@@ -54,7 +65,7 @@ except (ValueError, TypeError):
     MIFIT_INTERVAL_MIN = 360
 
 _SETTINGS_KEYS = {"IMMICH_URL", "IMMICH_API_KEY", "IMMICH_MARGIN_MIN", "IMMICH_DIST_M",
-                  "DEM_URL", "PLANNER_URL",
+                  "DEM_URL", "PLANNER_URL", "GEOCODE_URL",
                   "MIFIT_ENABLED", "MIFIT_TOKEN", "MIFIT_ENDPOINT", "MIFIT_INTERVAL_MIN",
                   "MIFIT_SINCE_DATE"}
 _CUSTOM_GPX_TYPES: dict = {}
@@ -83,7 +94,7 @@ def gps_thresholds_for(activity_type):
 
 
 def refresh_config():
-    global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_DIST_M, IMMICH_ENABLED, _CUSTOM_GPX_TYPES, _GPS_THRESHOLDS_CUSTOM, DEM_URL, PLANNER_URL
+    global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_DIST_M, IMMICH_ENABLED, _CUSTOM_GPX_TYPES, _GPS_THRESHOLDS_CUSTOM, DEM_URL, PLANNER_URL, GEOCODE_URL
     global MIFIT_ENABLED, MIFIT_TOKEN, MIFIT_ENDPOINT, MIFIT_INTERVAL_MIN, MIFIT_SINCE_DATE
     try:
         con = sqlite3.connect(DB_PATH)
@@ -110,6 +121,11 @@ def refresh_config():
     DEM_URL = (rows.get("DEM_URL") or os.environ.get("DEM_URL", "")).rstrip("/")
     PLANNER_URL = (rows.get("PLANNER_URL") or os.environ.get("PLANNER_URL", "")
                    or "https://brouter.de/brouter-web").rstrip("/")
+    # OJO: aquí NO se aplica "or default" — un GEOCODE_URL vacío en ajustes debe
+    # desactivar el geocoding (a diferencia de PLANNER_URL, que siempre cae a
+    # brouter). Solo cae al default de entorno/OSM si la clave no existe en la BD.
+    GEOCODE_URL = (rows["GEOCODE_URL"] if "GEOCODE_URL" in rows
+                   else os.environ.get("GEOCODE_URL", "https://nominatim.openstreetmap.org")).rstrip("/")
     MIFIT_ENABLED = (rows.get("MIFIT_ENABLED") or os.environ.get("MIFIT_ENABLED", "0")) == "1"
     MIFIT_TOKEN = rows.get("MIFIT_TOKEN") or os.environ.get("MIFIT_TOKEN", "")
     MIFIT_ENDPOINT = (rows.get("MIFIT_ENDPOINT") or os.environ.get("MIFIT_ENDPOINT", "")

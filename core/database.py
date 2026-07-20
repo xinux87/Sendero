@@ -105,9 +105,14 @@ def init_db():
     #   dup_suspect_of — id de la ruta a la que se parece, si la ingesta AUTO la
     #                    importó pese al aviso semántico (NULL = limpia)
     # ALTER TABLE envuelto por si 2 workers corren init_db() a la vez (regla 13).
+    # locality: sitio donde se hizo la ruta (geocoding inverso del punto de
+    # inicio, core/geocode.py). Se rellena best-effort al importar y al reescanear
+    # una ruta que aún no la tenga; NULL = sin localidad (servicio desactivado o
+    # geocoding fallido). Se lee en el listado → va en idx_routes_list_cov3.
     for _col, _decl in (("content_hash", "TEXT"),
                         ("signature", "TEXT"),
-                        ("dup_suspect_of", "INTEGER")):
+                        ("dup_suspect_of", "INTEGER"),
+                        ("locality", "TEXT")):
         if _col not in route_cols:
             try:
                 con.execute(f"ALTER TABLE routes ADD COLUMN {_col} {_decl}")
@@ -150,12 +155,16 @@ def init_db():
     # Nombre nuevo (_cov2) porque el listado ahora lee también dup_suspect_of: un
     # CREATE ... IF NOT EXISTS sobre el nombre viejo no lo recrearía con la columna
     # añadida, así que se crea el nuevo y se descarta el anterior (regla 12).
-    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_list_cov2 ON routes(
+    # Nombre nuevo (_cov3) porque el listado ahora lee también locality: un
+    # CREATE ... IF NOT EXISTS sobre el nombre viejo no lo recrearía con la
+    # columna añadida (regla 12). Se crean el nuevo y se descartan los anteriores.
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_list_cov3 ON routes(
         COALESCE(started_at,created_at) DESC,
         id, name, distance_m, ascent_m, duration_s, moving_s, started_at,
-        activity_type, start_lat, start_lon, thumb_file, dup_suspect_of
+        activity_type, start_lat, start_lon, thumb_file, dup_suspect_of, locality
     )""")
     con.execute("DROP INDEX IF EXISTS idx_routes_list_cov")
+    con.execute("DROP INDEX IF EXISTS idx_routes_list_cov2")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_stats_cov ON routes(
         activity_type, distance_m, ascent_m, moving_s, avg_speed, started_at, name
     )""")

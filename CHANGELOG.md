@@ -5,6 +5,24 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.5.1] — 2026-07-20
+
+### Añadido
+- **Localidad de cada ruta**: se muestra el sitio donde se hizo («Localidad, Región»)
+  en la tarjeta de «Mis Rutas» y en el detalle. Se obtiene por geocoding inverso del
+  punto de inicio (`core/geocode.py`) contra un servicio compatible con Nominatim,
+  configurable en **Ajustes → Editor** (`GEOCODE_URL`; por defecto el Nominatim público
+  de OSM, vacío = desactivado). Best-effort: si falla, la ruta se queda sin localidad
+  sin romper la importación. Se rellena al importar y al **reescanear** una ruta que aún
+  no la tenga (el «Re-escanear» masivo sirve de backfill para las rutas antiguas).
+- **Distancia en el listado**: cada tarjeta de «Mis Rutas» muestra ya los km de la ruta.
+- **Borrado masivo de duplicadas**: botón **«⚠ Borrar duplicados (N)»** en el modo edición
+  de «Mis Rutas» (visible solo si hay rutas marcadas como posibles duplicadas). Selecciona
+  las marcadas y las borra con el mismo confirmación + progreso que el borrado normal.
+
+### Cambiado
+- Tarjeta de ruta más compacta: los nombres de una sola línea ya no reservan altura de dos.
+
 ## [0.5.0] — 2026-07-17
 
 ### Añadido

@@ -14,6 +14,7 @@ from core.thumbs import generate_thumb
 from core.editing import load_gpx, extract_points
 from core.gps_analysis import detect_gps_anomalies
 from core.dedup import content_hash, route_signature
+from core.geocode import reverse_geocode
 from werkzeug.utils import secure_filename
 
 routes_bp = Blueprint("routes", __name__)
@@ -274,7 +275,8 @@ def list_routes():
     offset = request.args.get("offset", 0, type=int)
     total  = con.execute("SELECT COUNT(*) FROM routes").fetchone()[0]
     q = ("SELECT id,name,distance_m,ascent_m,duration_s,moving_s,"
-         "started_at,activity_type,start_lat,start_lon,thumb_file,dup_suspect_of "
+         "started_at,activity_type,start_lat,start_lon,thumb_file,dup_suspect_of,"
+         "locality "
          "FROM routes ORDER BY COALESCE(started_at,created_at) DESC")
     if limit is not None:
         rows = con.execute(q + " LIMIT ? OFFSET ?", (limit, offset)).fetchall()
@@ -392,6 +394,12 @@ def create_route():
         con.execute("UPDATE routes SET thumb_file=? WHERE id=?", (thumb, rid))
     con.execute("UPDATE routes SET gps_issues=? WHERE id=?",
                 (_compute_gps_issues(raw, is_fit, activity_type), rid))
+    # Localidad (geocoding inverso del punto de inicio). Best-effort: si el
+    # servicio está desactivado o falla, reverse_geocode devuelve None y la ruta
+    # queda sin localidad, sin bloquear la importación.
+    loc = reverse_geocode(start_lat, start_lon)
+    if loc:
+        con.execute("UPDATE routes SET locality=? WHERE id=?", (loc, rid))
     _mark_stats_dirty(con)
     con.commit()
     resp = {"id": rid}
@@ -526,6 +534,14 @@ def _reanalyse_and_update(con, rid, row):
         con.execute("UPDATE routes SET thumb_file=? WHERE id=?", (thumb, rid))
     con.execute("UPDATE routes SET gps_issues=? WHERE id=?",
                 (_compute_gps_issues(raw, is_fit, activity_type), rid))
+    # Localidad: solo se rellena si aún NO la tiene (así el reescaneo masivo hace
+    # de backfill para las rutas antiguas, pero cada guardado del editor no lanza
+    # una petición de red innecesaria — el punto de inicio rara vez cambia).
+    cur_loc = con.execute("SELECT locality FROM routes WHERE id=?", (rid,)).fetchone()
+    if start_lat is not None and cur_loc and not cur_loc["locality"]:
+        loc = reverse_geocode(start_lat, start_lon)
+        if loc:
+            con.execute("UPDATE routes SET locality=? WHERE id=?", (loc, rid))
     _mark_stats_dirty(con)
     con.commit()
     return None

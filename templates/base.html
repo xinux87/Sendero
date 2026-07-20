@@ -338,12 +338,22 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
             "Recalcular elevación (DEM)" del editor de rutas y da elevación a las rutas
             dibujadas. Vacío = desactivado.</div>
         </div>
-        <div class="cfg-field" style="margin-bottom:24px">
+        <div class="cfg-field">
           <label class="cfg-label" for="cfg-planner-url">Planificador externo (Dibujar ruta nueva)</label>
           <input id="cfg-planner-url" class="cfg-input" type="url"
                  placeholder="https://brouter.de/brouter-web">
           <div class="cfg-hint">Web que se abre en una ventana nueva al pulsar "Dibujar ruta nueva".
             Dibujas la ruta ahí, la exportas como GPX y la importas a mano. Por defecto brouter-web.</div>
+        </div>
+        <div class="cfg-field" style="margin-bottom:24px">
+          <label class="cfg-label" for="cfg-geocode-url">Geocodificación inversa (localidad de la ruta)</label>
+          <input id="cfg-geocode-url" class="cfg-input" type="url"
+                 placeholder="https://nominatim.openstreetmap.org">
+          <div class="cfg-hint">Servicio compatible con Nominatim (<code>/reverse</code>) para etiquetar
+            cada ruta con la localidad donde se hizo. Por defecto el Nominatim público de OpenStreetMap.
+            La localidad se calcula al importar y al reescanear una ruta que aún no la tenga.
+            <strong style="color:var(--ink)">Vacío = desactivado</strong>. Para importaciones masivas
+            conviene un Nominatim/Photon autoalojado (la política de OSM desaconseja el geocoding masivo).</div>
         </div>
         <button class="btn" onclick="saveSettings()">Guardar ajustes</button>
       </div>
@@ -526,6 +536,7 @@ async function openSettings(){
     $('#cfg-immich-dist').value   = c.IMMICH_DIST_M     || '100';
     $('#cfg-dem-url').value       = c.DEM_URL           || '';
     $('#cfg-planner-url').value   = c.PLANNER_URL       || '';
+    $('#cfg-geocode-url').value   = c.GEOCODE_URL       || '';
   }catch(e){}
   try{
     const r=await fetch('/api/settings/gpx-types');
@@ -563,6 +574,7 @@ async function saveSettings(){
       IMMICH_DIST_M:     $('#cfg-immich-dist').value.trim(),
       DEM_URL:           $('#cfg-dem-url').value.trim(),
       PLANNER_URL:       $('#cfg-planner-url').value.trim(),
+      GEOCODE_URL:       $('#cfg-geocode-url').value.trim(),
     }),
   });
   if(res.ok){ closeSettings(); toast('Ajustes guardados'); }

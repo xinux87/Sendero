@@ -162,8 +162,11 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 <div class="detail-head">
   <div>
     <h1 id="d-name"></h1>
-    <div style="display:flex;align-items:center;gap:10px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div id="d-date" class="mono" style="color:var(--muted);font-size:13px"></div>
+      <div id="d-loc" style="display:none;color:var(--muted);font-size:13px;align-items:center;gap:3px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="opacity:.7"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+        <span id="d-loc-text"></span></div>
       <div id="d-device" class="mono" style="color:var(--muted);font-size:12px;opacity:.7"></div>
     </div>
   </div>
@@ -727,6 +730,9 @@ function renderAll(){
   $("#d-name").textContent=current.name;
   document.title=`${current.name} – Sendero`;
   $("#d-date").textContent=fmtDate(current.started_at);
+  const loc=$("#d-loc");
+  if(current.locality){$("#d-loc-text").textContent=current.locality;loc.style.display="inline-flex";}
+  else{loc.style.display="none";}
   const dev=$("#d-device");
   if(current.device){dev.textContent="· "+current.device;dev.style.display="";}
   else{dev.style.display="none";}
