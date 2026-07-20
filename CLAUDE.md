@@ -38,6 +38,23 @@ todos estos deben coincidir con ese número (si no, quedan desincronizados):
 4. Tag de git `vX.Y.Z` y la imagen Docker `xinux87/sendero:X.Y.Z` (+ `:X.Y` y `:latest`)
    publicada en Docker Hub.
 
+Los puntos 1-3 van en el commit de versión. Los puntos 4 (tag + imagen) son acciones
+hacia fuera: tras hacer el commit de versión, **devuelve siempre estos comandos** para
+que el usuario los ejecute (build+push de Docker y tag de git), sustituyendo `X.Y.Z`
+por la versión y `X.Y` por la minor:
+```bash
+# (si hace falta) docker login
+# 1) Build con los tres tags: patch, minor y latest
+docker build -t xinux87/sendero:X.Y.Z -t xinux87/sendero:X.Y -t xinux87/sendero:latest .
+# 2) Push de los tres tags
+docker push xinux87/sendero:X.Y.Z
+docker push xinux87/sendero:X.Y
+docker push xinux87/sendero:latest
+# 3) Tag de git y push
+git tag vX.Y.Z
+git push origin master --tags
+```
+
 Rutas host configurables por `.env` (`SENDERO_DATA_DIR` → `/data`, `SENDERO_WATCH_DIR`
 → `/watch`); los compose usan `${VAR:-default}`, así funcionan sin `.env`.
 
