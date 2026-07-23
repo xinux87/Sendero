@@ -114,6 +114,10 @@
 .maplibregl-popup-tip{border-top-color:var(--panel);border-bottom-color:var(--panel)}
 .maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
 .maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important}
+/* Los iconos (+/− zoom, pantalla completa) son SVG oscuros de serie: sobre el panel
+   oscuro no se ven. brightness(0) los aplana a negro e invert(1) los pone en blanco. */
+.maplibregl-ctrl button .maplibregl-ctrl-icon{filter:brightness(0) invert(1)}
+.maplibregl-ctrl button:disabled .maplibregl-ctrl-icon{filter:brightness(0) invert(1);opacity:.35}
 .ov-marker{cursor:pointer;filter:drop-shadow(0 2px 4px #00000080)}
 .sort-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .sort-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
@@ -1037,6 +1041,27 @@ function _ovSetData(){
   _ovApplyLineFilter();
   if(!_ovUserMoved){clearTimeout(_ovFitTimer);_ovFitTimer=setTimeout(fitMap,600);}
 }
+// Guarda/restaura el encuadre del mapa de Mis Rutas al saltar al detalle de una ruta.
+// La navegación a /Sendero/... recarga la página entera (el mapa se destruye), así que
+// el estado va por sessionStorage y se restaura al recrear el mapa (ver el 'load' de ovMap).
+const OV_CAM_KEY='sendero_ov_cam';
+function _ovSaveCamera(){
+  if(!ovMap)return;
+  try{
+    const c=ovMap.getCenter();
+    sessionStorage.setItem(OV_CAM_KEY,JSON.stringify(
+      {lng:c.lng,lat:c.lat,zoom:ovMap.getZoom(),bearing:ovMap.getBearing(),pitch:ovMap.getPitch()}));
+  }catch(_){}
+}
+function _ovReadSavedCamera(){
+  try{
+    const s=sessionStorage.getItem(OV_CAM_KEY);
+    if(!s)return null;
+    sessionStorage.removeItem(OV_CAM_KEY); // un solo uso
+    return JSON.parse(s);
+  }catch(_){return null;}
+}
+function _ovGoToRoute(name){_ovSaveCamera();location.href='/Sendero/'+encodeURIComponent(name);}
 function renderOverviewMap(routes,append=false){
   const pts=routes.filter(r=>r.start_lat!=null&&r.start_lon!=null);
   if(!append)ovRoutes=pts; else ovRoutes.push(...pts);
@@ -1053,6 +1078,7 @@ function renderOverviewMap(routes,append=false){
     });
     ovMap.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
     ovMap.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+    ovMap.addControl(new maplibregl.FullscreenControl(),'top-right');
     // selector de capas (top-left)
     (()=>{
       const sel=document.createElement('select');
@@ -1143,7 +1169,7 @@ function renderOverviewMap(routes,append=false){
       });
       ovMap.on('mouseleave','unclustered',()=>{ovMap.getCanvas().style.cursor='';pop.remove();});
       ovMap.on('click','unclustered',e=>{
-        location.href='/Sendero/'+encodeURIComponent(e.features[0].properties.name);
+        _ovGoToRoute(e.features[0].properties.name);
       });
       ovMap.on('click','clusters',async e=>{
         const src=ovMap.getSource('routes');
@@ -1159,7 +1185,7 @@ function renderOverviewMap(routes,append=false){
       ovMap.on('mouseenter','clusters',()=>{ovMap.getCanvas().style.cursor='pointer';});
       ovMap.on('mouseleave','clusters',()=>{ovMap.getCanvas().style.cursor='';});
       // Punto o línea de una ruta concreta → ficha de detalle
-      ovMap.on('click','ov-lines-hit',e=>{location.href='/Sendero/'+encodeURIComponent(e.features[0].properties.name);});
+      ovMap.on('click','ov-lines-hit',e=>{_ovGoToRoute(e.features[0].properties.name);});
       ovMap.on('mouseenter','ov-lines-hit',()=>{ovMap.getCanvas().style.cursor='pointer';});
       ovMap.on('mouseleave','ov-lines-hit',()=>{ovMap.getCanvas().style.cursor='';});
       // Detectar movimiento manual para no re-encuadrar una vez el usuario explora
@@ -1167,10 +1193,19 @@ function renderOverviewMap(routes,append=false){
       // Las líneas solo se piden para la zona visible (+ colchón de zoom/paneo),
       // igual que en el dashboard: nunca se descargan todas las rutas de golpe.
       ovMap.on('moveend',_ovScheduleLineLoad);
-      // Encuadre instantáneo: el centro/zoom del constructor son solo un placeholder,
-      // no tiene sentido animar el "vuelo" desde ahí la primera vez que se crea el mapa.
-      fitMap(true);
-      // Por si el fitBounds/easeTo inicial no llega a disparar 'moveend'.
+      // Al volver del detalle de una ruta se restaura el encuadre que había antes de
+      // saltar (_ovGoToRoute lo guarda en sessionStorage). Es de un solo uso: se consume
+      // y se borra, así que una visita "limpia" a Mis Rutas vuelve a encuadrar las rutas.
+      const cam=_ovReadSavedCamera();
+      if(cam){
+        ovMap.jumpTo({center:[cam.lng,cam.lat],zoom:cam.zoom,bearing:cam.bearing,pitch:cam.pitch});
+        _ovUserMoved=true; // no re-encuadrar sobre la posición restaurada
+      }else{
+        // Encuadre instantáneo: el centro/zoom del constructor son solo un placeholder,
+        // no tiene sentido animar el "vuelo" desde ahí la primera vez que se crea el mapa.
+        fitMap(true);
+      }
+      // Por si el fitBounds/easeTo/jumpTo inicial no llega a disparar 'moveend'.
       _ovLoadLinesForView();
     });
     return;
@@ -1234,7 +1269,7 @@ function makeCard(r){
       c.querySelector(".card-check").textContent=selectedIds.has(r.id)?"✓":"";
       updateSelCount();
     };
-  }else{c.onclick=()=>location.href='/Sendero/'+encodeURIComponent(r.name);}
+  }else{c.onclick=()=>_ovGoToRoute(r.name);}
   const thumbHtml=!editMode&&r.thumb_file
     ?`<div class="card-thumb"><img src="/api/routes/${r.id}/thumb" alt="" loading="lazy"></div>`:'';
   const dupBadge=r.dup_suspect_of
