@@ -6,7 +6,7 @@ import datetime as dt
 from flask import Blueprint, abort, request, jsonify, render_template, Response, send_file
 
 import core.config as cfg
-from core.database import db, new_token, rid_from_public
+from core.database import db, new_token, rid_from_public, entity_rev
 from core.parsers import (
     analyse_gpx, analyse_fit, _detect_activity, _gpx_type_lookup, _FIT_SPORT_MAP
 )
@@ -15,10 +15,20 @@ from core.thumbs import generate_thumb
 from core.editing import load_gpx, extract_points
 from core.gps_analysis import detect_gps_anomalies
 from core.dedup import content_hash, route_signature
+from core.sync import decimate, resample
 from core.geocode import reverse_geocode
 from werkzeug.utils import secure_filename
 
 routes_bp = Blueprint("routes", __name__)
+
+# Columnas del LISTADO de rutas. Única fuente de verdad: las leen list_routes() y
+# también api/sync.py para los 'upserted' del delta — si las dos listas se
+# separaran, el cliente recibiría tarjetas con campos distintos según si la ruta
+# llegó por la carga inicial o por una sincronización. Cubiertas por
+# idx_routes_list_cov4 (regla 12): al añadir una columna aquí, añádela al índice.
+ROUTE_LIST_COLS = ("id,public_id,name,distance_m,ascent_m,duration_s,moving_s,"
+                   "started_at,activity_type,start_lat,start_lon,thumb_file,"
+                   "dup_suspect_of,locality")
 
 
 def _truthy(v):
@@ -278,9 +288,7 @@ def list_routes():
     limit  = request.args.get("limit",  type=int)
     offset = request.args.get("offset", 0, type=int)
     total  = con.execute("SELECT COUNT(*) FROM routes").fetchone()[0]
-    q = ("SELECT id,public_id,name,distance_m,ascent_m,duration_s,moving_s,"
-         "started_at,activity_type,start_lat,start_lon,thumb_file,dup_suspect_of,"
-         "locality "
+    q = (f"SELECT {ROUTE_LIST_COLS} "
          "FROM routes ORDER BY COALESCE(started_at,created_at) DESC")
     if limit is not None:
         rows = con.execute(q + " LIMIT ? OFFSET ?", (limit, offset)).fetchall()
@@ -422,7 +430,36 @@ def create_route():
 
 @routes_bp.route("/api/routes/<rid>", methods=["GET"])
 def get_route(rid):
-    return jsonify(_build_route_dict(rid_from_public(rid)))
+    """Dict completo de la ruta, con ETag = rev de la sincronización.
+
+    El ETag hace que el cliente pueda guardar el detalle en su almacén local y
+    revalidarlo con una petición vacía: mientras la ruta no cambie (y cualquier
+    cambio, fotos incluidas, sube su rev vía triggers) la respuesta es 304 y el
+    detalle se pinta desde IndexedDB sin tocar la red.
+
+    ?lite=1 devuelve la variante ligera: track decimado y series remuestreadas a
+    ~500 puntos (~20-30 KB en vez de ~350 KB). Suficiente para mapa, perfil y
+    stats; el editor necesita el detalle completo porque opera por índice de punto.
+    """
+    iid = rid_from_public(rid)
+    con = db()
+    rev = entity_rev(con, "route", iid)
+    lite = _truthy(request.args.get("lite"))
+    etag = f"{rev}{'-lite' if lite else ''}"
+    if rev and etag in (request.headers.get("If-None-Match") or ""):
+        return "", 304
+    d = _build_route_dict(iid)
+    d["rev"] = rev
+    if lite:
+        d["lite"] = True
+        d["geojson"] = decimate(d["geojson"])
+        for key in ("elevation", "heart_rate", "speed"):
+            d[key] = resample(d[key])
+    resp = jsonify(d)
+    if rev:
+        resp.set_etag(etag)
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @routes_bp.route("/api/routes/<rid>", methods=["DELETE"])

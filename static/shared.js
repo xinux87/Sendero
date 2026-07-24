@@ -87,14 +87,103 @@ function _loadActImages(map){
   })));
 }
 
-/* ── capas base de mapa (MapLibre) ── */
+/* ── capas base de mapa (MapLibre) ──
+   Las 4 capas raster son de terceros y SOLO funcionan con internet. La 5ª capa,
+   OFFLINE_LAYER, la sirve Sendero desde un archivo PMTiles propio en /data
+   (Ajustes → Mapas) y es la única que funciona sin conexión: cachear en masa
+   teselas de OSM/OpenTopoMap/Esri va contra sus políticas de uso. */
 const BASEMAP_TILES={
   'Topográfico':['https://a.tile.opentopomap.org/{z}/{x}/{y}.png','https://b.tile.opentopomap.org/{z}/{x}/{y}.png','https://c.tile.opentopomap.org/{z}/{x}/{y}.png'],
   'Callejero':  ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png','https://b.tile.openstreetmap.org/{z}/{x}/{y}.png','https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'],
   'Satélite':   ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
   'Oscuro':     ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png']
 };
+const OFFLINE_LAYER='Offline (local)';
+/* Atribución por capa. Va en la fuente para que el AttributionControl de cada
+   mapa la muestre: son teselas de terceros y su licencia obliga a citarlas
+   (antes solo la ponían los mapas de app.html, a mano). */
+const BASEMAP_ATTRIB={
+  'Topográfico':'© <a href="https://opentopomap.org" target="_blank" rel="noopener">OpenTopoMap</a> · OSM',
+  'Callejero':  '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+  'Satélite':   '© Esri · OSM',
+  'Oscuro':     '© CartoDB · OSM'
+};
+
+/* Config de mapas inyectada por el servidor en <body data-map-cfg> (la genera
+   map_cfg() en api/maps.py: offline_url, offline_maxzoom, offline_attribution,
+   default_layer). Va en el HTML y no por fetch para que el primer mapa se pinte
+   sin esperar una petición, y para que funcione sin conexión. Sin ella, la capa
+   offline simplemente no aparece en el selector. */
+const MAP_CFG=(()=>{
+  try{ return JSON.parse(document.body.dataset.mapCfg||'{}'); }catch(e){ return {}; }
+})();
+function offlineMapUrl(){ return MAP_CFG.offline_url||''; }
+function hasOfflineMap(){ return !!offlineMapUrl(); }
+
+/* Registra el protocolo pmtiles:// en MapLibre una sola vez (idempotente: lo
+   llaman todas las vistas). Si pmtiles.js no cargó, no rompe nada. */
+let _pmtilesReady=false;
+function ensurePmtiles(){
+  if(_pmtilesReady) return true;
+  if(typeof pmtiles==='undefined'||typeof maplibregl==='undefined') return false;
+  try{
+    maplibregl.addProtocol('pmtiles',new pmtiles.Protocol().tile);
+    _pmtilesReady=true;
+  }catch(e){ /* ya registrado */ _pmtilesReady=true; }
+  return _pmtilesReady;
+}
+
+/* Nombres de capa disponibles, en el orden del selector. */
+function basemapNames(){
+  const names=Object.keys(BASEMAP_TILES);
+  if(hasOfflineMap()) names.push(OFFLINE_LAYER);
+  return names;
+}
+
+/* Capa por defecto: la de Ajustes → Mapas si es válida; si no, `fallback` (cada
+   vista tiene el suyo: el dashboard siempre ha sido oscuro y el mapa de Mis
+   Rutas satélite, así que no comparten default). */
+function defaultBasemap(fallback){
+  const d=MAP_CFG.default_layer;
+  if(d&&basemapNames().includes(d))return d;
+  return (fallback&&basemapNames().includes(fallback))?fallback:'Topográfico';
+}
+
+/* ¿Esta capa necesita internet? (para avisar en la UI cuando no hay conexión) */
+function basemapNeedsNet(capa){ return capa!==OFFLINE_LAYER; }
+
 function buildStyle(capa){
-  return {version:8,sources:{basemap:{type:'raster',tiles:BASEMAP_TILES[capa]||BASEMAP_TILES['Callejero'],tileSize:256,maxzoom:19}},
+  if(capa===OFFLINE_LAYER&&hasOfflineMap()&&ensurePmtiles()){
+    // Teselas raster propias en PMTiles. Un basemap vectorial necesitaría además
+    // glyphs y sprite locales; con raster no hace falta ninguno de los dos, así
+    // que funciona sin conexión sin más piezas (roadmap §6.1).
+    return {version:8,
+      sources:{basemap:{type:'raster',tiles:['pmtiles://'+offlineMapUrl()+'/{z}/{x}/{y}'],
+                        tileSize:256,maxzoom:MAP_CFG.offline_maxzoom||14,
+                        attribution:MAP_CFG.offline_attribution||'Mapa local'}},
+      layers:[{id:'basemap',type:'raster',source:'basemap'}]};
+  }
+  return {version:8,sources:{basemap:{type:'raster',tiles:BASEMAP_TILES[capa]||BASEMAP_TILES['Callejero'],
+                                     tileSize:256,maxzoom:19,
+                                     attribution:BASEMAP_ATTRIB[capa]||BASEMAP_ATTRIB['Callejero']}},
           layers:[{id:'basemap',type:'raster',source:'basemap'}]};
+}
+
+/* Cambia la capa base de un mapa ya creado.
+   OJO: setTiles() solo vale entre capas del mismo tipo de fuente. Al entrar o
+   salir de la capa offline (pmtiles:// con otro maxzoom) hay que reconstruir el
+   estilo, y eso borra las capas/fuentes de datos del mapa — por eso se avisa por
+   el evento 'sendero:basemap' para que cada vista vuelva a pintar lo suyo. */
+function applyBasemap(map,capa){
+  const st=buildStyle(capa);
+  const src=map.getSource('basemap');
+  const wasOffline=!!(src&&(src.tiles||[]).some(t=>String(t).startsWith('pmtiles://')));
+  const willOffline=capa===OFFLINE_LAYER;
+  if(src&&wasOffline===willOffline){
+    src.setTiles(st.sources.basemap.tiles);
+    return false;               // no hubo recarga de estilo
+  }
+  map.setStyle(st);
+  map.once('styledata',()=>map.fire('sendero:basemap',{capa}));
+  return true;                  // el llamador debe repintar sus capas
 }

@@ -1,12 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Sendero – Plan{% endblock %}
 
-{% block head_libs %}
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-{% endblock %}
-
 {% block styles %}
 .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
 #map{height:380px;border-radius:11px;border:1px solid var(--line);z-index:0}
@@ -24,15 +18,14 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
   border:1px solid var(--line);border-radius:8px;padding:12px;font-family:inherit;font-size:14px;resize:vertical}
 .auto{color:var(--muted);font-style:italic;margin-bottom:12px;padding:10px 12px;
   background:var(--bg);border-radius:8px;border-left:3px solid var(--pr-yellow)}
-/* Leaflet */
-.leaflet-popup-content-wrapper{background:var(--panel);color:var(--ink)}
-.leaflet-popup-tip{background:var(--panel)}
-.leaflet-control-layers{background:var(--panel)!important;border-color:var(--line)!important;color:var(--ink)!important}
-.leaflet-control-layers-expanded{padding:8px 14px 10px}
-.leaflet-control-layers label{color:var(--ink)!important;font-size:13px}
-.leaflet-control-layers-separator{border-top-color:var(--line)!important}
-.fit-btn{width:30px!important;height:30px!important;font-size:18px;line-height:28px;
-  background:var(--panel)!important;color:var(--ink)!important;border:none!important;cursor:pointer}
+/* MapLibre (antes Leaflet: unificado para poder vendorizar una sola librería
+   de mapas y compartir buildStyle()/capa offline con el resto de las vistas) */
+.maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;
+  padding:8px 12px;font-family:inherit;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.maplibregl-popup-tip{border-top-color:var(--panel);border-bottom-color:var(--panel)}
+.maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
+.maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important}
+.maplibregl-ctrl button .maplibregl-ctrl-icon{filter:brightness(0) invert(1)}
 #d-name{font-size:34px}
 /* contenedor de la gráfica con altura explícita (el chart usa
    maintainAspectRatio:false; sin esto en móvil quedaría enana) */
@@ -135,51 +128,93 @@ textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
 {% endblock %}
 
 {% block scripts %}
-let map, trackLayer, elevChart, current = {{ plan_json | safe }};
+let map, elevChart, current = {{ plan_json | safe }};
 
 /* ACTIVITIES, activityOf e iconSvg viven en static/shared.js */
 
 /* ── mapa ────────────────────────────────────────────────────────────────── */
-function initMap() {
-  map = L.map('map', {zoomControl:false});
-  L.control.zoom({position:'bottomright'}).addTo(map);
-
-  const layers = {
-    'Topográfico': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17}),
-    'Callejero':   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}),
-    'Satélite':    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}),
-    'Oscuro':      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}),
-  };
-  layers['Topográfico'].addTo(map);
-  L.control.layers(layers, {}, {position:'topright', collapsed:true}).addTo(map);
-
-  const FitBtn = L.Control.extend({
-    onAdd() {
-      const btn = L.DomUtil.create('button','fit-btn leaflet-bar');
-      btn.title = 'Centrar'; btn.innerHTML = '⊡';
-      btn.onclick = () => map.fitBounds(trackLayer.getBounds());
-      return btn;
-    }
+/* Bounding box del track, para encuadrar sin depender de trackLayer (MapLibre
+   no tiene el equivalente a getBounds() de una polyline). */
+function trackBounds() {
+  const c = (current && current.geojson) || [];
+  if (!c.length) return null;
+  let minLon=Infinity,maxLon=-Infinity,minLat=Infinity,maxLat=-Infinity;
+  c.forEach(([lo,la])=>{
+    if(lo<minLon)minLon=lo; if(lo>maxLon)maxLon=lo;
+    if(la<minLat)minLat=la; if(la>maxLat)maxLat=la;
   });
-  new FitBtn({position:'topleft'}).addTo(map);
+  return [[minLon,minLat],[maxLon,maxLat]];
 }
 
-function drawTrack() {
-  if (!current || !current.geojson.length) return;
-  const latlngs = current.geojson.map(([lon,lat]) => [lat,lon]);
-  trackLayer = L.polyline(latlngs, {color:'#e8c44a', weight:3, opacity:.9}).addTo(map);
+function fitRoute(instant) {
+  const b = trackBounds();
+  if (b && map) map.fitBounds(b, {padding:40, duration: instant ? 0 : 600});
+}
 
-  // Marcador de inicio y fin
-  const startIcon = L.divIcon({
-    html:`<div style="width:12px;height:12px;border-radius:50%;background:#5ab87a;border:2.5px solid #101a14;box-shadow:0 1px 4px #00000060"></div>`,
-    className:'', iconSize:[12,12], iconAnchor:[6,6]});
-  const endIcon = L.divIcon({
-    html:`<div style="width:12px;height:12px;border-radius:50%;background:#d24a3a;border:2.5px solid #101a14;box-shadow:0 1px 4px #00000060"></div>`,
-    className:'', iconSize:[12,12], iconAnchor:[6,6]});
-  L.marker(latlngs[0], {icon:startIcon}).addTo(map).bindTooltip('Inicio');
-  L.marker(latlngs[latlngs.length-1], {icon:endIcon}).addTo(map).bindTooltip('Final');
+function initMap() {
+  const b = trackBounds();
+  const cx = b ? (b[0][0]+b[1][0])/2 : -1.6;
+  const cy = b ? (b[0][1]+b[1][1])/2 : 42.5;
+  map = new maplibregl.Map({
+    container:'map', style:buildStyle('Topográfico'),
+    center:[cx,cy], zoom: b ? 12 : 6, attributionControl:false
+  });
+  map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
+  map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
+  // botón centrar (mismo idioma que sendero.html / app.html)
+  map.addControl({
+    onAdd(){
+      const c=document.createElement('div');c.className='maplibregl-ctrl maplibregl-ctrl-group';
+      const btn=document.createElement('button');btn.innerHTML='⤢';btn.title='Centrar en la ruta';
+      btn.style.cssText='font-size:16px;width:29px;height:29px;cursor:pointer;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center';
+      btn.onclick=()=>fitRoute();c.appendChild(btn);return c;
+    },onRemove(){}
+  },'top-left');
+  // selector de capas base
+  map.addControl({
+    onAdd(){
+      const sel=document.createElement('select');
+      sel.style.cssText='background:var(--panel,#fff);color:var(--ink,#101a14);border:none;font-size:12px;cursor:pointer;padding:5px 7px;font-family:inherit;width:100%';
+      basemapNames().forEach(c=>{
+        const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);
+      });
+      sel.value='Topográfico';
+      sel.onchange=()=>applyBasemap(map,sel.value);
+      const wrap=document.createElement('div');
+      wrap.className='maplibregl-ctrl maplibregl-ctrl-group';
+      wrap.appendChild(sel);
+      return wrap;
+    },onRemove(){}
+  },'top-left');
 
-  map.fitBounds(trackLayer.getBounds().pad(0.1));
+  map.on('load',()=>{
+    const coords=(current&&current.geojson)||[];
+    if(!coords.length)return;
+    map.addSource('ruta',{type:'geojson',
+      data:{type:'Feature',geometry:{type:'LineString',coordinates:coords}}});
+    map.addLayer({id:'ruta-linea',type:'line',source:'ruta',
+      layout:{'line-join':'round','line-cap':'round'},
+      paint:{'line-color':'#e8c44a','line-width':3,'line-opacity':.9}});
+    // inicio (verde) y fin (rojo) como capas circle, no como marcadores DOM
+    map.addSource('ruta-extremos',{type:'geojson',data:{type:'FeatureCollection',features:[
+      {type:'Feature',properties:{tipo:'Inicio'},geometry:{type:'Point',coordinates:coords[0]}},
+      {type:'Feature',properties:{tipo:'Final'}, geometry:{type:'Point',coordinates:coords[coords.length-1]}},
+    ]}});
+    map.addLayer({id:'ruta-extremos',type:'circle',source:'ruta-extremos',
+      paint:{'circle-radius':6,
+        'circle-color':['match',['get','tipo'],'Inicio','#5ab87a','#d24a3a'],
+        'circle-stroke-width':2.5,'circle-stroke-color':'#101a14'}});
+    const pop=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:10});
+    map.on('mouseenter','ruta-extremos',e=>{
+      map.getCanvas().style.cursor='pointer';
+      pop.setLngLat(e.features[0].geometry.coordinates)
+         .setText(e.features[0].properties.tipo).addTo(map);
+    });
+    map.on('mouseleave','ruta-extremos',()=>{
+      map.getCanvas().style.cursor='';pop.remove();
+    });
+    fitRoute(true);
+  });
 }
 
 /* ── gráfico de elevación ────────────────────────────────────────────────── */
@@ -294,7 +329,7 @@ function closeActivityPicker() { $('#activity-modal').classList.add('hidden'); }
 
 async function pickActivity(actId) {
   closeActivityPicker();
-  await fetch(`/api/planned/${current.id}`, {
+  await fetch(`/api/planned/${current.public_id}`, {
     method:'PATCH',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({activity_type:actId}),
@@ -307,7 +342,7 @@ async function pickActivity(actId) {
 /* ── notas ───────────────────────────────────────────────────────────────── */
 async function saveNotes() {
   const notes = $('#notes').value;
-  await fetch(`/api/planned/${current.id}`, {
+  await fetch(`/api/planned/${current.public_id}`, {
     method:'PATCH',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({notes}),
@@ -318,13 +353,13 @@ async function saveNotes() {
 
 /* ── acciones ────────────────────────────────────────────────────────────── */
 function downloadGpx() {
-  window.location = `/api/planned/${current.id}/gpx`;
+  window.location = `/api/planned/${current.public_id}/gpx`;
 }
 
 async function renamePlan() {
   const name = prompt('Nuevo nombre:', current.name);
   if (!name || name === current.name) return;
-  const res = await fetch(`/api/planned/${current.id}`, {
+  const res = await fetch(`/api/planned/${current.public_id}`, {
     method:'PATCH',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({name}),
@@ -333,13 +368,13 @@ async function renamePlan() {
   current.name = name;
   $('#d-name').textContent = name;
   document.title = `Sendero – ${name}`;
-  history.replaceState(null, '', '/Plan/' + encodeURIComponent(name));
+  /* la URL canónica es el public_id: renombrar ya no cambia la URL */
   toast('Ruta renombrada');
 }
 
 async function removePlan() {
   if (!confirm(`¿Eliminar "${current.name}"?`)) return;
-  const res = await fetch(`/api/planned/${current.id}`, {method:'DELETE'});
+  const res = await fetch(`/api/planned/${current.public_id}`, {method:'DELETE'});
   if (res.ok) location.href = '/planificacion';
   else toast('Error al eliminar');
 }
@@ -354,10 +389,9 @@ $('#activity-modal').addEventListener('click', e => {
 });
 
 if (current) {
-  initMap();
+  initMap();          // el track se dibuja en map.on('load')
   renderHead();
   renderStats();
-  drawTrack();
   drawElevation();
   renderActivityBadge();
   $('#auto').textContent   = current.auto_summary || '';

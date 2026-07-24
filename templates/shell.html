@@ -1,0 +1,52 @@
+{# Shell de la SPA (roadmap/spa-offline-sync.md §3).
+
+   Un único documento, cero datos dentro del HTML: cada sección vive en
+   templates/sec/<sec>.html (markup), static/js/sec/<sec>.js (lógica) y
+   static/css/<sec>.css (estilos), y los datos los pide el módulo al Store, que
+   decide red o copia local. Así el Service Worker puede cachear el documento y
+   el código por separado de los datos (§5), que es lo que hace posible arrancar
+   sin servidor.
+
+   Secciones ya alojadas aquí: plan.
+   Pendientes de migrar (siguen sirviéndose como documento propio, con recarga
+   completa de página): dashboard, rutas, planes → templates/app.html;
+   detalle → templates/sendero.html; editor → templates/editor.html.
+   Mientras alguna falte, el router cae a location.href al navegar hacia ella
+   (ver `hosted()` en static/js/core/router.js), así que la navegación funciona
+   igual durante toda la migración.
+
+   `bootstrap_json` es opcional: el detalle que el servidor ya tenía a mano en
+   la primera carga, para no pagar un fetch extra por encima del documento
+   (§3.4). El Store lo consume y a partir de ahí trabaja con su copia local. #}
+{% extends "base.html" %}
+{% block title %}Sendero{% endblock %}
+
+{% block header_nav %}
+<nav class="header-nav">
+  <a href="/dashboard"     class="nav-link" id="nav-dashboard">Dashboard</a>
+  <a href="/rutas"         class="nav-link" id="nav-rutas">Mis rutas</a>
+  <a href="/planificacion" class="nav-link" id="nav-planes">Mis Planes</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+{% include "sec/plan.html" %}
+{% endblock %}
+
+{% block body_scripts %}
+<script src="/static/js/core/loader.js"></script>
+<script src="/static/js/core/store.js"></script>
+<script src="/static/js/core/router.js"></script>
+{% if bootstrap_json %}
+<script type="application/json" id="bootstrap">{{ bootstrap_json | safe }}</script>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+/* Arranque del router: monta la sección que corresponde a location.pathname. */
+Router.start({bootstrap: (() => {
+  const el = document.getElementById('bootstrap');
+  if (!el) return null;
+  try { return JSON.parse(el.textContent); } catch (e) { return null; }
+})()});
+{% endblock %}

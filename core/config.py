@@ -8,6 +8,9 @@ DATA = Path(os.environ.get("SENDERO_DATA", BASE / "data"))
 GPX_DIR = DATA / "gpx"
 PHOTO_DIR = DATA / "photos"
 THUMB_DIR = DATA / "thumbs"
+# Mapas offline: archivos .pmtiles servidos por /tiles/<nombre> con soporte de
+# Range. Es la única capa base que funciona sin internet (ver static/shared.js).
+TILES_DIR = DATA / "tiles"
 # Versiones del editor de rutas: data/gpx/versions/<route_id>/v<N>.<ext>
 # El archivo activo en data/gpx/ es SIEMPRE idéntico a la versión más alta.
 VERSIONS_DIR = GPX_DIR / "versions"
@@ -17,9 +20,9 @@ DB_PATH = DATA / "sendero.db"
 # /api/config. Al publicar, deben coincidir con este número: el tag de git
 # (vX.Y.Z), la etiqueta de la imagen Docker (xinux87/sendero:X.Y.Z) y el default
 # de SENDERO_VERSION en los compose (${SENDERO_VERSION:-X.Y.Z}) y en .env.example.
-APP_VERSION = "0.5.2"
+APP_VERSION = "0.6.0"
 
-for d in (DATA, GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR):
+for d in (DATA, GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR, TILES_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 IMMICH_URL = os.environ.get("IMMICH_URL", "").rstrip("/")
@@ -37,6 +40,19 @@ DEM_URL = os.environ.get("DEM_URL", "").rstrip("/")
 # brouter-web (permite exportar GPX, que luego se importa a mano). Editable
 # desde Ajustes → Editor.
 PLANNER_URL = os.environ.get("PLANNER_URL", "https://brouter.de/brouter-web").rstrip("/")
+
+# Mapa base offline. Nombre de un archivo .pmtiles dentro de data/tiles/ (p.ej.
+# "espana.pmtiles"), servido por /tiles/<nombre>. Vacío = la capa "Offline (local)"
+# no aparece en el selector de capas. MAP_DEFAULT_LAYER es la capa base con la que
+# arrancan los mapas ('Topográfico', 'Callejero', 'Satélite', 'Oscuro' u
+# 'Offline (local)'). Editables desde Ajustes → Mapas.
+MAP_OFFLINE_FILE = os.environ.get("MAP_OFFLINE_FILE", "")
+MAP_DEFAULT_LAYER = os.environ.get("MAP_DEFAULT_LAYER", "")
+MAP_OFFLINE_ATTRIBUTION = os.environ.get("MAP_OFFLINE_ATTRIBUTION", "")
+try:
+    MAP_OFFLINE_MAXZOOM = int(os.environ.get("MAP_OFFLINE_MAXZOOM", "14"))
+except (ValueError, TypeError):
+    MAP_OFFLINE_MAXZOOM = 14
 
 # Geocodificación inversa (lat/lon → localidad) para etiquetar cada ruta con el
 # sitio donde se hizo. Endpoint compatible con Nominatim; por defecto el público
@@ -66,6 +82,8 @@ except (ValueError, TypeError):
 
 _SETTINGS_KEYS = {"IMMICH_URL", "IMMICH_API_KEY", "IMMICH_MARGIN_MIN", "IMMICH_DIST_M",
                   "DEM_URL", "PLANNER_URL", "GEOCODE_URL",
+                  "MAP_OFFLINE_FILE", "MAP_DEFAULT_LAYER", "MAP_OFFLINE_ATTRIBUTION",
+                  "MAP_OFFLINE_MAXZOOM",
                   "MIFIT_ENABLED", "MIFIT_TOKEN", "MIFIT_ENDPOINT", "MIFIT_INTERVAL_MIN",
                   "MIFIT_SINCE_DATE"}
 _CUSTOM_GPX_TYPES: dict = {}
@@ -96,6 +114,7 @@ def gps_thresholds_for(activity_type):
 def refresh_config():
     global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_DIST_M, IMMICH_ENABLED, _CUSTOM_GPX_TYPES, _GPS_THRESHOLDS_CUSTOM, DEM_URL, PLANNER_URL, GEOCODE_URL
     global MIFIT_ENABLED, MIFIT_TOKEN, MIFIT_ENDPOINT, MIFIT_INTERVAL_MIN, MIFIT_SINCE_DATE
+    global MAP_OFFLINE_FILE, MAP_DEFAULT_LAYER, MAP_OFFLINE_ATTRIBUTION, MAP_OFFLINE_MAXZOOM
     try:
         con = sqlite3.connect(DB_PATH)
         con.execute("PRAGMA busy_timeout=20000")
@@ -126,6 +145,17 @@ def refresh_config():
     # brouter). Solo cae al default de entorno/OSM si la clave no existe en la BD.
     GEOCODE_URL = (rows["GEOCODE_URL"] if "GEOCODE_URL" in rows
                    else os.environ.get("GEOCODE_URL", "https://nominatim.openstreetmap.org")).rstrip("/")
+    MAP_OFFLINE_FILE = (rows.get("MAP_OFFLINE_FILE")
+                        or os.environ.get("MAP_OFFLINE_FILE", "")).strip()
+    MAP_DEFAULT_LAYER = (rows.get("MAP_DEFAULT_LAYER")
+                         or os.environ.get("MAP_DEFAULT_LAYER", "")).strip()
+    MAP_OFFLINE_ATTRIBUTION = (rows.get("MAP_OFFLINE_ATTRIBUTION")
+                               or os.environ.get("MAP_OFFLINE_ATTRIBUTION", "")).strip()
+    try:
+        MAP_OFFLINE_MAXZOOM = int(rows.get("MAP_OFFLINE_MAXZOOM")
+                                  or os.environ.get("MAP_OFFLINE_MAXZOOM", "14"))
+    except (ValueError, TypeError):
+        MAP_OFFLINE_MAXZOOM = 14
     MIFIT_ENABLED = (rows.get("MIFIT_ENABLED") or os.environ.get("MIFIT_ENABLED", "0")) == "1"
     MIFIT_TOKEN = rows.get("MIFIT_TOKEN") or os.environ.get("MIFIT_TOKEN", "")
     MIFIT_ENDPOINT = (rows.get("MIFIT_ENDPOINT") or os.environ.get("MIFIT_ENDPOINT", "")

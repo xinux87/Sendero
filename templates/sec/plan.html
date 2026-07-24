@@ -1,0 +1,60 @@
+{# Detalle de ruta planificada (sección de la SPA). Markup extraído de
+   templates/plan_detalle.html; el JS vive en static/js/sec/plan.js y el CSS en
+   static/css/plan.css. Los ids llevan prefijo pl- (ver plan.css). #}
+<section id="sec-plan" class="sec hidden">
+<div class="bar">
+  <button class="btn ghost sm" data-nav="/planificacion">← Planificación</button>
+</div>
+
+<div class="detail-head">
+  <div>
+    <h1 id="pl-d-name"></h1>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+      <div id="pl-d-date" class="mono" style="color:var(--muted);font-size:13px"></div>
+      <div id="pl-d-source"></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+    <button class="btn sm" id="pl-download-btn" onclick="SEC.plan.downloadGpx()" style="display:none">
+      ⬇ Descargar GPX
+    </button>
+    <button class="btn ghost sm" onclick="SEC.plan.renamePlan()">Renombrar</button>
+    <button class="btn ghost sm" onclick="SEC.plan.removePlan()"
+      style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
+  </div>
+</div>
+
+<div id="pl-map"></div>
+<div class="stats-row" id="pl-stats"></div>
+
+<div class="section">
+  <h2>Perfil de elevación</h2>
+  <div class="chart-box"><canvas id="pl-elev"></canvas></div>
+</div>
+
+<div class="section">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <h2>Resumen</h2>
+    <div id="pl-activity-badge-sm"></div>
+  </div>
+  <div id="pl-auto" class="auto"></div>
+  <textarea id="pl-notes" placeholder="Escribe aquí tus notas sobre esta ruta: descripción del terreno, puntos de agua, dificultad estimada…"></textarea>
+  <div style="margin-top:10px"><button class="btn sm" onclick="SEC.plan.saveNotes()">Guardar notas</button></div>
+</div>
+
+<div id="pl-source-section" class="section hidden">
+  <h2>Fuente</h2>
+  <div id="pl-source-info"></div>
+</div>
+
+<!-- MODAL: selector de actividad -->
+<div id="pl-activity-modal" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 style="font-family:'Saira Condensed';font-size:24px">Tipo de actividad</h2>
+      <button class="btn ghost sm" onclick="SEC.plan.closeActivityPicker()">Cerrar</button>
+    </div>
+    <div id="pl-act-picker-grid" class="act-picker-grid"></div>
+  </div>
+</div>
+</section>

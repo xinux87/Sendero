@@ -1,11 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Sendero{% endblock %}
 
-{% block head_libs %}
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-{% endblock %}
-
 {% block header_nav %}
 <nav class="header-nav">
   <a href="/dashboard"    class="nav-link" id="nav-dashboard">Dashboard</a>
@@ -593,13 +588,10 @@ function initDashMap(){
   // El mapa se crea inmediatamente; las rutas se cargan en paralelo
   dashMap=new maplibregl.Map({
     container:'dash-map',
-    style:{version:8,
-      sources:{basemap:{type:'raster',tileSize:256,maxzoom:19,
-        attribution:'© CartoDB · OSM',
-        tiles:['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-               'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-               'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png']}},
-      layers:[{id:'basemap',type:'raster',source:'basemap'}]},
+    // Por buildStyle(), no con las teselas a mano: si no, este mapa sería el
+    // único que ignoraría la capa configurada en Ajustes → Mapas (la offline
+    // incluida). Sigue sin selector propio; su default es Oscuro.
+    style:buildStyle(defaultBasemap('Oscuro')),
     center:[-84,10],zoom:4,attributionControl:false
   });
   dashMap.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
@@ -967,6 +959,8 @@ class DatePicker{
 }
 
 let dpFrom,dpTo,ovMap=null,ovMapLoaded=false,ovRoutes=[],_ovFitTimer=null,_ovUserMoved=false;
+// Capa base elegida en el mapa de Mis Rutas; se recuerda al recrear el mapa.
+let ovBasemap=null;
 // Líneas reales del track en el mapa de Mis Rutas: mismo patrón que el dashboard
 // (bbox + caché acumulada), pero filtradas por los filtros activos de la lista.
 let ovLineIds=new Set(),ovLineFeaturesAll=[],ovLinesMoveTimer=null,ovLinesFetching=false;
@@ -992,7 +986,6 @@ function saveFilterState(){
   try{sessionStorage.setItem(FILTER_CACHE,JSON.stringify({acts:[...activeActs],from:dpFrom?.value||null,to:dpTo?.value||null,sort:sortOrder,view:viewMode}));}catch(e){}}
 function loadFilterState(){try{const r=sessionStorage.getItem(FILTER_CACHE);return r?JSON.parse(r):null;}catch(e){return null;}}
 
-const OV_TILES=BASEMAP_TILES; // static/shared.js
 function _routesGeoJSON(routes){
   return{type:'FeatureCollection',features:routes.map(r=>({
     type:'Feature',
@@ -1068,12 +1061,7 @@ function renderOverviewMap(routes,append=false){
   if(!ovMap){
     ovMap=new maplibregl.Map({
       container:'overview-map',
-      style:{
-        version:8,
-        sources:{basemap:{type:'raster',tileSize:256,maxzoom:19,
-          attribution:'© Esri · OSM',tiles:OV_TILES['Satélite']}},
-        layers:[{id:'basemap',type:'raster',source:'basemap'}]
-      },
+      style:buildStyle(ovBasemap||(ovBasemap=defaultBasemap('Satélite'))),
       center:[-84,10],zoom:8,attributionControl:false
     });
     ovMap.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
@@ -1083,8 +1071,22 @@ function renderOverviewMap(routes,append=false){
     (()=>{
       const sel=document.createElement('select');
       sel.style.cssText='background:var(--panel,#fff);color:var(--ink,#101a14);border:none;font-size:12px;cursor:pointer;padding:5px 7px;font-family:inherit;width:100%';
-      Object.keys(OV_TILES).forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;if(c==='Satélite')o.selected=true;sel.appendChild(o);});
-      sel.onchange=()=>ovMap.getSource('basemap').setTiles(OV_TILES[sel.value]);
+      basemapNames().forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});
+      sel.value=ovBasemap;
+      sel.onchange=()=>{
+        const prev=ovBasemap;ovBasemap=sel.value;
+        // La capa offline es pmtiles:// (otro tipo de fuente y otro maxzoom): no
+        // vale setTiles, hay que reconstruir el estilo, y eso borra clusters,
+        // líneas e iconos. Se recrea el mapa entero conservando el encuadre por
+        // el mismo camino que ya se usa al volver del detalle de una ruta.
+        if(prev===OFFLINE_LAYER||ovBasemap===OFFLINE_LAYER){
+          _ovSaveCamera();
+          ovMap.remove();ovMap=null;ovMapLoaded=false;
+          renderOverviewMap(ovRoutes);
+        }else{
+          applyBasemap(ovMap,ovBasemap);
+        }
+      };
       const wrap=document.createElement('div');
       wrap.className='maplibregl-ctrl maplibregl-ctrl-group';wrap.appendChild(sel);
       ovMap.addControl({onAdd:()=>wrap,onRemove(){}},'top-left');
@@ -1205,6 +1207,11 @@ function renderOverviewMap(routes,append=false){
         // no tiene sentido animar el "vuelo" desde ahí la primera vez que se crea el mapa.
         fitMap(true);
       }
+      // Repinta las líneas ya descargadas antes: al recrear el mapa (cambio a/desde
+      // la capa offline) la fuente 'ov-lines' nace vacía, y _ovLoadLinesForView no
+      // la rellenaría porque esas rutas ya están en ovLineIds y no cuentan como
+      // nuevas. Con la caché vacía esta llamada no hace nada visible.
+      _ovApplyLineFilter();
       // Por si el fitBounds/easeTo/jumpTo inicial no llega a disparar 'moveend'.
       _ovLoadLinesForView();
     });
@@ -1566,7 +1573,7 @@ function addMarkersToMap(plans){
     el.innerHTML=a?iconSvg(a,26):genericIconSvg(26);
     el.style.cssText='cursor:pointer;line-height:0;width:26px;height:26px';
     el.title=p.name;
-    el.onclick=()=>location.href='/Plan/'+encodeURIComponent(p.name);
+    el.onclick=()=>location.href='/Plan/'+encodeURIComponent(p.public_id);
     planMarkers[p.id]=new maplibregl.Marker({element:el,anchor:'center'})
       .setLngLat([p.start_lon,p.start_lat]).addTo(planMap);
   });
@@ -1595,7 +1602,7 @@ function makePlanCard(p){
   const a=activityOf(p.activity_type);
   const div=document.createElement('div');div.className='plan-card';
   div.style.borderLeftColor=a?a.color:'#2c4435';
-  div.onclick=()=>location.href='/Plan/'+encodeURIComponent(p.name);
+  div.onclick=()=>location.href='/Plan/'+encodeURIComponent(p.public_id);
   div.innerHTML=`<div class="plan-act">${a?iconSvg(a,26):genericIconSvg(26)}</div>
     <h3>${esc(p.name)}</h3><div class="date">${fmtDate(p.created_at)}</div>
     <span class="source-badge source-gpx">GPX</span>
@@ -1624,7 +1631,7 @@ async function uploadPlanGpx(){
     const data=await res.json();
     if(!res.ok){hideLoader();toast(data.error||'Error al subir el archivo');return;}
     showLoader('Listo',data.name,100);
-    setTimeout(()=>{hideLoader();location.href='/Plan/'+encodeURIComponent(data.name);},600);
+    setTimeout(()=>{hideLoader();location.href='/Plan/'+encodeURIComponent(data.public_id);},600);
   }catch(e){hideLoader();toast('Error de red');}
 }
 

@@ -1,3 +1,5 @@
+import json
+
 from flask import Flask
 from flask_compress import Compress
 
@@ -11,6 +13,8 @@ from api.settings import settings_bp
 from api.immich_api import immich_bp
 from api.editor import editor_bp
 from api.mifit import mifit_bp
+from api.maps import maps_bp, map_cfg
+from api.sync import sync_bp
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB por subida
@@ -26,7 +30,9 @@ app.teardown_appcontext(close_db)
 @app.context_processor
 def _inject_version():
     # Disponible como {{ app_version }} en todas las plantillas (pie de Ajustes).
-    return {"app_version": APP_VERSION}
+    # map_cfg va en <body data-map-cfg> de base.html: lo lee MAP_CFG de
+    # static/shared.js para saber si hay capa de mapa offline configurada.
+    return {"app_version": APP_VERSION, "map_cfg_json": json.dumps(map_cfg())}
 
 
 @app.before_request
@@ -37,7 +43,8 @@ def _refresh_settings():
     # consistente; es un SELECT de ~10 filas, despreciable en LAN.
     refresh_config()
 
-for bp in (routes_bp, photos_bp, planned_bp, settings_bp, immich_bp, editor_bp, mifit_bp):
+for bp in (routes_bp, photos_bp, planned_bp, settings_bp, immich_bp, editor_bp, mifit_bp,
+           maps_bp, sync_bp):
     app.register_blueprint(bp)
 
 init_db()

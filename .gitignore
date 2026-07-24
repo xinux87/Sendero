@@ -38,6 +38,9 @@ env/
 # Claude Code
 .claude/
 
+# Índice local de tokensave (caché de análisis, se regenera)
+.tokensave/
+
 # Sistema / editores
 .DS_Store
 Thumbs.db

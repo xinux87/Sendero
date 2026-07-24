@@ -1,12 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Sendero{% endblock %}
 
-{% block head_libs %}
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-{% endblock %}
-
 {% block styles %}
 .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
 .dup-banner{align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
@@ -352,7 +346,11 @@ function renderStats(){
     `<div class="stat"><div class="v">${v} <small>${u}</small></div><div class="l">${l}</div></div>`).join("");
 }
 
-/* buildStyle y BASEMAP_TILES viven en static/shared.js */
+/* buildStyle, basemapNames, defaultBasemap y applyBasemap viven en static/shared.js.
+   curBasemap recuerda la capa elegida entre re-creaciones del mapa: renderMap()
+   destruye y recrea el mapa entero en cada renderAll(), y sin esto volvería
+   siempre a la capa por defecto de Ajustes. */
+let curBasemap=null;
 
 function fitRoute(){
   const coords=current.geojson;if(!coords.length)return;
@@ -394,7 +392,7 @@ function renderMap(){
     cx=(minLon+maxLon)/2;cy=(minLat+maxLat)/2;
   }
   map=new maplibregl.Map({
-    container:'map',style:buildStyle('Topográfico'),
+    container:'map',style:buildStyle(curBasemap||(curBasemap=defaultBasemap())),
     center:[cx,cy],zoom:coords.length?12:6,attributionControl:false
   });
   map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
@@ -412,10 +410,24 @@ function renderMap(){
   (()=>{
     const sel=document.createElement('select');
     sel.style.cssText='background:var(--panel,#fff);color:var(--ink,#101a14);border:none;font-size:12px;cursor:pointer;padding:5px 7px;font-family:inherit;width:100%';
-    ['Topográfico','Callejero','Satélite','Oscuro'].forEach(c=>{
+    basemapNames().forEach(c=>{
       const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);
     });
-    sel.onchange=()=>map.getSource('basemap').setTiles(buildStyle(sel.value).sources.basemap.tiles);
+    sel.value=curBasemap;
+    sel.onchange=()=>{
+      const prev=curBasemap;curBasemap=sel.value;
+      // Entrar o salir de la capa offline cambia el TIPO de fuente (pmtiles://),
+      // así que hay que reconstruir el estilo — y eso borra las capas de datos
+      // del mapa. Se recrea el mapa entero (renderMap ya sabe repintarlo todo)
+      // conservando la cámara, en vez de duplicar aquí el alta de cada capa.
+      if(prev===OFFLINE_LAYER||curBasemap===OFFLINE_LAYER){
+        const cam={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
+        renderMap();
+        map.once('load',()=>map.jumpTo(cam));
+      }else{
+        applyBasemap(map,curBasemap);
+      }
+    };
     const wrap=document.createElement('div');
     wrap.className='maplibregl-ctrl maplibregl-ctrl-group';
     wrap.appendChild(sel);

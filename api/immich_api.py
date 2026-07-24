@@ -11,11 +11,13 @@ immich_bp = Blueprint("immich", __name__)
 
 @immich_bp.route("/api/config")
 def config():
+    from api.maps import map_cfg
     return jsonify({
         "version":           cfg.APP_VERSION,
         "immich":            cfg.IMMICH_ENABLED,
         "immich_margin_min": cfg.IMMICH_MARGIN_MIN,
         "immich_dist_m":     cfg.IMMICH_DIST_M,
+        "map":               map_cfg(),
     })
 
 

@@ -1,0 +1,70 @@
+/* Detalle de ruta planificada. Extraído de templates/plan_detalle.html.
+   Escopado bajo #sec-plan: .stat, .section, .overlay, .modal y otras 17
+   clases están definidas también en otras vistas, y en la SPA todas
+   conviven en el mismo documento (roadmap §2). Los ids que chocaban con
+   el detalle de ruta llevan prefijo pl-. */
+#sec-plan .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+#sec-plan #pl-map{height:380px;border-radius:11px;border:1px solid var(--line);z-index:0}
+#sec-plan .stats-row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+#sec-plan .stat{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);
+  border-radius:9px;padding:12px 14px}
+#sec-plan .stat .v{font-family:var(--mono);font-size:23px;font-weight:700}
+#sec-plan .stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+#sec-plan .stat .v small{font-size:13px;color:var(--muted)}
+#sec-plan .section{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:18px;margin-top:16px}
+#sec-plan .section h2{font-size:24px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+#sec-plan .section h2::before{content:"";width:10px;height:24px;border-radius:2px;
+  background:linear-gradient(var(--pr-yellow) 0 50%,#fff 50% 100%)}
+#sec-plan textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:8px;padding:12px;font-family:inherit;font-size:14px;resize:vertical}
+#sec-plan .auto{color:var(--muted);font-style:italic;margin-bottom:12px;padding:10px 12px;
+  background:var(--bg);border-radius:8px;border-left:3px solid var(--pr-yellow)}
+/* MapLibre (antes Leaflet: unificado para poder vendorizar una sola librería
+   de mapas y compartir buildStyle()/capa offline con el resto de las vistas) */
+#sec-plan .maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;
+  padding:8px 12px;font-family:inherit;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+#sec-plan .maplibregl-popup-tip{border-top-color:var(--panel);border-bottom-color:var(--panel)}
+#sec-plan .maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
+#sec-plan .maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important}
+#sec-plan .maplibregl-ctrl button .maplibregl-ctrl-icon{filter:brightness(0) invert(1)}
+#sec-plan #pl-d-name{font-size:34px}
+/* contenedor de la gráfica con altura explícita (el chart usa
+   maintainAspectRatio:false; sin esto en móvil quedaría enana) */
+#sec-plan .chart-box{position:relative;height:260px}
+@media(max-width:600px){
+#sec-plan .stat .v{font-size:19px}
+#sec-plan #pl-d-name{font-size:24px}
+#sec-plan #pl-map{height:45vh;height:45dvh;min-height:280px}
+#sec-plan .section{padding:14px}
+#sec-plan .section h2{font-size:20px}
+#sec-plan .chart-box{height:180px}
+}
+@media(hover:none) and (pointer:coarse){
+#sec-plan .act-badge{min-height:40px}
+#sec-plan .act-opt:hover{transform:none}
+}
+/* badge actividad */
+#sec-plan .act-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 10px;
+  border-radius:20px;font-size:13px;font-weight:700;border:2px solid;cursor:pointer;
+  transition:filter .15s;letter-spacing:.03em;white-space:nowrap}
+#sec-plan .act-badge:hover{filter:brightness(1.18)}
+#sec-plan .act-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;padding-top:6px}
+#sec-plan .act-opt{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;
+  border-radius:11px;border:2px solid var(--line);cursor:pointer;
+  transition:border-color .15s,transform .15s;background:var(--bg)}
+#sec-plan .act-opt:hover{transform:translateY(-2px)}
+#sec-plan .act-opt.on{background:var(--panel-2)}
+#sec-plan .act-ico-lg{font-size:36px;line-height:1}
+#sec-plan .act-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:center}
+/* badge fuente */
+#sec-plan .source-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+  letter-spacing:.06em;padding:3px 10px;border-radius:10px;text-transform:uppercase}
+#sec-plan .source-gpx{background:#1e3a2a;color:#5ab87a;border:1px solid #2e5a3a}
+#sec-plan .source-wikiloc{background:#1a2e3e;color:#4aade8;border:1px solid #2a4e6e}
+/* modal actividad */
+#sec-plan .overlay{position:fixed;inset:0;background:rgba(8,14,11,.78);display:flex;align-items:center;
+  justify-content:center;padding:16px;z-index:1000}
+#sec-plan .overlay.hidden{display:none}
+#sec-plan .modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:100%;
+  max-width:500px;padding:18px;overflow:hidden}
+#sec-plan .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}

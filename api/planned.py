@@ -1,14 +1,21 @@
 import json
 import datetime as dt
 import re
-from flask import Blueprint, abort, request, jsonify, render_template, Response
+from flask import Blueprint, abort, redirect, request, jsonify, render_template, Response
 
 import core.config as cfg
-from core.database import db
+from core.database import db, plan_id_from_public, set_public_id
 from core.parsers import analyse_gpx, _detect_activity, _gpx_type_lookup
 from core.summaries import auto_summary_planned
 
 planned_bp = Blueprint("planned", __name__)
+
+# Columnas del listado de planes. Única fuente de verdad: las lee list_planned() y
+# api/sync.py para los 'upserted' del delta (mismo criterio que ROUTE_LIST_COLS en
+# api/routes.py). Cubiertas por idx_planned_list_cov (regla 12).
+PLANNED_LIST_COLS = ("id,public_id,name,source,source_url,activity_type,"
+                     "distance_m,ascent_m,descent_m,ele_max,start_lat,start_lon,"
+                     "created_at")
 
 
 def _build_plan_dict(pid):
@@ -31,14 +38,30 @@ def planificacion_page():
     return render_template("app.html", initial_section="planes", planner_url=cfg.PLANNER_URL)
 
 
-@planned_bp.route("/Plan/<path:name>")
-def plan_detalle_page(name=None):
-    r = db().execute(
-        "SELECT id FROM planned_routes WHERE name=? ORDER BY created_at DESC LIMIT 1",
-        (name,),
-    ).fetchone()
-    plan_json = json.dumps(_build_plan_dict(r["id"])) if r else "null"
-    return render_template("plan_detalle.html", plan_json=plan_json)
+@planned_bp.route("/Plan/<path:ref>")
+def plan_detalle_page(ref=None):
+    """Detalle de un plan por public_id.
+
+    Acepta también el nombre (enlaces guardados de antes de que los planes
+    tuvieran public_id) y en ese caso redirige al public_id, que es la URL
+    canónica: el nombre es ambiguo si hay dos planes iguales y se rompe al
+    renombrar.
+
+    La vista es una sección de la SPA (templates/sec/plan.html + static/js/sec/
+    plan.js): aquí solo se sirve el shell. El plan va como `bootstrap_json` para
+    que la primera carga no necesite un fetch extra; si no se resuelve, el módulo
+    lo pide al Store (que puede responder desde su copia local sin conexión).
+    """
+    r = db().execute("SELECT id FROM planned_routes WHERE public_id=?", (ref,)).fetchone()
+    if not r:
+        byname = db().execute(
+            "SELECT public_id FROM planned_routes WHERE name=? "
+            "ORDER BY created_at DESC LIMIT 1", (ref,),
+        ).fetchone()
+        if byname and byname["public_id"]:
+            return redirect("/Plan/" + byname["public_id"], code=302)
+    bootstrap = json.dumps(_build_plan_dict(r["id"])) if r else ""
+    return render_template("shell.html", bootstrap_json=bootstrap)
 
 
 @planned_bp.route("/api/planned", methods=["GET"])
@@ -47,8 +70,7 @@ def list_planned():
     limit  = request.args.get("limit", type=int)
     offset = request.args.get("offset", 0, type=int)
     total  = con.execute("SELECT COUNT(*) FROM planned_routes").fetchone()[0]
-    q = ("SELECT id,name,source,source_url,activity_type,"
-         "distance_m,ascent_m,descent_m,ele_max,start_lat,start_lon,created_at "
+    q = (f"SELECT {PLANNED_LIST_COLS} "
          "FROM planned_routes ORDER BY created_at DESC")
     rows = (
         con.execute(q + " LIMIT ? OFFSET ?", (limit, offset)).fetchall()
@@ -101,17 +123,19 @@ def create_planned():
          gpx_bytes,
          dt.datetime.now().isoformat()),
     )
+    pub = set_public_id(con, "planned_routes", cur.lastrowid)
     con.commit()
-    return jsonify({"id": cur.lastrowid, "name": name}), 201
+    return jsonify({"id": pub, "public_id": pub, "name": name}), 201
 
 
-@planned_bp.route("/api/planned/<int:pid>", methods=["GET"])
+@planned_bp.route("/api/planned/<pid>", methods=["GET"])
 def get_planned(pid):
-    return jsonify(_build_plan_dict(pid))
+    return jsonify(_build_plan_dict(plan_id_from_public(pid)))
 
 
-@planned_bp.route("/api/planned/<int:pid>", methods=["PATCH"])
+@planned_bp.route("/api/planned/<pid>", methods=["PATCH"])
 def update_planned(pid):
+    pid = plan_id_from_public(pid)
     data = request.get_json(force=True)
     con = db()
     fields, vals = [], []
@@ -127,8 +151,9 @@ def update_planned(pid):
     return "", 204
 
 
-@planned_bp.route("/api/planned/<int:pid>", methods=["DELETE"])
+@planned_bp.route("/api/planned/<pid>", methods=["DELETE"])
 def delete_planned(pid):
+    pid = plan_id_from_public(pid)
     con = db()
     if not con.execute("SELECT 1 FROM planned_routes WHERE id=?", (pid,)).fetchone():
         abort(404)
@@ -137,8 +162,9 @@ def delete_planned(pid):
     return "", 204
 
 
-@planned_bp.route("/api/planned/<int:pid>/gpx", methods=["GET"])
+@planned_bp.route("/api/planned/<pid>/gpx", methods=["GET"])
 def download_planned_gpx(pid):
+    pid = plan_id_from_public(pid)
     r = db().execute(
         "SELECT name, gpx_data FROM planned_routes WHERE id=?", (pid,)
     ).fetchone()

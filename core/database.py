@@ -61,6 +61,15 @@ def pid_from_public(pub):
     return row["id"]
 
 
+def plan_id_from_public(pub):
+    """public_id → id entero interno de la ruta planificada. 404 si no existe."""
+    row = db().execute("SELECT id FROM planned_routes WHERE public_id=?",
+                       (pub,)).fetchone()
+    if not row:
+        abort(404)
+    return row["id"]
+
+
 def set_public_id(con, table, row_id):
     """Asigna un public_id nuevo a una fila recién insertada y lo devuelve.
 
@@ -350,4 +359,186 @@ def init_db():
         );
     """)
     con.commit()
+
+    # ── public_id de las rutas planificadas ──────────────────────────────────
+    # Mismo criterio que en routes/photos (v0.5.2): identificador opaco no
+    # secuencial para las URLs (/Plan/<public_id>) y clave estable de la
+    # sincronización. La PK entera se queda interna.
+    if "public_id" not in plan_cols:
+        try:
+            con.execute("ALTER TABLE planned_routes ADD COLUMN public_id TEXT")
+            con.commit()
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e):
+                raise
+    con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_planned_public_id "
+                "ON planned_routes(public_id)")
+    # Índice de cobertura del listado (regla 12): public_id y las demás columnas
+    # pequeñas se leen juntas en /api/planned, y en esta tabla vienen físicamente
+    # DESPUÉS de geojson/elevation/gpx_data (un BLOB con el GPX entero).
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_planned_list_cov ON planned_routes(
+        created_at DESC,
+        id, name, source, source_url, activity_type, distance_m, ascent_m,
+        descent_m, ele_max, start_lat, start_lon, public_id
+    )""")
+    # Backfill idempotente y tolerante a la carrera de 2 workers (igual que el de
+    # routes/photos: el UPDATE lleva "AND public_id IS NULL").
+    for _id in [row[0] for row in con.execute(
+            "SELECT id FROM planned_routes WHERE public_id IS NULL").fetchall()]:
+        while True:
+            try:
+                con.execute("UPDATE planned_routes SET public_id=? "
+                            "WHERE id=? AND public_id IS NULL", (new_token(), _id))
+                break
+            except sqlite3.IntegrityError:
+                continue
+    con.commit()
+
+    _init_sync(con)
+    con.commit()
     con.close()
+
+
+# ── Sincronización delta (roadmap/spa-offline-sync.md §4) ────────────────────
+# Un contador monotónico global (sync_seq) y una fila por entidad viva o borrada
+# (sync_log). Los mantienen TRIGGERS, no el código Python: las mutaciones de
+# routes/photos/planned_routes están repartidas en 13 sitios de 5 blueprints, y
+# cualquier esquema que dependa de "acuérdate de tocar el contador aquí" se
+# rompería en el primero que se olvide (y en los que se añadan mañana).
+#
+# Entidades: 'route' y 'planned'. Las fotos NO son una entidad propia: al
+# añadirlas/borrarlas suben el rev de SU RUTA, que es lo que hace que el detalle
+# cacheado (que incluye las fotos) se invalide en el cliente.
+#
+# Las filas de sync_log no se borran nunca: op='del' es la tombstone que permite
+# que un cliente apagado semanas sepa qué desapareció. Son ~40 bytes por entidad.
+
+_SYNC_DDL = """
+CREATE TABLE IF NOT EXISTS sync_seq (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    n  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sync_log (
+    entity    TEXT    NOT NULL,          -- 'route' | 'planned'
+    entity_id INTEGER NOT NULL,          -- PK entera interna
+    public_id TEXT,                      -- id opaco expuesto al cliente
+    rev       INTEGER NOT NULL,
+    op        TEXT    NOT NULL,          -- 'up' | 'del'
+    PRIMARY KEY (entity, entity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_log_rev
+    ON sync_log(rev, entity, entity_id, public_id, op);
+"""
+
+
+def _sync_triggers_sql():
+    """DDL de los 9 triggers que mantienen sync_log.
+
+    Se usa DELETE + INSERT en vez de "INSERT ... ON CONFLICT DO UPDATE" a
+    propósito: el upsert dentro del cuerpo de un trigger depende de la versión de
+    SQLite, y aquí el coste de las dos sentencias es irrelevante (sync_log no
+    tiene triggers propios, así que el DELETE no dispara nada).
+
+    El INSERT ... SELECT contra la tabla base (en vez de VALUES) hace que la fila
+    solo se escriba si la entidad sigue existiendo, y el EXISTS del DELETE evita
+    que un borrado de fotos posterior al de su ruta se lleve por delante la
+    tombstone de esa ruta.
+    """
+    out = []
+    for entity, table in (("route", "routes"), ("planned", "planned_routes")):
+        out.append(f"""
+CREATE TRIGGER IF NOT EXISTS trg_sync_{table}_ai AFTER INSERT ON {table} BEGIN
+    UPDATE sync_seq SET n = n + 1 WHERE id = 1;
+    DELETE FROM sync_log WHERE entity = '{entity}' AND entity_id = NEW.id;
+    INSERT INTO sync_log(entity, entity_id, public_id, rev, op)
+        SELECT '{entity}', id, public_id, (SELECT n FROM sync_seq WHERE id = 1), 'up'
+        FROM {table} WHERE id = NEW.id;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_sync_{table}_au AFTER UPDATE ON {table} BEGIN
+    UPDATE sync_seq SET n = n + 1 WHERE id = 1;
+    DELETE FROM sync_log WHERE entity = '{entity}' AND entity_id = NEW.id;
+    INSERT INTO sync_log(entity, entity_id, public_id, rev, op)
+        SELECT '{entity}', id, public_id, (SELECT n FROM sync_seq WHERE id = 1), 'up'
+        FROM {table} WHERE id = NEW.id;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_sync_{table}_ad AFTER DELETE ON {table} BEGIN
+    UPDATE sync_seq SET n = n + 1 WHERE id = 1;
+    DELETE FROM sync_log WHERE entity = '{entity}' AND entity_id = OLD.id;
+    INSERT INTO sync_log(entity, entity_id, public_id, rev, op)
+        VALUES ('{entity}', OLD.id, OLD.public_id,
+                (SELECT n FROM sync_seq WHERE id = 1), 'del');
+END;""")
+    # Las fotos suben el rev de su ruta (no son entidad propia de sincronización).
+    for op, trg, ref in (("INSERT", "ai", "NEW"), ("UPDATE", "au", "NEW"),
+                         ("DELETE", "ad", "OLD")):
+        out.append(f"""
+CREATE TRIGGER IF NOT EXISTS trg_sync_photos_{trg} AFTER {op} ON photos BEGIN
+    UPDATE sync_seq SET n = n + 1 WHERE id = 1;
+    DELETE FROM sync_log WHERE entity = 'route' AND entity_id = {ref}.route_id
+        AND EXISTS (SELECT 1 FROM routes WHERE id = {ref}.route_id);
+    INSERT INTO sync_log(entity, entity_id, public_id, rev, op)
+        SELECT 'route', id, public_id, (SELECT n FROM sync_seq WHERE id = 1), 'up'
+        FROM routes WHERE id = {ref}.route_id;
+END;""")
+    return "\n".join(out)
+
+
+def _init_sync(con):
+    """Crea el esquema de sincronización, los triggers, el epoch y el backfill.
+
+    Todo con CREATE ... IF NOT EXISTS / INSERT OR IGNORE, sin ALTER TABLE: es
+    re-ejecutable por los 2 workers de gunicorn en paralelo sin try/except
+    (regla 13 de CLAUDE.md).
+    """
+    con.executescript(_SYNC_DDL)
+    con.execute("INSERT OR IGNORE INTO sync_seq(id, n) VALUES (1, 0)")
+    con.executescript(_sync_triggers_sql())
+    con.commit()
+
+    # Epoch: si cambia, los clientes tiran su copia local y recargan de cero. Es
+    # la red de seguridad ante una BD restaurada de un backup o reconstruida, donde
+    # el contador podría retroceder y un delta por 'since' daría datos fantasma.
+    con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES('sync_epoch', ?)",
+                (new_token(),))
+    # Suelo de revisión: un cliente que pida un 'since' anterior recibe reset. Se
+    # queda en 0 porque las tombstones no se purgan; existe como escotilla.
+    con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES('sync_min_rev', '0')")
+
+    # Backfill de las filas que existían antes de esta migración: sin esto no
+    # tendrían fila en sync_log y un cliente con since=0 no las vería nunca.
+    # Idempotente: INSERT OR IGNORE sobre la PK (entity, entity_id).
+    for entity, table in (("route", "routes"), ("planned", "planned_routes")):
+        missing = con.execute(
+            f"SELECT id, public_id FROM {table} t WHERE NOT EXISTS ("
+            f"  SELECT 1 FROM sync_log s WHERE s.entity=? AND s.entity_id=t.id)",
+            (entity,),
+        ).fetchall()
+        for row in missing:
+            con.execute("UPDATE sync_seq SET n = n + 1 WHERE id = 1")
+            con.execute(
+                "INSERT OR IGNORE INTO sync_log(entity, entity_id, public_id, rev, op) "
+                "SELECT ?, ?, ?, n, 'up' FROM sync_seq WHERE id = 1",
+                (entity, row[0], row[1]),
+            )
+    con.commit()
+
+
+def sync_cursor(con):
+    """Valor actual del contador monotónico global."""
+    row = con.execute("SELECT n FROM sync_seq WHERE id = 1").fetchone()
+    return (row[0] if row else 0) or 0
+
+
+def sync_epoch(con):
+    """Token del epoch actual (ver _init_sync)."""
+    row = con.execute("SELECT value FROM settings WHERE key = 'sync_epoch'").fetchone()
+    return (row[0] if row else "") or ""
+
+
+def entity_rev(con, entity, entity_id):
+    """rev actual de una entidad, o 0 si no tiene fila en sync_log."""
+    row = con.execute(
+        "SELECT rev FROM sync_log WHERE entity = ? AND entity_id = ?",
+        (entity, entity_id),
+    ).fetchone()
+    return (row[0] if row else 0) or 0

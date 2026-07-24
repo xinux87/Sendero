@@ -5,6 +5,70 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.6.0] — 2026-07-25
+
+Primer tramo del plan de **SPA completa + funcionamiento sin conexión + sincronización
+delta** (`roadmap/spa-offline-sync.md`). Las fases 1 (vendorizar), 4 (sync delta) y 6.1
+(mapa base offline) están terminadas; la conversión del frontend a secciones va por la
+primera vista. Nada de esto cambia el almacenamiento: mismos GPX, mismas fotos, misma BD.
+
+### Añadido
+- **Sincronización delta**: tres endpoints nuevos que sustituyen al caché con TTL de
+  10 minutos del listado.
+  - `GET /api/sync/state` responde con `ETag` y, con `If-None-Match`, **304 sin cuerpo**:
+    "no ha cambiado nada" cuesta unos cientos de bytes de cabeceras. Es lo que permite
+    preguntar a menudo.
+  - `GET /api/sync/changes?since=<rev>` devuelve **solo la diferencia** (altas/cambios y
+    bajas, paginado por `rev`), y `GET /api/sync/manifest` los pares `[public_id, rev]` de
+    todo (~30 B por ruta) para **corroborar** la copia local y descargar únicamente lo que
+    divergía, sin recargarlo todo.
+  - Un cambio hecho desde otro dispositivo, o por `watch.py`/`mifit_sync.py`, se ve en el
+    siguiente sondeo en vez de esperar a que expire un TTL.
+- **Mapa base sin conexión (PMTiles)**: copia un `.pmtiles` en `data/tiles/` y aparece la
+  capa **«Offline (local)»** en el selector de capas. La sirve Sendero con soporte de
+  `Range` (`GET /tiles/<archivo>`), sin servidor de teselas aparte. Nueva sección
+  **Ajustes → Mapas**: capa base por defecto, archivo, zoom máximo y atribución.
+  Las 4 capas de siempre son de terceros y **siguen necesitando internet** (cachearlas en
+  masa va contra su política de uso); esta es la única que funciona en modo avión.
+- **Detalle de ruta revalidable y en versión ligera**: `GET /api/routes/<id>` lleva `ETag`
+  (= `rev`) y responde **304** si no ha cambiado, y con `?lite=1` devuelve el track
+  decimado y las series remuestreadas a ~500 puntos (~20-30 KB en vez de ~350 KB),
+  suficiente para mapa, perfil y stats.
+- **`public_id` en las rutas planificadas**, como ya lo tenían rutas y fotos: la URL
+  canónica es `/Plan/<public_id>` y la API es `/api/planned/<public_id>`. Los enlaces
+  antiguos por nombre siguen funcionando (redirección 302).
+
+### Cambiado
+- **Sin dependencias de CDN**: MapLibre, Chart.js, PMTiles y las tres familias de fuentes
+  se sirven desde `static/vendor/` y `static/fonts/`. Antes la app no cargaba entera en
+  una LAN sin internet (fuentes de Google, scripts de unpkg/cdnjs).
+- **Un solo motor de mapas**: el detalle de ruta planificada pasa de Leaflet a MapLibre,
+  como el resto de la app.
+- **Todos los mapas respetan la capa configurada**: el del dashboard llevaba las teselas
+  a mano e ignoraba cualquier ajuste. Además, cada capa muestra ya su atribución (antes
+  faltaba en el detalle y en el editor).
+- **El detalle de un plan es la primera vista de la SPA nueva**: se sirve desde un shell
+  único (`templates/shell.html`) con su lógica en `static/js/sec/plan.js`, en vez de una
+  plantilla con los datos incrustados. Sus notas, nombre y actividad se pueden editar
+  **sin conexión**: el cambio se encola y se envía al recuperarla.
+
+### Interno
+- `sync_seq` + `sync_log` mantenidos por **9 triggers de SQLite**, no por el código: las
+  mutaciones están repartidas en 13 sitios y cualquier esquema del tipo "acuérdate de
+  subir el contador aquí" se rompe en el primero que se olvide. Las tombstones no se
+  purgan (~40 B por entidad) y un `sync_epoch` fuerza recarga completa si se restaura un
+  backup. Migración y backfill idempotentes, re-ejecutables por los 2 workers.
+- Frontend repartido en `static/js/core/` (`chrome.js`, `loader.js`, `router.js`,
+  `store.js` con IndexedDB + cola de escrituras) y `static/js/sec/` (una sección por
+  archivo). Siguen siendo scripts clásicos: **no hay paso de build**.
+- Índices nuevos: `idx_planned_public_id`, `idx_planned_list_cov`, `idx_sync_log_rev`.
+- `tests/test_sync.py` para la lógica pura de comparación de manifiestos y remuestreo.
+
+### Pendiente (siguiente versión)
+Migrar a secciones el detalle de ruta, dashboard, «Mis Rutas», «Mis Planes» y el editor;
+solo entonces el listado deja de usar `sessionStorage` y pasa a leer del almacén local.
+Después: PWA/Service Worker (arrancar sin servidor) y caché de teselas por zona.
+
 ## [0.5.2] — 2026-07-24
 
 ### Seguridad

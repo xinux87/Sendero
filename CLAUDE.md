@@ -8,6 +8,22 @@ para tocar el código sin romperlo. Si algo de aquí contradice al README, este 
 Monolito Flask + SQLite que sube/visualiza GPX y FIT, les asocia fotos (locales o de
 Immich por referencia), genera thumbnails PNG de cada track y guarda un resumen por ruta.
 
+## Por dónde vamos (trabajo en curso — v0.6.0)
+Hay una **migración a medias** en marcha, y saberlo evita tocar el archivo equivocado:
+SPA completa + funcionamiento sin conexión + sincronización delta. Plan y estado por
+fases: **`roadmap/spa-offline-sync.md`** (tabla al principio; ahí está también el
+"▶ POR DÓNDE VAMOS" con el siguiente paso y su checklist).
+
+- **Hecho**: librerías y fuentes vendorizadas (sin CDN), sincronización delta completa en
+  el servidor (`sync_seq`/`sync_log` + triggers, `/api/sync/*`) y en el cliente
+  (`static/js/core/store.js`, IndexedDB), mapa base offline con PMTiles (`/tiles/...`,
+  Ajustes → Mapas), y el shell de la SPA (`templates/shell.html`) con la **primera** vista
+  migrada: el detalle de plan.
+- **Siguiente**: `sec/detalle.js` (detalle de ruta) → `dashboard`/`rutas`/`planes` (ahí el
+  listado pasa de `sessionStorage` al Store) → `editor` → PWA/Service Worker.
+- **Consecuencia práctica**: convive la SPA vieja (`templates/app.html`, 3 secciones) con
+  el shell nuevo (secciones en `static/js/sec/`). Ver "Frontend" para saber cuál toca.
+
 ## Comandos
 ```bash
 # desarrollo
@@ -66,8 +82,15 @@ La lógica real está repartida en dos paquetes:
 
 ```
 core/
-  config.py     — paths (GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR, DB_PATH) y variables Immich
-  database.py   — init_db(), close_db(), helper db() (conexión por request vía g.db)
+  config.py     — paths (GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR, TILES_DIR, DB_PATH),
+                  variables Immich y de mapas (MAP_OFFLINE_FILE/MAP_DEFAULT_LAYER…)
+  database.py   — init_db(), close_db(), helper db() (conexión por request vía g.db),
+                  public_id (set_public_id/rid_from_public/plan_id_from_public) y el
+                  esquema de sincronización: sync_seq/sync_log + los 9 triggers,
+                  sync_cursor()/sync_epoch()/entity_rev()
+  sync.py       — lógica PURA de la sincronización: diff_manifest(local, remoto) →
+                  {missing, stale, extra}, decimate() y resample() para ?lite=1
+                  (tests en tests/test_sync.py)
   parsers.py    — analyse_gpx() y analyse_fit() → devuelven (stats, coords, elev, name, creator).
                   FIT con garmin-fit-sdk (SDK oficial); _fit_dt() normaliza datetimes a naive-UTC
                   como hacía fitparse — no devolver datetimes aware (rompe merge_gpx e Immich)
@@ -93,6 +116,9 @@ api/
   immich_api.py — candidatos Immich, selección, proxy de miniaturas
   settings.py   — lectura/escritura de ajustes (Immich, tipos GPX personalizados)
   mifit.py      — ajustes/estado/disparo de la auto-importación Mi Fit/Zepp
+  sync.py       — sincronización delta: /api/sync/state (ETag → 304), /changes, /manifest
+  maps.py       — mapa base offline: sirve data/tiles/*.pmtiles con Range (206) y
+                  /api/maps; map_cfg() se inyecta en <body data-map-cfg>
 ```
 
 `watch.py` — importador de carpeta. Proceso **independiente**, no parte del server.
@@ -113,31 +139,82 @@ con gzip/brotli (flask-compress en `app.py`, mínimo 500 bytes), y los binarios 
 caché: thumbs con ETag/304 (revalidación: se regeneran con el mismo nombre), fotos
 locales inmutables con max-age 1 año, proxys Immich con caché privada de 7 días.
 
-### Frontend — SPA en `app.html`
+### Frontend — SPA, en migración a un shell único
 
-**La app es un SPA** servido desde una sola plantilla `templates/app.html`.
-Las rutas `/dashboard`, `/rutas` y `/planificacion` renderan todas `app.html`
-con el parámetro Jinja `initial_section`. El router JS en `app.html` muestra/oculta
-secciones y actualiza el `history` sin recargar la página.
+**Hoy hay DOS sitios donde vive la SPA** y hay que saber en cuál se toca:
+
+1. `templates/app.html` — SPA "vieja" con tres secciones (Dashboard, Mis Rutas,
+   Mis Planes) y su propio router inline (`_showSec`/`_spaNavTo`). Sigue siendo la
+   que sirve `/dashboard`, `/rutas` y `/planificacion`.
+2. `templates/shell.html` — shell nuevo, sin datos dentro, que aloja las secciones
+   ya migradas a `static/js/sec/` y usa el router de `static/js/core/router.js`
+   (6 vistas). De momento aloja **solo** el detalle de plan (`/Plan/<public_id>`).
+
+El plan completo de la migración y su estado están en
+**`roadmap/spa-offline-sync.md`** (fases 1-7). Regla práctica mientras dure: si la
+vista tiene su archivo en `static/js/sec/`, se toca ahí; si no, en su plantilla.
+El router cae a `location.href` al navegar hacia una vista que el documento actual
+no aloja (`hosted()`), así que ambos mundos conviven sin romper la navegación.
 
 > **TRAMPA CRÍTICA:** Si tocas "Mis Rutas" o "Dashboard", el archivo es `app.html`,
 > NO `rutas.html` ni `dashboard.html`. Esos archivos legacy siguen en disco pero
-> ya no los sirve ninguna ruta Flask.
+> ya no los sirve ninguna ruta Flask. Y si tocas el detalle de un plan, el archivo
+> es `static/js/sec/plan.js` + `templates/sec/plan.html`, NO `plan_detalle.html`.
+
+**Sin build step (regla 1), pero el JS ya no va todo inline.** Reparto:
+
+```
+static/vendor/     maplibre-gl-4.7.1.js|css, chart-4.4.1.umd.min.js, pmtiles-3.0.6.js
+                   (antes unpkg/cdnjs; nombre con versión = cacheables como inmutables)
+static/fonts/      las 3 familias en .woff2 + fonts.css (antes fonts.googleapis.com)
+static/shared.js   ACTIVITIES/activityOf/iconSvg/_loadActImages, BASEMAP_TILES,
+                   buildStyle/basemapNames/defaultBasemap/applyBasemap, MAP_CFG
+static/js/core/    chrome.js  helpers globales ($, toast, fmtKm/fmtDur/fmtDate, esc)
+                              + TODO el modal de Ajustes. Se carga en base.html
+                              (sin IIFE a propósito: lo llaman los onclick=)
+                   loader.js  loadOnce()/loadCssOnce(): inyecta el <script>/<link>
+                              de una sección una sola vez
+                   router.js  Router de las 6 vistas + window.go()
+                   store.js   IndexedDB + sincronización delta + outbox (§4/§7)
+static/js/sec/     un archivo por sección, en IIFE, publicando
+                   window.SEC.<sec> = {mount(params,opts), unmount()}
+static/css/        el CSS de cada sección migrada, escopado bajo #sec-<sec>
+templates/sec/     el markup de cada sección migrada
+```
+
+**Son `<script>` clásicos, no módulos ES**: hay 121 atributos `onclick=` en las
+plantillas y un módulo ES no expone nada al ámbito global, así que se romperían
+todos. Por eso cada sección va en su IIFE y publica lo que la plantilla necesita en
+`window.SEC.<sec>` (los `onclick=` llaman `SEC.plan.saveNotes()` etc.).
+
+**`unmount()` DEBE destruir el mapa MapLibre y los `Chart` de la sección.** Sin eso,
+navegar entre secciones deja instancias vivas con sus listeners y el navegador se
+degrada poco a poco (no falla de golpe: es la fuga nº 1 de esta conversión).
+Los listeners de `document` de una sección se registran **una vez** al cargar el
+archivo, nunca en `mount()`.
 
 | Archivo | Ruta Flask | Contenido |
 |---------|-----------|-----------|
-| `templates/base.html` | — | CSS global, header, toast, helpers JS (`$`, `fmtKm`, `fmtDur`, `fmtDate`, `esc`). Carga `static/shared.js` ANTES del script inline: ahí viven `ACTIVITIES`/`activityOf`/`iconSvg`/`genericIconSvg`/`_loadActImages` y `BASEMAP_TILES`/`buildStyle` — no los redeclares en una plantilla (dos `const` globales con el mismo nombre en scripts distintos = SyntaxError) |
-| `templates/app.html` | `GET /dashboard` · `/rutas` · `/planificacion` | SPA con tres secciones: Dashboard, Mis Rutas, Mis Planes. Usa MapLibre GL para el mapa de visión general. |
-| `templates/sendero.html` | `GET /Sendero/<nombre>` | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación (Chart.js), notas, fotos, modal Immich, lightbox. Botón "✎ Editar" → editor. |
-| `templates/editor.html` | `GET /Sendero/<nombre>/editor` | Editor de rutas (F1+F2): recorte/eliminación de tramos, invertir, editar vértices, simplificar, corregir picos, dividir, undo/redo, historial de versiones, zoom en gráficas. |
-| `templates/plan_detalle.html` | `GET /Plan/<nombre>` | Detalle de ruta planificada: mapa, stats, notas, descarga GPX. |
+| `templates/base.html` | — | CSS global, header, toast, modal de Ajustes. Carga `static/vendor/*`, `static/fonts/fonts.css`, `static/shared.js` y `static/js/core/chrome.js`. No redeclares en una plantilla nada que ya esté en `shared.js`/`chrome.js` (dos `const` globales con el mismo nombre en scripts distintos = SyntaxError) |
+| `templates/shell.html` | `GET /Plan/<public_id>` | Shell de la SPA nueva: incluye `templates/sec/*.html`, carga `core/loader.js`+`store.js`+`router.js` y llama a `Router.start()`. Cero datos inyectados salvo el `bootstrap_json` opcional de la primera carga |
+| `templates/sec/plan.html` | (sección `plan` del shell) | Detalle de ruta planificada. Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
+| `templates/app.html` | `GET /dashboard` · `/rutas` · `/planificacion` | SPA vieja con tres secciones: Dashboard, Mis Rutas, Mis Planes. Usa MapLibre GL para el mapa de visión general. |
+| `templates/sendero.html` | `GET /Sendero/<public_id>` | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación (Chart.js), notas, fotos, modal Immich, lightbox. Botón "✎ Editar" → editor. |
+| `templates/editor.html` | `GET /Sendero/<public_id>/editor` | Editor de rutas (F1+F2): recorte/eliminación de tramos, invertir, editar vértices, simplificar, corregir picos, dividir, undo/redo, historial de versiones, zoom en gráficas. |
+| `templates/plan_detalle.html` *(legacy)* | — | Sustituido por `sec/plan.html` + `js/sec/plan.js`. Ya no se sirve. No editar. |
 | `templates/rutas.html` *(legacy)* | — | Ya no se sirve. No editar. |
 | `templates/overview.html` *(legacy)* | — | Ya no se sirve. No editar. |
 | `templates/planificacion.html` *(legacy)* | — | Ya no se sirve. No editar. |
 
 ### Navegación
 - Tarjeta en "Mis Rutas" → `location.href = '/Sendero/' + encodeURIComponent(name)`
+- Tarjeta en "Mis Planes" → `location.href = '/Plan/' + p.public_id` (la URL canónica
+  es el `public_id`; por nombre el servidor redirige 302, y con nombres repetidos
+  abriría otro plan)
 - Cambio de sección (Dashboard ↔ Mis Rutas ↔ Mis Planes) → SPA con `_showSec(name)`
+- Dentro del shell nuevo: `Router.go(url)` / `window.go(url)`, o un `data-nav="/url"`
+  en cualquier elemento (el router delega el click); si la vista destino no está en
+  el documento, cae a `location.href` sola
 - Botón "← Volver" en detalle → `location.href = '/rutas'`
 - Renombrar ruta → `history.replaceState` (actualiza URL sin recargar)
 - El botón Atrás del navegador funciona vía `window.addEventListener('popstate', ...)`
@@ -151,11 +228,11 @@ secciones y actualiza el `history` sin recargar la página.
 | GET | `/rutas` | `app.html` (sección rutas) |
 | GET | `/planificacion` | `app.html` (sección planes) |
 | GET | `/Sendero/<name>` | `sendero.html` con JSON inyectado |
-| GET | `/Plan/<name>` | `plan_detalle.html` con JSON inyectado |
+| GET | `/Plan/<public_id>` | `shell.html` (sección `plan`) con el plan como `bootstrap_json`; por nombre redirige 302 al `public_id` |
 | GET | `/api/routes` | lista paginada (incluye `thumb_file`); sin `limit` devuelve todas (es barata, ~130 KB/500 rutas) |
 | GET | `/api/routes/geojson` | FeatureCollection de líneas decimadas (props: id, name, activity, year, km). Acepta `?bbox=minLon,minLat,maxLon,maxLat`; sin él devuelve todas (no lo usa el dashboard salvo fallback) |
 | POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb. Dedup (ver sección): 409 exacta (hash) o blanda (firma); `?auto=1` importa la blanda marcada (`dup_suspect_of`) en vez de bloquear; `?force=1` la importa limpia (el usuario ya la aceptó en la web) |
-| GET | `/api/routes/<id>` | dict completo de la ruta |
+| GET | `/api/routes/<id>` | dict completo de la ruta. Lleva `rev` y `ETag` (= rev de `sync_log`): con `If-None-Match` responde **304** si no ha cambiado. `?lite=1` = track decimado y series remuestreadas a ~500 puntos (~20-30 KB en vez de ~350 KB; el editor necesita el completo) |
 | PATCH | `/api/routes/<id>` | actualiza name/notes/activity_type/immich_checked/device; `dup_suspect_of=null` descarta el aviso de posible duplicada |
 | DELETE | `/api/routes/<id>` | borra ruta + fotos + GPX + thumb + versiones |
 | POST | `/api/routes/<id>/rescan` | re-parsea GPX/FIT; regenera thumb |
@@ -189,6 +266,11 @@ secciones y actualiza el `history` sin recargar la página.
 | GET/POST | `/api/settings/gpx-types` | tipos GPX personalizados |
 | GET/POST | `/api/settings/gps-thresholds` | umbrales GPS por actividad (vel. máx km/h, ascenso máx m/s, altitud máx m); GET devuelve los efectivos (custom con fallback a defaults) |
 | GET | `/api/immich/thumb/<asset_id>` | proxy miniatura Immich |
+| GET | `/api/sync/state` | ¿ha cambiado algo? `{epoch,cursor,min_rev,counts}` + ETag `"<epoch>:<cursor>"`; con `If-None-Match` → **304 sin cuerpo** (la respuesta normal) |
+| GET | `/api/sync/changes` | diferencias desde `?since=<rev>` (`&epoch=`, `&limit=`): `{cursor, complete, reset, routes:{upserted,deleted}, planned:{…}}`. `since=0` = carga inicial; `reset:true` ⇒ el cliente vacía su copia |
+| GET | `/api/sync/manifest` | `[public_id, rev]` de todo (~30 B/ruta) para corroborar la copia local y descargar solo lo divergente |
+| GET | `/api/maps` | estado de los mapas base: `.pmtiles` disponibles, capa por defecto, zoom máx, atribución |
+| GET | `/tiles/<archivo.pmtiles>` | sirve el mapa base offline con soporte de `Range` (206). Solo nombres presentes en `data/tiles/` (sin travesía de rutas) |
 | GET/POST | `/api/mifit/settings` | ajustes Mi Fit/Zepp (GET enmascara el token) |
 | POST | `/api/mifit/sync` | encola sincronización manual (flag en settings); body `{reset:true}` reinicia la marca (reimportar desde fecha) |
 | GET | `/api/mifit/status` | estado de la última sincronización Mi Fit/Zepp |
@@ -565,10 +647,14 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 10. **`{{ route_json | safe }}` en sendero.html** — intencional. El JSON viene de
     `json.dumps()` sobre datos de la BD, no de input de usuario. No lo escapes dos veces.
 
-11. **Caché de rutas en sessionStorage** (`sendero_routes_v1`, TTL 10 min) — si cambias
-    los campos que devuelve `/api/routes`, cambia también la clave de caché para forzar
-    refresco en todos los clientes. Añadir `thumb_file` sin cambiar la clave causó que
-    los usuarios vieran tarjetas sin thumbnail hasta que la caché expiró.
+11. **Caché de rutas en el cliente** — si cambias los campos que devuelve `/api/routes`,
+    invalida la copia de los clientes: la clave de `sessionStorage` en `app.html`
+    (`sendero_routes_v4`, TTL 10 min) y, cuando la sección esté migrada al Store,
+    `DB_VERSION` de IndexedDB en `static/js/core/store.js` (su `onupgradeneeded` vacía los
+    almacenes). Añadir `thumb_file` sin cambiar la clave causó que los usuarios vieran
+    tarjetas sin thumbnail hasta que la caché expiró.
+    Recuerda que `/api/routes` y los `upserted` de `/api/sync/changes` comparten
+    columnas (`ROUTE_LIST_COLS`/`PLANNED_LIST_COLS`): la lista se toca en un solo sitio.
 
 12. **Toda columna nueva que se vaya a leer en un listado o agregado frecuente necesita
     su índice de cobertura en `init_db()`**, no solo el `ALTER TABLE`. Ver "Bugs
@@ -580,6 +666,23 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
     `PRAGMA busy_timeout` ya está puesto; para `ALTER TABLE ADD COLUMN` que puedan
     chocar, envuélvelos en `try/except sqlite3.OperationalError` tolerando
     `"duplicate column"`.
+
+14. **Toda tabla nueva que el cliente deba sincronizar necesita sus 3 triggers**
+    (`AFTER INSERT`/`UPDATE`/`DELETE`) en `_sync_triggers_sql()` y su entrada en
+    `_ENTITIES` de `api/sync.py`. Sin los triggers la tabla no aparece en
+    `/api/sync/changes` y los clientes no se enteran nunca de sus cambios; sin la
+    entrada en `_ENTITIES` las filas de `sync_log` se ignoran. Y si la tabla cuelga de
+    otra (como `photos` de `routes`), decide si es entidad propia o si solo sube el
+    `rev` de su padre. **No** actives `PRAGMA foreign_keys`/`recursive_triggers` sin
+    revisar esto (hoy el borrado de fotos es explícito, ver `api/routes.py`).
+
+15. **Un mapa nuevo se crea con `buildStyle(defaultBasemap(<fallback>))`**, nunca con las
+    teselas a mano: si no, ese mapa será el único que ignore la capa configurada en
+    Ajustes → Mapas (la offline incluida). Y para cambiar de capa, `applyBasemap(map, capa)`:
+    entre capas raster hace `setTiles()` (barato), pero al entrar o salir de
+    `OFFLINE_LAYER` (`pmtiles://`, otro maxzoom) **reconstruye el estilo y eso borra todas
+    tus fuentes y capas de datos** — repinta escuchando `map.on('sendero:basemap')` o
+    recreando el mapa (ver `plan.js` y `sendero.html`/`app.html` respectivamente).
 
 ## Modelo de datos
 
@@ -630,9 +733,42 @@ y DELETE; índice UNIQUE `idx_photos_public_id`; se fija al insertar con
 `name`, `source` (`gpx` | `dibujada`), `source_url`, `activity_type`,
 `distance_m`, `ascent_m`, `descent_m`, `ele_min`, `ele_max`, `start_lat`,
 `start_lon`, `geojson`, `elevation`, `notes`, `gpx_data` (BLOB), `created_at`,
+`public_id` (opaco no secuencial, igual que en `routes`/`photos`: es la URL
+canónica `/Plan/<public_id>`, la clave de `/api/planned/<public_id>` y la clave
+estable de la sincronización; índice UNIQUE `idx_planned_public_id` + índice de
+cobertura del listado `idx_planned_list_cov`, regla 12 — estas columnas pequeñas
+vienen físicamente DESPUÉS del BLOB `gpx_data`),
 `draw_anchors` (columna heredada del planner interno ya eliminado; siempre NULL
 en filas nuevas, no se lee ni se escribe — la migración se conserva por no
 reconstruir la tabla, ver `init_db()`)
+
+Las columnas que devuelve el listado están en **una sola constante**,
+`PLANNED_LIST_COLS` (`api/planned.py`), porque las leen `list_planned()` **y**
+`api/sync.py` para los `upserted` del delta. Lo mismo con `ROUTE_LIST_COLS` en
+`api/routes.py`: si las dos listas se separaran, el cliente recibiría tarjetas con
+campos distintos según si la ruta llegó por la carga inicial o por una sync.
+
+### Tablas `sync_seq` y `sync_log` (sincronización delta)
+Ver `roadmap/spa-offline-sync.md` §4. `sync_seq` es un contador monotónico global
+(una sola fila); `sync_log` tiene **una fila por entidad viva o borrada**
+(`entity` `'route'|'planned'`, `entity_id` = PK interna, `public_id`, `rev`, `op`
+`'up'|'del'`), y esas filas **no se borran nunca**: `op='del'` es la tombstone que
+permite que un cliente apagado semanas sepa qué desapareció (~40 B por entidad).
+
+Lo mantienen **9 TRIGGERS**, no el código Python (`_sync_triggers_sql()` en
+`core/database.py`): las mutaciones están repartidas en 13 sitios de 5 blueprints y
+cualquier esquema que dependa de "acuérdate de subir el contador aquí" se rompe en
+el primero que se olvide. Las fotos **no** son entidad propia: al añadirlas o
+borrarlas suben el `rev` de SU RUTA, que es lo que invalida el detalle cacheado en
+el cliente (las fotos van dentro de ese detalle).
+
+**`rev` es un cursor opaco**: no es una fecha, no ordena por antigüedad y no se
+muestra en la UI. Solo dice "esto ya no es lo que tenías".
+
+`settings['sync_epoch']` es la red de seguridad: si se restaura un backup o se
+reconstruye la BD, el epoch cambia y todos los clientes recargan de cero en vez de
+quedarse con datos fantasma. `settings['sync_min_rev']` es la escotilla por si algún
+día se purgan tombstones (hoy 0: no se purgan).
 
 ### Tabla `settings`
 Clave-valor: `IMMICH_URL`, `IMMICH_API_KEY`, `IMMICH_MARGIN_MIN`, `IMMICH_DIST_M`,
@@ -644,6 +780,13 @@ diferencia de PLANNER_URL, un valor vacío SÍ desactiva, no cae al default),
 `GPX_TYPE_CUSTOM` (JSON), `GPS_THRESHOLDS_CUSTOM` (JSON),
 `stats_cache` (JSON con estadísticas globales). Los ajustes de settings
 sobreescriben los de `.env`/variables de entorno.
+
+Mapas (Ajustes → Mapas, en `_SETTINGS_KEYS`): `MAP_OFFLINE_FILE` (nombre de un
+`.pmtiles` dentro de `data/tiles/`; vacío o inexistente = la capa "Offline (local)"
+no se ofrece), `MAP_DEFAULT_LAYER` (capa base con la que arrancan los mapas),
+`MAP_OFFLINE_MAXZOOM`, `MAP_OFFLINE_ATTRIBUTION`. De solo lectura para el cliente
+vía `/api/maps` y `<body data-map-cfg>` (lo lee `MAP_CFG` en `static/shared.js`).
+`sync_epoch` y `sync_min_rev` también viven aquí, pero los escribe `init_db()`.
 
 Mi Fit/Zepp (auto-importación): editables por `api/mifit.py` y en `_SETTINGS_KEYS`
 (refrescadas por `refresh_config`): `MIFIT_ENABLED` (0/1), `MIFIT_TOKEN` (apptoken),
@@ -657,8 +800,10 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - La validación de extensión en `create_route` acepta cualquier nombre que termine en
   `gpx` o `.fit`. No endurezcas sin revisar el watcher.
 - No hay autenticación. Intencional para LAN.
-- `rutas.html`, `overview.html`, `planificacion.html` — archivos legacy en `templates/`.
-  No los borres (pueden servir de referencia) pero no los edites; el app no los usa.
+- `rutas.html`, `overview.html`, `planificacion.html`, `plan_detalle.html` — archivos
+  legacy en `templates/`. No los borres (pueden servir de referencia) pero no los edites;
+  el app no los usa. `plan_detalle.html` es el original del que salió `sec/plan.html` +
+  `js/sec/plan.js`: editarlo no tiene ningún efecto.
 - **Docker Desktop sobre WSL2 (esta instalación) puede dejar procesos `gunicorn`/
   `watch.py` huérfanos** tras varios `docker compose down`/`up --build` seguidos: el
   proceso sigue vivo (visible en `ps aux` del host, propiedad de `root`) y sigue
@@ -682,8 +827,21 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   sigue ocultando el modal al cargar la ruta.
 - Si tocaste `_build_route_dict()`: verifica que `/api/routes/<id>` y
   `/Sendero/<nombre>` devuelven los mismos campos.
-- Si añadiste columnas a `/api/routes` (lista): actualiza la clave `ROUTE_CACHE`
-  en `app.html` para invalidar el sessionStorage de los clientes.
+- Si añadiste columnas a `/api/routes` (lista): tócalas en `ROUTE_LIST_COLS`
+  (`api/routes.py`, la comparten el listado y `/api/sync/changes`), añade su índice de
+  cobertura y actualiza la clave `ROUTE_CACHE` en `app.html` para invalidar el
+  sessionStorage de los clientes (regla 11).
+- Si tocaste la sincronización: `curl -si localhost:8090/api/sync/state` dos veces (la
+  segunda con `If-None-Match` debe dar **304**), y comprueba que crear/editar/borrar una
+  ruta mueve el `cursor` y aparece en `/api/sync/changes?since=<anterior>` (los triggers
+  se disparan en el esquema, no en la conexión, pero verifícalo, no lo asumas).
+- Si migraste una vista a sección de la SPA: ¿`unmount()` destruye el mapa y los `Chart`?
+  Monta y desmonta la sección 20 veces seguidas y mira que el heap no crezca ni se
+  dupliquen marcadores o listeners (roadmap §2). ¿Los listeners de `document` se
+  registran una sola vez al cargar el archivo, no en cada `mount()`?
+- Si creaste un mapa nuevo o tocaste el selector de capas: ¿pasa por
+  `buildStyle(defaultBasemap(...))` y por `applyBasemap()`, y repinta sus capas de datos
+  al entrar/salir de la capa offline? (regla 15).
 - Si tocaste `app.html` (`makeCard`, CSS de `.card`): recuerda que tanto "Mis Rutas"
   como las tarjetas del mapa de overview están en ese mismo archivo.
 - Si tocaste el mapa del dashboard: verifica que `_reloadDashboard()` limpia los contenedores antes de repoblar y que `initDashMap()` no se llama dos veces (guarda `if(dashMapLoaded||dashMap)return`).

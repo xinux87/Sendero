@@ -1,12 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Editor — Sendero{% endblock %}
 
-{% block head_libs %}
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-{% endblock %}
-
 {% block styles %}
 .ed-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 .ed-title{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -495,7 +489,8 @@ function effB(){ if(selA==null && selB==null) return null;
   if(selA!=null && selB!=null) return Math.max(selA,selB); return selA ?? selB; }
 
 /* ── mapa ───────────────────────────────────────────────────────────────── */
-/* buildStyle y BASEMAP_TILES viven en static/shared.js */
+/* buildStyle y defaultBasemap viven en static/shared.js. El editor no tiene
+   selector de capas: usa la de Ajustes → Mapas (offline incluida). */
 
 function fitRoute(){
   if(!cur.length) return;
@@ -518,7 +513,7 @@ function nearestIdx(lon,lat){
 }
 
 function initMap(){
-  map = new maplibregl.Map({container:'edmap',style:buildStyle('Topográfico'),
+  map = new maplibregl.Map({container:'edmap',style:buildStyle(defaultBasemap()),
     center:cur.length?cur[0]:[-3.7,40.4],zoom:12,attributionControl:false});
   map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
   map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
