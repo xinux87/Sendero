@@ -314,7 +314,7 @@ function openActivityPicker(){
 }
 function closeActivityPicker(){$("#activity-modal").classList.add("hidden");}
 async function setActivity(id){
-  await fetch(`/api/routes/${current.id}`,{method:"PATCH",
+  await fetch(`/api/routes/${current.public_id}`,{method:"PATCH",
     headers:{"Content-Type":"application/json"},body:JSON.stringify({activity_type:id})});
   current.activity_type=id;
   const a=activityOf(id);
@@ -465,11 +465,11 @@ function renderMap(){
       .setPopup(new maplibregl.Popup({offset:20}).setText('Fin')).addTo(map);
     photoMarkers={};
     current.photos.filter(p=>p.lat&&p.lon).forEach(p=>{
-      const idx=current.photos.findIndex(ph=>ph.id===p.id);
+      const idx=current.photos.findIndex(ph=>ph.public_id===p.public_id);
       const el=document.createElement('div');el.className='photo-marker';
       el.innerHTML='<svg width="13" height="11" viewBox="0 0 13 11" fill="#101a14"><rect x="0" y="2" width="13" height="9" rx="1.5"/><path d="M4 0h5l1 2H3z"/><circle cx="6.5" cy="6.5" r="2.3" fill="#e8c44a"/><circle cx="6.5" cy="6.5" r="1.1" fill="#101a14"/></svg>';
       el.onclick=(e)=>{e.stopPropagation();openLightbox(idx);};
-      photoMarkers[p.id]=new maplibregl.Marker({element:el,anchor:'center'})
+      photoMarkers[p.public_id]=new maplibregl.Marker({element:el,anchor:'center'})
         .setLngLat([p.lon,p.lat]).addTo(map);
     });
   });
@@ -597,7 +597,7 @@ function photoElevPoints(){
     }
     const dKm=cum[bi]/1000;
     const ep=el.reduce((a,b)=>Math.abs(b.d-dKm)<Math.abs(a.d-dKm)?b:a);
-    return{x:dKm,y:ep.e,photoId:p.id};
+    return{x:dKm,y:ep.e,photoId:p.public_id};
   });
 }
 function renderElev(){
@@ -631,7 +631,7 @@ function renderElev(){
       maintainAspectRatio:false,
       onClick(e,els){
         if(!els.length||els[0].datasetIndex!==1)return;
-        const idx=current.photos.findIndex(p=>p.id===ppts[els[0].index].photoId);
+        const idx=current.photos.findIndex(p=>p.public_id===ppts[els[0].index].photoId);
         if(idx>=0)openLightbox(idx);
       },
       onHover(e,els,chart){
@@ -717,11 +717,11 @@ function renderHR(){
 function renderGallery(){
   const g=$("#gallery");g.innerHTML="";
   current.photos.forEach((p,i)=>{
-    const d=document.createElement("div");d.className="thumb";d.dataset.photoid=p.id;
+    const d=document.createElement("div");d.className="thumb";d.dataset.photoid=p.public_id;
     d.onclick=()=>openLightbox(i);
-    d.innerHTML=`<img src="/api/photos/${p.id}/file" loading="lazy">
+    d.innerHTML=`<img src="/api/photos/${p.public_id}/file" loading="lazy">
       ${p.lat?'<span class="geo">GPS</span>':''}
-      <button class="del" onclick="delPhoto(${p.id},event)">✕</button>`;
+      <button class="del" onclick="delPhoto(${p.public_id},event)">✕</button>`;
     g.appendChild(d);
   });
 }
@@ -756,7 +756,7 @@ function renderDupBanner(){
   b.style.display="flex";
 }
 async function dismissDup(){
-  await fetch(`/api/routes/${current.id}`,{method:"PATCH",
+  await fetch(`/api/routes/${current.public_id}`,{method:"PATCH",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({dup_suspect_of:null})});
   current.dup_suspect_of=null;markCacheDirty();renderDupBanner();
@@ -769,7 +769,7 @@ function markCacheDirty(){
 
 // ---------- acciones ----------
 async function saveNotes(){
-  await fetch(`/api/routes/${current.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},
+  await fetch(`/api/routes/${current.public_id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({notes:$("#notes").value})});
   current.notes=$("#notes").value;toast("Resumen guardado");
 }
@@ -777,7 +777,7 @@ async function rescanRoute(btn){
   const orig=btn.textContent;
   btn.disabled=true;btn.textContent="Escaneando…";
   try{
-    const res=await fetch(`/api/routes/${current.id}/rescan`,{method:"POST"});
+    const res=await fetch(`/api/routes/${current.public_id}/rescan`,{method:"POST"});
     if(!res.ok){const j=await res.json();toast(j.error||"Error al reescanear");return;}
     current=await res.json();
     renderAll();
@@ -789,7 +789,7 @@ async function rescanRoute(btn){
 
 async function renameRoute(){
   const n=prompt("Nuevo nombre:",current.name);if(!n)return;
-  await fetch(`/api/routes/${current.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},
+  await fetch(`/api/routes/${current.public_id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({name:n})});
   current.name=n;
   $("#d-name").textContent=n;
@@ -800,7 +800,7 @@ async function renameRoute(){
 }
 async function removeRoute(){
   if(!confirm("¿Eliminar esta ruta y sus fotos?"))return;
-  await fetch(`/api/routes/${current.id}`,{method:"DELETE"});
+  await fetch(`/api/routes/${current.public_id}`,{method:"DELETE"});
   location.href='/rutas';
 }
 async function delPhoto(id,ev){
@@ -808,7 +808,7 @@ async function delPhoto(id,ev){
   await fetch(`/api/photos/${id}`,{method:"DELETE"});
   const el=document.querySelector(`.thumb[data-photoid="${id}"]`);
   if(el)el.remove();
-  const idx=current.photos.findIndex(p=>p.id===id);
+  const idx=current.photos.findIndex(p=>p.public_id===id);
   if(idx!==-1)current.photos.splice(idx,1);
   if(photoMarkers[id]){photoMarkers[id].remove();delete photoMarkers[id];}
   if(!$("#lb-overlay").classList.contains("hidden"))closeLightbox();
@@ -826,8 +826,8 @@ async function uploadPhotos(files){
   if(!files.length)return;
   const fd=new FormData();[...files].forEach(f=>fd.append("photos",f));
   toast("Subiendo fotos…");
-  await fetch(`/api/routes/${current.id}/photos`,{method:"POST",body:fd});
-  current=await(await fetch(`/api/routes/${current.id}`)).json();
+  await fetch(`/api/routes/${current.public_id}/photos`,{method:"POST",body:fd});
+  current=await(await fetch(`/api/routes/${current.public_id}`)).json();
   renderMap();renderElev();renderGallery();
   pin.value="";
 }
@@ -835,7 +835,7 @@ async function uploadPhotos(files){
 // ---------- Immich ----------
 async function autoSearchImmich(){
   try{
-    const res=await fetch(`/api/routes/${current.id}/immich/candidates`);
+    const res=await fetch(`/api/routes/${current.public_id}/immich/candidates`);
     if(!res.ok)return;
     const data=await res.json();
     immichCands=data.candidates||[];
@@ -864,7 +864,7 @@ async function openImmich(){
   $("#near-wrap").classList.add("hidden");
   $("#immich-status").textContent="Buscando fotos en Immich…";
   $("#immich-count").textContent="";
-  const res=await fetch(`/api/routes/${current.id}/immich/candidates`);
+  const res=await fetch(`/api/routes/${current.public_id}/immich/candidates`);
   const data=await res.json();
   if(!res.ok){$("#immich-status").textContent=data.error||"Error al consultar Immich";return;}
   immichCands=data.candidates;
@@ -898,17 +898,17 @@ function togglePick(i,el){
 async function confirmImmich(){
   if(!immichSel.size){closeImmich();return;}
   const items=[...immichSel].map(i=>immichCands[i]);
-  await fetch(`/api/routes/${current.id}/immich/select`,{method:"POST",
+  await fetch(`/api/routes/${current.public_id}/immich/select`,{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify({items})});
   closeImmich();toast(`${items.length} foto(s) añadidas`);
-  current=await(await fetch(`/api/routes/${current.id}`)).json();
+  current=await(await fetch(`/api/routes/${current.public_id}`)).json();
   renderMap();renderElev();renderGallery();
 }
 function closeImmich(){
   $("#immich-modal").classList.add("hidden");
   if(!current.immich_checked){
     current.immich_checked=true;
-    fetch(`/api/routes/${current.id}`,{method:"PATCH",
+    fetch(`/api/routes/${current.public_id}`,{method:"PATCH",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({immich_checked:1})});
   }
@@ -927,7 +927,7 @@ function selectAllImmich(){
 function openLightbox(idx){
   lbIdx=idx;
   const p=current.photos[lbIdx];
-  $("#lb-img").src=`/api/photos/${p.id}/file`;
+  $("#lb-img").src=`/api/photos/${p.public_id}/file`;
   $("#lb-counter").textContent=`${lbIdx+1} / ${current.photos.length}`;
   const mul=current.photos.length>1;
   document.querySelector(".lb-prev").style.display=mul?"":"none";
@@ -937,7 +937,7 @@ function openLightbox(idx){
 function closeLightbox(){$("#lb-overlay").classList.add("hidden");}
 function lbNav(dir){lbIdx=(lbIdx+dir+current.photos.length)%current.photos.length;openLightbox(lbIdx);}
 async function lbDelete(){
-  const id=current.photos[lbIdx].id;
+  const id=current.photos[lbIdx].public_id;
   await fetch(`/api/photos/${id}`,{method:"DELETE"});
   const el=document.querySelector(`.thumb[data-photoid="${id}"]`);
   if(el)el.remove();
@@ -977,7 +977,7 @@ document.addEventListener("keydown",e=>{
 
 function downloadGpx(){
   const a=document.createElement("a");
-  a.href=`/api/routes/${current.id}/gpx?download=1`;
+  a.href=`/api/routes/${current.public_id}/gpx?download=1`;
   a.click();
 }
 

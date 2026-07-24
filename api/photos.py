@@ -2,7 +2,7 @@ import datetime as dt
 from flask import Blueprint, abort, request, jsonify, send_file, Response
 
 import core.config as cfg
-from core.database import db
+from core.database import db, rid_from_public, set_public_id
 from core.exif import read_exif
 from core.immich import immich_get
 from werkzeug.utils import secure_filename
@@ -10,10 +10,9 @@ from werkzeug.utils import secure_filename
 photos_bp = Blueprint("photos", __name__)
 
 
-@photos_bp.route("/api/routes/<int:rid>/photos", methods=["POST"])
+@photos_bp.route("/api/routes/<rid>/photos", methods=["POST"])
 def add_photos(rid):
-    if not db().execute("SELECT 1 FROM routes WHERE id=?", (rid,)).fetchone():
-        abort(404)
+    rid = rid_from_public(rid)
     saved = []
     con = db()
     for f in request.files.getlist("photos"):
@@ -29,14 +28,14 @@ def add_photos(rid):
             "INSERT INTO photos (route_id,file,original,lat,lon,taken_at) VALUES (?,?,?,?,?,?)",
             (rid, stored, f.filename, lat, lon, taken),
         )
-        saved.append(cur.lastrowid)
+        saved.append(set_public_id(con, "photos", cur.lastrowid))
     con.commit()
     return jsonify({"added": saved}), 201
 
 
-@photos_bp.route("/api/photos/<int:pid>/file")
+@photos_bp.route("/api/photos/<pid>/file")
 def photo_file(pid):
-    p = db().execute("SELECT file,immich_id FROM photos WHERE id=?", (pid,)).fetchone()
+    p = db().execute("SELECT file,immich_id FROM photos WHERE public_id=?", (pid,)).fetchone()
     if not p:
         abort(404)
     if p["immich_id"]:
@@ -55,14 +54,14 @@ def photo_file(pid):
     return send_file(cfg.PHOTO_DIR / p["file"], max_age=31536000)
 
 
-@photos_bp.route("/api/photos/<int:pid>", methods=["DELETE"])
+@photos_bp.route("/api/photos/<pid>", methods=["DELETE"])
 def delete_photo(pid):
     con = db()
-    p = con.execute("SELECT file FROM photos WHERE id=?", (pid,)).fetchone()
+    p = con.execute("SELECT file FROM photos WHERE public_id=?", (pid,)).fetchone()
     if not p:
         abort(404)
     if p["file"]:
         (cfg.PHOTO_DIR / p["file"]).unlink(missing_ok=True)
-    con.execute("DELETE FROM photos WHERE id=?", (pid,))
+    con.execute("DELETE FROM photos WHERE public_id=?", (pid,))
     con.commit()
     return "", 204

@@ -1,11 +1,12 @@
 import json
 import re
 import shutil
+import sqlite3
 import datetime as dt
 from flask import Blueprint, abort, request, jsonify, render_template, Response, send_file
 
 import core.config as cfg
-from core.database import db
+from core.database import db, new_token, rid_from_public
 from core.parsers import (
     analyse_gpx, analyse_fit, _detect_activity, _gpx_type_lookup, _FIT_SPORT_MAP
 )
@@ -30,7 +31,7 @@ def _build_route_dict(rid):
     if not r:
         abort(404)
     photos = db().execute(
-        "SELECT id,file,immich_id,original,lat,lon,taken_at FROM photos "
+        "SELECT id,public_id,file,immich_id,original,lat,lon,taken_at FROM photos "
         "WHERE route_id=? ORDER BY taken_at",
         (rid,),
     ).fetchall()
@@ -52,12 +53,15 @@ def _build_route_dict(rid):
     d["version"] = v["v"] or 0
     # Aviso de posible duplicada (marcada por la ingesta automática). Se resuelve
     # de una PATCH poniendo dup_suspect_of=null ("descartar aviso").
-    d["dup_suspect_of"] = d.get("dup_suspect_of")
+    d["dup_suspect_of"] = d.get("dup_suspect_of")   # id interno: solo flag para el front
     d["dup_suspect_name"] = None
+    d["dup_suspect_public"] = None                  # public_id de la parecida (para enlazarla)
     if d["dup_suspect_of"]:
-        s = db().execute("SELECT name FROM routes WHERE id=?",
+        s = db().execute("SELECT name,public_id FROM routes WHERE id=?",
                          (d["dup_suspect_of"],)).fetchone()
-        d["dup_suspect_name"] = s["name"] if s else None
+        if s:
+            d["dup_suspect_name"] = s["name"]
+            d["dup_suspect_public"] = s["public_id"]
     return d
 
 
@@ -240,7 +244,7 @@ def routes_geojson():
                   " AND bbox_min_lat<=? AND bbox_max_lat>=?")
         params += [max_lon, min_lon, max_lat, min_lat]
     rows = con.execute(
-        f"SELECT id, name, activity_type, geojson, started_at, distance_m "
+        f"SELECT id, public_id, name, activity_type, geojson, started_at, distance_m "
         f"FROM routes WHERE {where}",
         params,
     ).fetchall()
@@ -258,7 +262,7 @@ def routes_geojson():
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": dec},
             "properties": {
-                "id": r["id"],
+                "id": r["public_id"],
                 "name": r["name"],
                 "activity": r["activity_type"] or "otros",
                 "year": (r["started_at"] or "")[:4] or None,
@@ -274,7 +278,7 @@ def list_routes():
     limit  = request.args.get("limit",  type=int)
     offset = request.args.get("offset", 0, type=int)
     total  = con.execute("SELECT COUNT(*) FROM routes").fetchone()[0]
-    q = ("SELECT id,name,distance_m,ascent_m,duration_s,moving_s,"
+    q = ("SELECT id,public_id,name,distance_m,ascent_m,duration_s,moving_s,"
          "started_at,activity_type,start_lat,start_lon,thumb_file,dup_suspect_of,"
          "locality "
          "FROM routes ORDER BY COALESCE(started_at,created_at) DESC")
@@ -310,12 +314,12 @@ def create_route():
     # también en la ingesta automática. Antes de parsear ni escribir nada.
     chash = content_hash(raw)
     dup = con.execute(
-        "SELECT id, name FROM routes WHERE content_hash=?", (chash,)
+        "SELECT id, name, public_id FROM routes WHERE content_hash=?", (chash,)
     ).fetchone()
     if dup:
         return jsonify({
             "error": f"Ruta repetida: ya existe «{dup['name']}» con el mismo contenido",
-            "duplicate": True, "existing_id": dup["id"], "existing_name": dup["name"],
+            "duplicate": True, "existing_id": dup["public_id"], "existing_name": dup["name"],
         }), 409
 
     try:
@@ -332,10 +336,11 @@ def create_route():
     auto  = _truthy(request.args.get("auto")  or request.form.get("auto"))
     force = _truthy(request.args.get("force") or request.form.get("force"))
     sig = route_signature(stats.get("started_at"), stats.get("distance_m"), coords)
-    dup_suspect_of = None
+    dup_suspect_of = None          # id interno de la ruta parecida (FK a routes.id)
+    dup_suspect_public = None      # su public_id, para exponerlo en la respuesta
     if sig and not force:
         soft = con.execute(
-            "SELECT id, name FROM routes WHERE signature=? LIMIT 1", (sig,)
+            "SELECT id, name, public_id FROM routes WHERE signature=? LIMIT 1", (sig,)
         ).fetchone()
         if soft:
             if not auto:
@@ -343,10 +348,11 @@ def create_route():
                 return jsonify({
                     "error": f"Esta ruta se parece mucho a «{soft['name']}».",
                     "soft_duplicate": True,
-                    "existing_id": soft["id"], "existing_name": soft["name"],
+                    "existing_id": soft["public_id"], "existing_name": soft["name"],
                 }), 409
             # Automático: importar igual, pero marcada para revisión humana.
             dup_suspect_of = soft["id"]
+            dup_suspect_public = soft["public_id"]
 
     (cfg.GPX_DIR / stored).write_bytes(raw)
 
@@ -368,25 +374,31 @@ def create_route():
     start_lat = coords[0][1] if coords else None
     start_lon = coords[0][0] if coords else None
     bbox = _route_bbox(coords)
-    cur = con.execute(
-        """INSERT INTO routes
-        (name,notes,gpx_file,distance_m,ascent_m,descent_m,duration_s,moving_s,
-         ele_min,ele_max,avg_speed,started_at,geojson,elevation,created_at,
-         activity_type,device,start_lat,start_lon,heart_rate,hr_avg,hr_max,
-         bbox_min_lon,bbox_min_lat,bbox_max_lon,bbox_max_lat,speed,
-         content_hash,signature,dup_suspect_of)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (name, "", stored, stats["distance_m"], stats["ascent_m"],
-         stats["descent_m"], stats["duration_s"], stats["moving_s"],
-         stats["ele_min"], stats["ele_max"], stats["avg_speed"],
-         stats["started_at"], json.dumps(coords), json.dumps(elev),
-         dt.datetime.now().isoformat(), activity_type, creator,
-         start_lat, start_lon,
-         json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max,
-         *(bbox or (None, None, None, None)),
-         json.dumps(speed_profile) if speed_profile else None,
-         chash, sig, dup_suspect_of),
-    )
+    public_id = new_token()
+    while True:  # el token es aleatorio de 64 bits: la colisión UNIQUE es casi imposible
+        try:
+            cur = con.execute(
+                """INSERT INTO routes
+                (name,notes,gpx_file,distance_m,ascent_m,descent_m,duration_s,moving_s,
+                 ele_min,ele_max,avg_speed,started_at,geojson,elevation,created_at,
+                 activity_type,device,start_lat,start_lon,heart_rate,hr_avg,hr_max,
+                 bbox_min_lon,bbox_min_lat,bbox_max_lon,bbox_max_lat,speed,
+                 content_hash,signature,dup_suspect_of,public_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (name, "", stored, stats["distance_m"], stats["ascent_m"],
+                 stats["descent_m"], stats["duration_s"], stats["moving_s"],
+                 stats["ele_min"], stats["ele_max"], stats["avg_speed"],
+                 stats["started_at"], json.dumps(coords), json.dumps(elev),
+                 dt.datetime.now().isoformat(), activity_type, creator,
+                 start_lat, start_lon,
+                 json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max,
+                 *(bbox or (None, None, None, None)),
+                 json.dumps(speed_profile) if speed_profile else None,
+                 chash, sig, dup_suspect_of, public_id),
+            )
+            break
+        except sqlite3.IntegrityError:
+            public_id = new_token()
     con.commit()
     rid = cur.lastrowid
     thumb = generate_thumb(coords, stored)
@@ -402,19 +414,20 @@ def create_route():
         con.execute("UPDATE routes SET locality=? WHERE id=?", (loc, rid))
     _mark_stats_dirty(con)
     con.commit()
-    resp = {"id": rid}
+    resp = {"public_id": public_id, "id": public_id}
     if dup_suspect_of:
-        resp.update({"soft_duplicate": True, "existing_id": dup_suspect_of})
+        resp.update({"soft_duplicate": True, "existing_id": dup_suspect_public})
     return jsonify(resp), 201
 
 
-@routes_bp.route("/api/routes/<int:rid>", methods=["GET"])
+@routes_bp.route("/api/routes/<rid>", methods=["GET"])
 def get_route(rid):
-    return jsonify(_build_route_dict(rid))
+    return jsonify(_build_route_dict(rid_from_public(rid)))
 
 
-@routes_bp.route("/api/routes/<int:rid>", methods=["DELETE"])
+@routes_bp.route("/api/routes/<rid>", methods=["DELETE"])
 def delete_route(rid):
+    rid = rid_from_public(rid)
     con = db()
     r = con.execute("SELECT gpx_file, thumb_file FROM routes WHERE id=?", (rid,)).fetchone()
     if not r:
@@ -434,8 +447,9 @@ def delete_route(rid):
     return "", 204
 
 
-@routes_bp.route("/api/routes/<int:rid>", methods=["PATCH"])
+@routes_bp.route("/api/routes/<rid>", methods=["PATCH"])
 def update_route(rid):
+    rid = rid_from_public(rid)
     data = request.get_json(force=True)
     con = db()
     fields, vals = [], []
@@ -547,8 +561,9 @@ def _reanalyse_and_update(con, rid, row):
     return None
 
 
-@routes_bp.route("/api/routes/<int:rid>/rescan", methods=["POST"])
+@routes_bp.route("/api/routes/<rid>/rescan", methods=["POST"])
 def rescan_route(rid):
+    rid = rid_from_public(rid)
     con = db()
     r = con.execute("SELECT name, gpx_file FROM routes WHERE id=?", (rid,)).fetchone()
     if not r:
@@ -559,9 +574,9 @@ def rescan_route(rid):
     return jsonify(_build_route_dict(rid))
 
 
-@routes_bp.route("/api/routes/<int:rid>/thumb", methods=["GET"])
+@routes_bp.route("/api/routes/<rid>/thumb", methods=["GET"])
 def route_thumb(rid):
-    r = db().execute("SELECT thumb_file FROM routes WHERE id=?", (rid,)).fetchone()
+    r = db().execute("SELECT thumb_file FROM routes WHERE public_id=?", (rid,)).fetchone()
     if not r or not r["thumb_file"]:
         abort(404)
     fpath = cfg.THUMB_DIR / r["thumb_file"]
@@ -573,9 +588,9 @@ def route_thumb(rid):
     return send_file(fpath, mimetype="image/png")
 
 
-@routes_bp.route("/api/routes/<int:rid>/gpx", methods=["GET"])
+@routes_bp.route("/api/routes/<rid>/gpx", methods=["GET"])
 def download_route_gpx(rid):
-    r = db().execute("SELECT name, gpx_file FROM routes WHERE id=?", (rid,)).fetchone()
+    r = db().execute("SELECT name, gpx_file FROM routes WHERE public_id=?", (rid,)).fetchone()
     if not r:
         abort(404)
     fpath = cfg.GPX_DIR / r["gpx_file"]

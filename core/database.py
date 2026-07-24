@@ -1,7 +1,17 @@
 import json
+import secrets
 import sqlite3
-from flask import g
+from flask import abort, g
 import core.config as cfg
+
+
+def new_token():
+    """Token público opaco (no secuencial) para URLs de rutas/fotos.
+
+    ~11 chars URL-safe (A-Za-z0-9_-), 64 bits: no adivinable ni enumerable, así
+    CrowdSec no ve un patrón secuencial al pedir las miniaturas del listado.
+    """
+    return secrets.token_urlsafe(8)
 
 
 # Gunicorn arranca varios workers (procesos) que abren su propia conexión sqlite3
@@ -29,6 +39,41 @@ def close_db(exc):
     d = g.pop("db", None)
     if d is not None:
         d.close()
+
+
+def rid_from_public(pub):
+    """public_id → id entero interno de la ruta. 404 si no existe.
+
+    Se llama en la 1ª línea de cada endpoint que antes tomaba <int:rid>: a partir
+    de ahí el resto del handler opera con el entero como siempre.
+    """
+    row = db().execute("SELECT id FROM routes WHERE public_id=?", (pub,)).fetchone()
+    if not row:
+        abort(404)
+    return row["id"]
+
+
+def pid_from_public(pub):
+    """public_id → id entero interno de la foto. 404 si no existe."""
+    row = db().execute("SELECT id FROM photos WHERE public_id=?", (pub,)).fetchone()
+    if not row:
+        abort(404)
+    return row["id"]
+
+
+def set_public_id(con, table, row_id):
+    """Asigna un public_id nuevo a una fila recién insertada y lo devuelve.
+
+    Para INSERTs que no lo fijan en línea (split/merge de rutas, subida de fotos).
+    Reintenta si el token aleatorio choca con el índice UNIQUE (casi imposible).
+    """
+    while True:
+        token = new_token()
+        try:
+            con.execute(f"UPDATE {table} SET public_id=? WHERE id=?", (token, row_id))
+            return token
+        except sqlite3.IntegrityError:
+            continue
 
 
 def init_db():
@@ -73,6 +118,16 @@ def init_db():
     photo_cols = [r[1] for r in con.execute("PRAGMA table_info(photos)").fetchall()]
     if "immich_id" not in photo_cols:
         con.execute("ALTER TABLE photos ADD COLUMN immich_id TEXT")
+    # public_id: identificador opaco no secuencial expuesto en las URLs (la PK
+    # entera se queda interna). Evita que /api/photos/<pid>/file sea enumerable.
+    # ALTER envuelto por si 2 workers corren init_db() a la vez (regla 13).
+    if "public_id" not in photo_cols:
+        try:
+            con.execute("ALTER TABLE photos ADD COLUMN public_id TEXT")
+            con.commit()
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e):
+                raise
     route_cols = [r[1] for r in con.execute("PRAGMA table_info(routes)").fetchall()]
     if "activity_type" not in route_cols:
         con.execute("ALTER TABLE routes ADD COLUMN activity_type TEXT")
@@ -108,11 +163,15 @@ def init_db():
     # locality: sitio donde se hizo la ruta (geocoding inverso del punto de
     # inicio, core/geocode.py). Se rellena best-effort al importar y al reescanear
     # una ruta que aún no la tenga; NULL = sin localidad (servicio desactivado o
-    # geocoding fallido). Se lee en el listado → va en idx_routes_list_cov3.
+    # geocoding fallido). Se lee en el listado → va en idx_routes_list_cov4.
+    # public_id: identificador opaco no secuencial expuesto en las URLs de la ruta
+    # (/api/routes/<public_id>/...). La PK entera se queda interna. Se lee en el
+    # listado → va en idx_routes_list_cov4 (regla 12) y lleva índice UNIQUE propio.
     for _col, _decl in (("content_hash", "TEXT"),
                         ("signature", "TEXT"),
                         ("dup_suspect_of", "INTEGER"),
-                        ("locality", "TEXT")):
+                        ("locality", "TEXT"),
+                        ("public_id", "TEXT")):
         if _col not in route_cols:
             try:
                 con.execute(f"ALTER TABLE routes ADD COLUMN {_col} {_decl}")
@@ -158,13 +217,18 @@ def init_db():
     # Nombre nuevo (_cov3) porque el listado ahora lee también locality: un
     # CREATE ... IF NOT EXISTS sobre el nombre viejo no lo recrearía con la
     # columna añadida (regla 12). Se crean el nuevo y se descartan los anteriores.
-    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_list_cov3 ON routes(
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_list_cov4 ON routes(
         COALESCE(started_at,created_at) DESC,
         id, name, distance_m, ascent_m, duration_s, moving_s, started_at,
-        activity_type, start_lat, start_lon, thumb_file, dup_suspect_of, locality
+        activity_type, start_lat, start_lon, thumb_file, dup_suspect_of, locality,
+        public_id
     )""")
     con.execute("DROP INDEX IF EXISTS idx_routes_list_cov")
     con.execute("DROP INDEX IF EXISTS idx_routes_list_cov2")
+    con.execute("DROP INDEX IF EXISTS idx_routes_list_cov3")
+    # Lookups de public_id → id en el borde de cada endpoint; UNIQUE por tabla.
+    con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_routes_public_id ON routes(public_id)")
+    con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_photos_public_id ON photos(public_id)")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_stats_cov ON routes(
         activity_type, distance_m, ascent_m, moving_s, avg_speed, started_at, name
     )""")
@@ -200,6 +264,24 @@ def init_db():
             _params.append(_r[0])
             con.execute(f"UPDATE routes SET {', '.join(_sets)} WHERE id=?", _params)
     con.commit()
+
+    # Backfill de public_id para filas previas a esta migración (public_id NULL).
+    # Idempotente (solo toca NULLs) y tolerante a la carrera de 2 workers: el
+    # UPDATE lleva "AND public_id IS NULL" (el que pierda no pisa el token del que
+    # ganó) y reintenta si el token aleatorio choca con el índice UNIQUE.
+    for _tbl in ("routes", "photos"):
+        _ids = [row[0] for row in con.execute(
+            f"SELECT id FROM {_tbl} WHERE public_id IS NULL").fetchall()]
+        for _id in _ids:
+            while True:
+                try:
+                    con.execute(
+                        f"UPDATE {_tbl} SET public_id=? WHERE id=? AND public_id IS NULL",
+                        (new_token(), _id))
+                    break
+                except sqlite3.IntegrityError:
+                    continue  # colisión UNIQUE (rarísima): otro token
+        con.commit()
 
     con.executescript("""
         CREATE TABLE IF NOT EXISTS planned_routes (

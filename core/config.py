@@ -17,7 +17,7 @@ DB_PATH = DATA / "sendero.db"
 # /api/config. Al publicar, deben coincidir con este número: el tag de git
 # (vX.Y.Z), la etiqueta de la imagen Docker (xinux87/sendero:X.Y.Z) y el default
 # de SENDERO_VERSION en los compose (${SENDERO_VERSION:-X.Y.Z}) y en .env.example.
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.5.2"
 
 for d in (DATA, GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR):
     d.mkdir(parents=True, exist_ok=True)

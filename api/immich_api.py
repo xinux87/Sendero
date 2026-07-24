@@ -3,7 +3,7 @@ import datetime as dt
 from flask import Blueprint, abort, request, jsonify, Response
 
 import core.config as cfg
-from core.database import db
+from core.database import db, rid_from_public, set_public_id
 from core.immich import immich_get, immich_search, min_dist_to_track
 
 immich_bp = Blueprint("immich", __name__)
@@ -19,11 +19,12 @@ def config():
     })
 
 
-@immich_bp.route("/api/routes/<int:rid>/immich/candidates")
+@immich_bp.route("/api/routes/<rid>/immich/candidates")
 def immich_candidates(rid):
     """Fotos de Immich tomadas durante la ventana temporal del track."""
     if not cfg.IMMICH_ENABLED:
         return jsonify({"error": "Immich no está configurado"}), 400
+    rid = rid_from_public(rid)
     r = db().execute("SELECT started_at,duration_s,geojson FROM routes WHERE id=?", (rid,)).fetchone()
     if not r:
         abort(404)
@@ -51,11 +52,12 @@ def immich_candidates(rid):
                     "candidates": cands})
 
 
-@immich_bp.route("/api/routes/<int:rid>/immich/select", methods=["POST"])
+@immich_bp.route("/api/routes/<rid>/immich/select", methods=["POST"])
 def immich_select(rid):
     """Asocia fotos Immich elegidas a la ruta (por referencia, sin copiarlas)."""
     if not cfg.IMMICH_ENABLED:
         return jsonify({"error": "Immich no está configurado"}), 400
+    rid = rid_from_public(rid)
     if not db().execute("SELECT 1 FROM routes WHERE id=?", (rid,)).fetchone():
         abort(404)
     items = request.get_json(force=True).get("items", [])
@@ -64,11 +66,12 @@ def immich_select(rid):
     for it in items:
         if not it.get("immich_id"):
             continue
-        con.execute(
+        cur = con.execute(
             "INSERT INTO photos (route_id,immich_id,original,lat,lon,taken_at) VALUES (?,?,?,?,?,?)",
             (rid, it["immich_id"], it.get("immich_id"), it.get("lat"),
              it.get("lon"), it.get("taken_at")),
         )
+        set_public_id(con, "photos", cur.lastrowid)
         added += 1
     con.commit()
     return jsonify({"added": added}), 201

@@ -288,8 +288,8 @@ reescanear: la pregunta que responden es "¿ya vi este archivo/entreno?", referi
 original. Backfill único de las rutas previas en `init_db()` (firma desde la BD,
 hash leyendo el archivo; solo filas con `content_hash IS NULL`). Al añadir la columna
 `dup_suspect_of` al listado se creó `idx_routes_list_cov2` (regla 12); al añadir después
-`locality` se sustituyó por `idx_routes_list_cov3` (se descartan `idx_routes_list_cov` y
-`idx_routes_list_cov2`).
+`locality` se sustituyó por `idx_routes_list_cov3`, y al añadir `public_id` por
+`idx_routes_list_cov4` (se descartan todos los anteriores).
 
 ### Thumbnails de track (`core/thumbs.py`)
 `generate_thumb(coords, gpx_file)` genera un PNG:
@@ -450,7 +450,8 @@ zoom** en vez de cargar siempre las 500 líneas completas:
 Cada tarjeta (`makeCard`) muestra nombre, fecha, **distancia** (`fmtKm(r.distance_m)`) y
 **localidad** (`r.locality`, con icono de pin `_pinSvg()`) en una línea `.card-meta`, más
 el badge de posible duplicada. `distance_m` y `locality` vienen ya en `/api/routes` (por
-eso al añadir `locality` se subió la clave de caché a `sendero_routes_v3`, regla 11).
+eso al añadir `locality` se subió la clave de caché a `sendero_routes_v3`, y al añadir
+`public_id` a `sendero_routes_v4`, regla 11).
 
 `loadList()` trae **todas** las rutas en una sola llamada a `/api/routes` (sin `limit`;
 es barata, no hace falta paginar la red). Lo que se pagina es el **renderizado de
@@ -608,8 +609,9 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat | REAL | bounding box del track completo; lo calcula `_route_bbox()` en `create_route`/`rescan_route`. Usado por `/api/routes/geojson?bbox=` (mapa del dashboard) para no cargar rutas fuera de la zona visible |
 | content_hash | TEXT | SHA-256 de los bytes crudos del archivo importado (`core/dedup.py`). Dedup DURA: reimportar los mismos bytes (aunque con otro nombre) → 409. Índice propio `idx_routes_content_hash`. Solo se fija al importar; NO se recalcula al editar/reescanear (la pregunta es "¿ya vi este archivo?", referida al original) |
 | signature | TEXT | Huella SEMÁNTICA del entreno (`route_signature`): `started_at` al minuto + primer/último punto a 4 decimales (~11 m). Sin timestamps cae a distancia(100 m)+nº puntos. Dedup BLANDA. Índice propio `idx_routes_signature`. Deliberadamente NO incluye distancia cuando hay hora (el hash por igualdad daría falsos negativos en las fronteras de cubo). Solo al importar, no se recalcula |
-| dup_suspect_of | INTEGER | id de la ruta a la que se parece, cuando la ingesta AUTOMÁTICA (`?auto=1`) la importó pese al aviso semántico. NULL = limpia. Se lee en el listado → va en `idx_routes_list_cov3` (regla 12). Se limpia al editar la ruta o con `PATCH {dup_suspect_of:null}` ("descartar aviso") |
-| locality | TEXT | Sitio donde se hizo la ruta ("Localidad, Región"), por geocoding inverso del punto de inicio (`core/geocode.py`, `GEOCODE_URL` en Ajustes → Editor). Se rellena best-effort al importar (`create_route`) y al reescanear una ruta que aún no la tenga (`_reanalyse_and_update`, backfill vía "Re-escanear"); NULL = servicio desactivado o geocoding fallido. Se lee en el listado y se muestra en la tarjeta de "Mis Rutas" y en el detalle → va en `idx_routes_list_cov3` (regla 12) |
+| dup_suspect_of | INTEGER | id de la ruta a la que se parece, cuando la ingesta AUTOMÁTICA (`?auto=1`) la importó pese al aviso semántico. NULL = limpia. Se lee en el listado → va en `idx_routes_list_cov4` (regla 12). Se limpia al editar la ruta o con `PATCH {dup_suspect_of:null}` ("descartar aviso") |
+| locality | TEXT | Sitio donde se hizo la ruta ("Localidad, Región"), por geocoding inverso del punto de inicio (`core/geocode.py`, `GEOCODE_URL` en Ajustes → Editor). Se rellena best-effort al importar (`create_route`) y al reescanear una ruta que aún no la tenga (`_reanalyse_and_update`, backfill vía "Re-escanear"); NULL = servicio desactivado o geocoding fallido. Se lee en el listado y se muestra en la tarjeta de "Mis Rutas" y en el detalle → va en `idx_routes_list_cov4` (regla 12) |
+| public_id | TEXT | Identificador **opaco no secuencial** (`secrets.token_urlsafe(8)`, ~11 chars) expuesto en TODAS las URLs `/api/routes/<public_id>/...`; la PK entera `id` queda solo interna (FKs, `versions/<route_id>/`, prefijo de nombre de foto). Evita que CrowdSec vea enumeración al pedir las miniaturas del listado. Índice UNIQUE `idx_routes_public_id`; se lee en el listado → va en `idx_routes_list_cov4` (regla 12). Se fija al importar (con reintento por colisión) y por backfill en `init_db()`; NO se recalcula. Los endpoints resuelven `public_id`→`id` con `rid_from_public()` en su 1ª línea (thumb/gpx/foto consultan `WHERE public_id=?` directo). Cache del listado `sendero_routes_v4` (regla 11) |
 
 ### Tabla `route_versions`
 Historial del editor de rutas (append-only, ver sección "Editor de rutas").
@@ -619,7 +621,10 @@ Historial del editor de rutas (append-only, ver sección "Editor de rutas").
 El archivo activo de la ruta es siempre idéntico a la versión más alta.
 
 ### Tabla `photos`
-`route_id`, `file` XOR `immich_id`, `original`, `lat`, `lon`, `taken_at`
+`route_id`, `file` XOR `immich_id`, `original`, `lat`, `lon`, `taken_at`,
+`public_id` (opaco no secuencial, como en `routes`: `/api/photos/<public_id>/file`
+y DELETE; índice UNIQUE `idx_photos_public_id`; se fija al insertar con
+`set_public_id()` y por backfill en `init_db()`). La PK entera `id` queda interna.
 
 ### Tabla `planned_routes`
 `name`, `source` (`gpx` | `dibujada`), `source_url`, `activity_type`,

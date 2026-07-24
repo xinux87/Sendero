@@ -518,7 +518,7 @@ function _dashPointsGeoJSON(){
   return{type:'FeatureCollection',features:(dashRoutesLite||[]).map(r=>({
     type:'Feature',
     geometry:{type:'Point',coordinates:[r.start_lon,r.start_lat]},
-    properties:{id:r.id,name:r.name,activity:r.activity_type||'otros',
+    properties:{id:r.public_id,name:r.name,activity:r.activity_type||'otros',
       year:(r.started_at||'').slice(0,4)||null,
       km:(r.distance_m||0)/1000}
   }))};
@@ -976,7 +976,7 @@ let sortOrder='desc',viewMode='a';
 let editMode=false,selectedIds=new Set(),visibleRoutes=[];
 let monthDomMap=new Map();
 const PAGE_SIZE=30;
-const ROUTE_CACHE='sendero_routes_v3',FILTER_CACHE='sendero_filters_v1';
+const ROUTE_CACHE='sendero_routes_v4',FILTER_CACHE='sendero_filters_v1';
 
 function saveRouteCache(){try{sessionStorage.setItem(ROUTE_CACHE,JSON.stringify({ts:Date.now(),routes:allRoutes}));}catch(e){}}
 function loadRouteCache(){
@@ -997,7 +997,7 @@ function _routesGeoJSON(routes){
   return{type:'FeatureCollection',features:routes.map(r=>({
     type:'Feature',
     geometry:{type:'Point',coordinates:[r.start_lon,r.start_lat]},
-    properties:{id:r.id,name:r.name,
+    properties:{id:r.public_id,name:r.name,
       color:(activityOf(r.activity_type)||{}).color||'#d24a3a',
       activity:r.activity_type||'otros',
       dist:r.distance_m?(r.distance_m/1000).toFixed(1)+' km':''}
@@ -1005,7 +1005,7 @@ function _routesGeoJSON(routes){
 }
 function _ovApplyLineFilter(){
   if(!ovMapLoaded)return;
-  const ids=new Set(ovRoutes.map(r=>r.id));
+  const ids=new Set(ovRoutes.map(r=>r.public_id));
   ovMap.getSource('ov-lines').setData({type:'FeatureCollection',
     features:ovLineFeaturesAll.filter(f=>ids.has(f.properties.id))});
   // Si la caché está vacía (recién invalidada por un upload/rescan/delete) pero hay
@@ -1257,21 +1257,21 @@ function buildPills(){
 function clearFilters(){activeActs=new Set(ACTIVITIES.map(a=>a.id));dpFrom.set(null);dpTo.set(null);buildPills();renderList();}
 function _pinSvg(){return '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';}
 function makeCard(r){
-  const act=activityOf(r.activity_type);const sel=selectedIds.has(r.id);
+  const act=activityOf(r.activity_type);const sel=selectedIds.has(r.public_id);
   const c=document.createElement("div");
   c.className="card"+(editMode?" edit-mode":"")+(sel?" selected":"");
-  c.dataset.id=r.id;
+  c.dataset.id=r.public_id;
   c.style.borderLeftColor=act?act.color:"var(--line)";
   if(editMode){
     c.onclick=()=>{
-      if(selectedIds.has(r.id))selectedIds.delete(r.id);else selectedIds.add(r.id);
-      c.classList.toggle("selected",selectedIds.has(r.id));
-      c.querySelector(".card-check").textContent=selectedIds.has(r.id)?"✓":"";
+      if(selectedIds.has(r.public_id))selectedIds.delete(r.public_id);else selectedIds.add(r.public_id);
+      c.classList.toggle("selected",selectedIds.has(r.public_id));
+      c.querySelector(".card-check").textContent=selectedIds.has(r.public_id)?"✓":"";
       updateSelCount();
     };
   }else{c.onclick=()=>_ovGoToRoute(r.name);}
   const thumbHtml=!editMode&&r.thumb_file
-    ?`<div class="card-thumb"><img src="/api/routes/${r.id}/thumb" alt="" loading="lazy"></div>`:'';
+    ?`<div class="card-thumb"><img src="/api/routes/${r.public_id}/thumb" alt="" loading="lazy"></div>`:'';
   const dupBadge=r.dup_suspect_of
     ?`<div class="card-dup" title="Importada automáticamente, se parece a otra ruta. Ábrela para revisarla.">⚠ posible duplicada</div>`:'';
   const distHtml=r.distance_m?`<span class="card-dist">${fmtKm(r.distance_m)} km</span>`:'';
@@ -1305,7 +1305,7 @@ async function deleteDuplicates(){
   if(!dups.length){toast("No hay rutas marcadas como posibles duplicadas");return;}
   // Selecciona las duplicadas para que se resalten y el usuario vea exactamente
   // qué se va a borrar; la confirmación con el recuento la hace deleteSelected().
-  selectedIds=new Set(dups.map(r=>r.id));
+  selectedIds=new Set(dups.map(r=>r.public_id));
   updateSelCount();renderList();
   // Deja pintar el resaltado antes de que el confirm bloquee el hilo.
   await new Promise(r=>setTimeout(r,60));
@@ -1317,7 +1317,7 @@ function updateSelCount(){
   $("#delete-sel-btn").style.opacity=n?"1":"0.5";
   $("#rescan-sel-btn").style.opacity=n?"1":"0.5";
 }
-function selectAllVisible(){visibleRoutes.forEach(r=>selectedIds.add(r.id));updateSelCount();renderList();}
+function selectAllVisible(){visibleRoutes.forEach(r=>selectedIds.add(r.public_id));updateSelCount();renderList();}
 function deselectAll(){selectedIds.clear();updateSelCount();renderList();}
 async function deleteSelected(){
   if(!selectedIds.size)return;
@@ -1335,7 +1335,7 @@ async function deleteSelected(){
     document.getElementById("del-status").textContent=`${pct}% completado`;}
   const CONCURRENCY=4;let idx=0;
   function removeCardNow(id){
-    allRoutes=allRoutes.filter(r=>r.id!==id);
+    allRoutes=allRoutes.filter(r=>r.public_id!==id);
     const card=document.querySelector(`.card[data-id="${id}"]`);
     if(card){card.style.cssText+='opacity:0;transform:scale(.95) translateY(-4px);transition:opacity .15s,transform .15s';
       setTimeout(()=>card.remove(),160);}
@@ -1360,13 +1360,13 @@ async function rescanSelected(){
     <div class="upload-filename" id="rs-name">Iniciando…</div>`;
   document.body.appendChild(loader);
   for(let i=0;i<ids.length;i++){
-    const id=ids[i];const route=allRoutes.find(r=>r.id===id);
+    const id=ids[i];const route=allRoutes.find(r=>r.public_id===id);
     document.getElementById("rs-count").textContent=`${i+1} / ${total}`;
     document.getElementById("rs-bar").style.width=`${Math.round((i/total)*100)}%`;
     document.getElementById("rs-name").textContent=route?route.name:String(id);
     try{const res=await fetch(`/api/routes/${id}/rescan`,{method:"POST"});
       if(res.ok){const updated=await res.json();
-        const idx=allRoutes.findIndex(r=>r.id===id);
+        const idx=allRoutes.findIndex(r=>r.public_id===id);
         if(idx!==-1)allRoutes[idx]={...allRoutes[idx],...updated};ok++;}
       else{const j=await res.json().catch(()=>({}));errors.push(`${route?route.name:id}: ${j.error||"Error"}`);}
     }catch{errors.push(`${route?route.name:id}: Error de red`);}
@@ -1394,7 +1394,7 @@ function createMonthSection(key){
   let selBtn='';
   if(editMode){
     const mRoutes=visibleRoutes.filter(r=>(r.started_at?r.started_at.slice(0,7):"sin-fecha")===key);
-    const allSel=mRoutes.length>0&&mRoutes.every(r=>selectedIds.has(r.id));
+    const allSel=mRoutes.length>0&&mRoutes.every(r=>selectedIds.has(r.public_id));
     selBtn=`<button class="month-sel-btn${allSel?' all-sel':''}" onclick="selectMonth('${key}')">`+(allSel?'✓ Mes seleccionado':'Selec. mes')+`</button>`;
   }
   s.innerHTML=`<div class="month-label">${monthLabel(key)}<span class="month-count"></span>${selBtn}</div><div class="grid"></div>`;
@@ -1402,8 +1402,8 @@ function createMonthSection(key){
 }
 function selectMonth(key){
   const mr=visibleRoutes.filter(r=>(r.started_at?r.started_at.slice(0,7):"sin-fecha")===key);
-  const allSel=mr.length>0&&mr.every(r=>selectedIds.has(r.id));
-  if(allSel)mr.forEach(r=>selectedIds.delete(r.id));else mr.forEach(r=>selectedIds.add(r.id));
+  const allSel=mr.length>0&&mr.every(r=>selectedIds.has(r.public_id));
+  if(allSel)mr.forEach(r=>selectedIds.delete(r.public_id));else mr.forEach(r=>selectedIds.add(r.public_id));
   updateSelCount();renderList();
 }
 let pendingRoutes=[],_listObserver=null;

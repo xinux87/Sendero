@@ -5,6 +5,24 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.5.2] — 2026-07-24
+
+### Seguridad
+- **Identificador público opaco para rutas y fotos**: las URLs de la API ya no exponen
+  el id entero incremental (`/api/routes/1/thumb`, `/api/routes/2/thumb`…). Al ver la
+  lista de rutas, el navegador pedía una miniatura por tarjeta con ids secuenciales y
+  CrowdSec lo bloqueaba como intento de enumeración. Ahora cada ruta y cada foto llevan
+  un `public_id` opaco no adivinable (`secrets.token_urlsafe(8)`, ~11 chars) y **todas**
+  las URLs `/api/routes/<public_id>/...` y `/api/photos/<public_id>/...` lo usan. La PK
+  entera queda **solo interna** (FKs, `versions/<route_id>/`, nombres de foto): no cambia
+  nada del almacenamiento ni del versionado.
+  - Migración automática en `init_db()`: columnas `public_id` (índices UNIQUE
+    `idx_routes_public_id`/`idx_photos_public_id`) con backfill idempotente de las filas
+    existentes; nuevo índice de cobertura `idx_routes_list_cov4`.
+  - La caché del listado sube a `sendero_routes_v4` (se refresca sola en los clientes).
+  - `planned_routes` queda igual (no es vector de enumeración: su lista va en una sola
+    petición y navega por nombre).
+
 ## [0.5.1] — 2026-07-20
 
 ### Añadido

@@ -20,7 +20,7 @@ from pathlib import Path
 from flask import Blueprint, abort, request, jsonify, render_template, Response, redirect
 
 import core.config as cfg
-from core.database import db
+from core.database import db, new_token, rid_from_public, set_public_id
 from core.dem import dem_elevations, DemError
 from core.editing import (
     load_gpx, extract_points, apply_ops, split_track, merge_gpx, EditError
@@ -102,7 +102,7 @@ def _archive_v1_if_needed(con, rid, row, raw, is_fit):
 def editor_page(name):
     con = db()
     r = con.execute(
-        "SELECT id,name,gpx_file,distance_m,ascent_m,descent_m,started_at,activity_type,"
+        "SELECT id,public_id,name,gpx_file,distance_m,ascent_m,descent_m,started_at,activity_type,"
         "device,gps_issues FROM routes WHERE name=? ORDER BY COALESCE(started_at,created_at) DESC LIMIT 1",
         (name,),
     ).fetchone()
@@ -120,8 +120,9 @@ def editor_page(name):
     return render_template("editor.html", route_json=json.dumps(d))
 
 
-@editor_bp.route("/api/routes/<int:rid>/points")
+@editor_bp.route("/api/routes/<rid>/points")
 def route_points(rid):
+    rid = rid_from_public(rid)
     con = db()
     r = con.execute("SELECT gpx_file FROM routes WHERE id=?", (rid,)).fetchone()
     if not r:
@@ -142,8 +143,9 @@ def route_points(rid):
     return jsonify(pts)
 
 
-@editor_bp.route("/api/routes/<int:rid>/edit", methods=["POST"])
+@editor_bp.route("/api/routes/<rid>/edit", methods=["POST"])
 def edit_route(rid):
+    rid = rid_from_public(rid)
     con = db()
     r = con.execute("SELECT name, gpx_file, distance_m, ascent_m, geojson "
                     "FROM routes WHERE id=?", (rid,)).fetchone()
@@ -205,11 +207,12 @@ def edit_route(rid):
     return jsonify(_build_route_dict(rid))
 
 
-@editor_bp.route("/api/routes/<int:rid>/split", methods=["POST"])
+@editor_bp.route("/api/routes/<rid>/split", methods=["POST"])
 def split_route(rid):
     """Divide la ruta en el punto `index`: la original se recorta a los puntos
     0..index (como versión nueva) y se crea una ruta nueva con index..n-1.
     Las fotos asociadas se quedan en la original (decisión F2)."""
+    rid = rid_from_public(rid)
     con = db()
     r = con.execute("SELECT name, gpx_file, distance_m, ascent_m, geojson "
                     "FROM routes WHERE id=?", (rid,)).fetchone()
@@ -258,6 +261,7 @@ def split_route(rid):
     )
     con.commit()
     bid = cur_b.lastrowid
+    b_public = set_public_id(con, "routes", bid)
     row_b = con.execute("SELECT name, gpx_file FROM routes WHERE id=?", (bid,)).fetchone()
     err = _reanalyse_and_update(con, bid, row_b)
     if err:
@@ -285,7 +289,7 @@ def split_route(rid):
                     updated["distance_m"], updated["ascent_m"], n_points or None)
     con.commit()
     d = _build_route_dict(rid)
-    d["b_id"] = bid
+    d["b_id"] = b_public
     d["b_name"] = name_b
     return jsonify(d)
 
@@ -303,7 +307,7 @@ def merge_routes():
     con = db()
     rows = []
     for rid in ids:
-        r = con.execute("SELECT id, name, gpx_file FROM routes WHERE id=?",
+        r = con.execute("SELECT id, name, gpx_file FROM routes WHERE public_id=?",
                         (rid,)).fetchone()
         if not r:
             return jsonify({"error": f"La ruta {rid} no existe"}), 404
@@ -337,19 +341,22 @@ def merge_routes():
     )
     con.commit()
     bid = cur.lastrowid
+    b_public = set_public_id(con, "routes", bid)
     row = con.execute("SELECT name, gpx_file FROM routes WHERE id=?", (bid,)).fetchone()
     err = _reanalyse_and_update(con, bid, row)
     if err:
         return err
-    return jsonify({"id": bid, "name": name, "times_kept": times_kept}), 201
+    return jsonify({"id": b_public, "public_id": b_public, "name": name,
+                    "times_kept": times_kept}), 201
 
 
-@editor_bp.route("/api/routes/<int:rid>/elevation-dem", methods=["POST"])
+@editor_bp.route("/api/routes/<rid>/elevation-dem", methods=["POST"])
 def elevation_dem(rid):
     """Recalcula la elevación de TODOS los puntos contra el servicio DEM
     (OpenTopoData) configurado en Ajustes. Crea una versión nueva."""
     if not cfg.DEM_URL:
         return jsonify({"error": "No hay servicio DEM configurado en Ajustes"}), 400
+    rid = rid_from_public(rid)
     con = db()
     r = con.execute("SELECT name, gpx_file, distance_m, ascent_m, geojson "
                     "FROM routes WHERE id=?", (rid,)).fetchone()
@@ -411,8 +418,9 @@ def elevation_dem(rid):
     return jsonify(_build_route_dict(rid))
 
 
-@editor_bp.route("/api/routes/<int:rid>/versions")
+@editor_bp.route("/api/routes/<rid>/versions")
 def list_versions(rid):
+    rid = rid_from_public(rid)
     con = db()
     if not con.execute("SELECT 1 FROM routes WHERE id=?", (rid,)).fetchone():
         abort(404)
@@ -429,8 +437,9 @@ def list_versions(rid):
     return jsonify({"current": items[0]["version_n"] if items else 0, "items": items})
 
 
-@editor_bp.route("/api/routes/<int:rid>/versions/<int:vn>/restore", methods=["POST"])
+@editor_bp.route("/api/routes/<rid>/versions/<int:vn>/restore", methods=["POST"])
 def restore_version(rid, vn):
+    rid = rid_from_public(rid)
     con = db()
     r = con.execute("SELECT name, gpx_file FROM routes WHERE id=?", (rid,)).fetchone()
     if not r:
@@ -476,8 +485,9 @@ def restore_version(rid, vn):
     return jsonify(_build_route_dict(rid))
 
 
-@editor_bp.route("/api/routes/<int:rid>/versions/<int:vn>/gpx")
+@editor_bp.route("/api/routes/<rid>/versions/<int:vn>/gpx")
 def download_version(rid, vn):
+    rid = rid_from_public(rid)
     con = db()
     r = con.execute("SELECT name FROM routes WHERE id=?", (rid,)).fetchone()
     if not r:

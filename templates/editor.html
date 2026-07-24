@@ -350,7 +350,7 @@ async function saveDetails(){
   btn.disabled=true;
   let res;
   try{
-    res=await fetch(`/api/routes/${R.id}`,{method:'PATCH',
+    res=await fetch(`/api/routes/${R.public_id}`,{method:'PATCH',
       headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   }catch(e){toast('Error de red al guardar');btn.disabled=false;return;}
   if(!res.ok){const j=await res.json().catch(()=>({}));toast(j.error||'No se pudo guardar');btn.disabled=false;return;}
@@ -364,7 +364,7 @@ async function saveDetails(){
 
 async function loadPoints(){
   let res;
-  try{ res = await fetch(`/api/routes/${R.id}/points`); }
+  try{ res = await fetch(`/api/routes/${R.public_id}/points`); }
   catch(e){ document.getElementById('ed-loading').textContent = 'Error de red al cargar los puntos.'; return; }
   if(!res.ok){
     const j = await res.json().catch(()=>({}));
@@ -1330,9 +1330,9 @@ async function toggleMerge(){
   try{items=(await(await fetch('/api/routes')).json()).items||[];}catch(e){}
   const sel=document.getElementById('merge-sel');
   sel.innerHTML='';
-  items.filter(r=>r.id!==R.id).forEach(r=>{
+  items.filter(r=>r.public_id!==R.public_id).forEach(r=>{
     const o=document.createElement('option');
-    o.value=r.id;
+    o.value=r.public_id;
     o.textContent=`${r.name} (${((r.distance_m||0)/1000).toFixed(1)} km)`;
     o.dataset.name=r.name;
     sel.appendChild(o);
@@ -1352,12 +1352,12 @@ function closeMerge(){
 }
 async function doMerge(){
   const sel=document.getElementById('merge-sel');
-  const other=+sel.value;
+  const other=sel.value;
   if(!other)return;
   if(opsList.length && !confirm('Los cambios sin guardar NO se incluirán en la unión. ¿Continuar?'))return;
   const res=await fetch('/api/routes/merge',{method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ids:[R.id,other],name:document.getElementById('merge-name').value.trim()})});
+    body:JSON.stringify({ids:[R.public_id,other],name:document.getElementById('merge-name').value.trim()})});
   const d=await res.json().catch(()=>({}));
   if(!res.ok){toast(d.error||'Error al unir');return;}
   try{sessionStorage.setItem('sendero_cache_dirty','1');}catch(e){}
@@ -1375,7 +1375,7 @@ async function doDem(){
   const btn=document.getElementById('dem-btn');
   btn.disabled=true;btn.textContent='🏔 Consultando DEM…';
   try{
-    const res=await fetch(`/api/routes/${R.id}/elevation-dem`,{method:'POST',
+    const res=await fetch(`/api/routes/${R.public_id}/elevation-dem`,{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({base_version:R.version})});
     const d=await res.json().catch(()=>({}));
@@ -1541,7 +1541,7 @@ async function doSplit(){
   if(i<1||i>n-2){toast('El punto de corte no puede ser el primero ni el último');return;}
   const name=prompt('Nombre de la nueva ruta (segunda mitad):',R.name+' (2)');
   if(name===null)return;
-  const res=await fetch(`/api/routes/${R.id}/split`,{method:'POST',
+  const res=await fetch(`/api/routes/${R.public_id}/split`,{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({index:i,name_b:name.trim(),base_version:R.version})});
   const d=await res.json().catch(()=>({}));
@@ -1605,7 +1605,7 @@ async function doSave(){
   const btn=document.getElementById('save-confirm');
   btn.disabled=true;btn.textContent='Guardando…';
   try{
-    const res=await fetch(`/api/routes/${R.id}/edit`,{method:'POST',
+    const res=await fetch(`/api/routes/${R.public_id}/edit`,{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         base_version:R.version,
@@ -1635,7 +1635,7 @@ async function doSave(){
 /* ── versiones ──────────────────────────────────────────────────────────── */
 async function loadVersions(){
   let d;
-  try{d=await(await fetch(`/api/routes/${R.id}/versions`)).json();}catch(e){return;}
+  try{d=await(await fetch(`/api/routes/${R.public_id}/versions`)).json();}catch(e){return;}
   const box=document.getElementById('ver-list');
   if(!d.items.length){
     box.innerHTML='<div style="color:var(--muted);font-size:12px">Sin ediciones todavía. Al guardar se creará el historial.</div>';
@@ -1654,7 +1654,7 @@ async function loadVersions(){
         <div class="st">${km} km · +${asc} m · ${date}</div>
       </div>
       <div class="acts">
-        <button class="btn ghost sm" title="Descargar" onclick="location.href='/api/routes/${R.id}/versions/${v.version_n}/gpx'">↓</button>
+        <button class="btn ghost sm" title="Descargar" onclick="location.href='/api/routes/${R.public_id}/versions/${v.version_n}/gpx'">↓</button>
         ${isCur?'':`<button class="btn ghost sm" onclick="restoreVersion(${v.version_n})">Restaurar</button>`}
       </div>`;
     box.appendChild(row);
@@ -1665,7 +1665,7 @@ async function restoreVersion(vn){
   let msg=`Se restaurará la versión v${vn} como una versión nueva.`;
   if(opsList.length)msg+=' Los cambios sin guardar se descartarán.';
   if(!confirm(msg+' ¿Continuar?'))return;
-  const res=await fetch(`/api/routes/${R.id}/versions/${vn}/restore`,{method:'POST'});
+  const res=await fetch(`/api/routes/${R.public_id}/versions/${vn}/restore`,{method:'POST'});
   const d=await res.json().catch(()=>({}));
   if(!res.ok){toast(d.error||'Error al restaurar');return;}
   toast(`Versión v${vn} restaurada como v${d.version}`);
