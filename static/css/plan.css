@@ -59,7 +59,7 @@
 /* badge fuente */
 #sec-plan .source-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
   letter-spacing:.06em;padding:3px 10px;border-radius:10px;text-transform:uppercase}
-#sec-plan .source-gpx{background:#1e3a2a;color:#5ab87a;border:1px solid #2e5a3a}
+#sec-plan .source-gpx{background:#1e3a2a;color:#43b97f;border:1px solid #2e5a3a}
 #sec-plan .source-wikiloc{background:#1a2e3e;color:#4aade8;border:1px solid #2a4e6e}
 /* modal actividad */
 #sec-plan .overlay{position:fixed;inset:0;background:rgba(8,14,11,.78);display:flex;align-items:center;

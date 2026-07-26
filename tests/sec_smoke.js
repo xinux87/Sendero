@@ -12,7 +12,8 @@ function node(sel){
     classList:{add(){},remove(){},toggle(){},contains(){return true;}},
     style:{}, dataset:{}, files:[], value:'', textContent:'', innerHTML:'',
     addEventListener(t){seen.push(sel+':'+t);}, appendChild(){}, remove(){},
-    closest(){return node('.section');}, querySelector(){return node('x');},
+    closest(){return node('.panel');}, querySelector(){return node('x');},
+    querySelectorAll(){return [];},
     getContext(){return {};}, click(){}, };
 }
 global.window={SEC:{}, addEventListener(){}, scrollTo(){}};
@@ -33,7 +34,10 @@ global.Store={isOnline:()=>true, patch:async()=>({ok:true}), route:async()=>null
               putDetail:async()=>{}, syncNow(){}};
 global.$=s=>document.querySelector(s);
 global.toast=()=>{}; global.esc=s=>s; global.fmtKm=()=>'0'; global.fmtDur=()=>'0';
-global.fmtDate=()=>''; global.ACTIVITIES=[]; global.activityOf=()=>null;
+global.fmtDate=()=>'';
+/* Formatos del rediseño (viven en static/js/core/chrome.js, que aquí no se carga). */
+global.fmtNum=()=>'0'; global.fmtHM=()=>'0:00'; global.fmtHMS=()=>'0:00:00';
+global.fmtPace=()=>'0:00 /km'; global.fmtDateLong=()=>''; global.fmtDateTime=()=>''; global.ACTIVITIES=[]; global.activityOf=()=>null;
 global.iconSvg=()=>''; global.buildStyle=()=>({}); global.basemapNames=()=>[];
 global.defaultBasemap=()=>'Topográfico'; global.applyBasemap=()=>{};
 global.OFFLINE_LAYER='Offline (local)'; global.Chart=function(){}; global.maplibregl={};

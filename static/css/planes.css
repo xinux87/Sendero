@@ -16,7 +16,7 @@
 #sec-planes .pm .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
 #sec-planes .source-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
   letter-spacing:.06em;padding:2px 8px;border-radius:10px;text-transform:uppercase;margin-top:4px}
-#sec-planes .source-gpx{background:#1e3a2a;color:#5ab87a;border:1px solid #2e5a3a}
+#sec-planes .source-gpx{background:#1e3a2a;color:#43b97f;border:1px solid #2e5a3a}
 /* La regla .overlay.hidden va inmediatamente después de .overlay a propósito
    (misma trampa que el modal de Immich): sin ella el modal aparece al cargar. */
 #sec-planes .overlay{position:fixed;inset:0;background:rgba(8,14,11,.82);display:flex;align-items:center;

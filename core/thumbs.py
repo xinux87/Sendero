@@ -3,7 +3,10 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 import core.config as cfg
 
-_BG = (23, 36, 28)    # --panel (#17241c)
+_BG = (16, 26, 20)    # --panel (#101a14): el mismo fondo que la tarjeta de
+                      # "Mis Rutas", para que la miniatura no se vea como un
+                      # recuadro más claro encima. Las miniaturas anteriores al
+                      # rediseño conservan el fondo viejo hasta reescanearlas.
 _LINE = (255, 255, 255)
 _HEIGHT = 400
 _PAD = 40

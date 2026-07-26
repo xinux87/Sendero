@@ -36,7 +36,7 @@
   const ACT_COLORS = Object.fromEntries(ACTIVITIES.map(a=>[a.id,a.color]));
     // Antes era una const calculada al cargar la página; ahora R llega por
     // fetch en mount(), así que el color se resuelve en cada uso.
-    const lineColor = () => (R && ACT_COLORS[R.activity_type]) || '#d24a3a';
+    const lineColor = () => (R && ACT_COLORS[R.activity_type]) || '#e2492c';
 
   /* ── estado ─────────────────────────────────────────────────────────────── */
   let P = null;            // respuesta de /points {lonlat, ele, time, hr, segments, version, n}
@@ -291,7 +291,7 @@
       map.addSource('sel',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
       map.addLayer({id:'sel-linea',type:'line',source:'sel',
         layout:{'line-join':'round','line-cap':'round'},
-        paint:{'line-color':'#e8c44a','line-width':6,'line-opacity':0.95}});
+        paint:{'line-color':'#e3b23c','line-width':6,'line-opacity':0.95}});
       // ghost de simplificación (línea blanca discontinua con el resultado)
       map.addSource('ghost',{type:'geojson',data:EMPTY_FC});
       map.addLayer({id:'ghost-line',type:'line',source:'ghost',
@@ -301,24 +301,24 @@
       map.addLayer({id:'verts-circ',type:'circle',source:'verts',minzoom:13,
         layout:{visibility:'none'},
         paint:{'circle-radius':['interpolate',['linear'],['zoom'],13,3,16,6.5],
-          'circle-color':'#ffffff','circle-stroke-color':'#101a14','circle-stroke-width':1.5,
+          'circle-color':'#ffffff','circle-stroke-color':'#0b120e','circle-stroke-width':1.5,
           'circle-opacity':0.95}});
       // preview del punto arrastrándose (línea a los vecinos)
       map.addSource('drag-preview',{type:'geojson',data:EMPTY_FC});
       map.addLayer({id:'drag-preview-line',type:'line',source:'drag-preview',
-        paint:{'line-color':'#e8c44a','line-width':2.5,'line-dasharray':[1.5,1.5]}});
+        paint:{'line-color':'#e3b23c','line-width':2.5,'line-dasharray':[1.5,1.5]}});
       // preview de "corregir velocidad excesiva" (puntos a eliminar, en rojo)
       map.addSource('speederr',{type:'geojson',data:EMPTY_FC});
       map.addLayer({id:'speederr-circ',type:'circle',source:'speederr',
         paint:{'circle-radius':5,'circle-color':'#e05252',
-          'circle-stroke-color':'#101a14','circle-stroke-width':1.5,'circle-opacity':0.95}});
+          'circle-stroke-color':'#0b120e','circle-stroke-width':1.5,'circle-opacity':0.95}});
       // tramos con avisos GPS (rojo translúcido bajo la línea principal)
       map.addSource('issues',{type:'geojson',data:EMPTY_FC});
       map.addLayer({id:'issues-line',type:'line',source:'issues',
         layout:{'line-join':'round','line-cap':'round'},
         paint:{'line-color':'#e05252','line-width':9,'line-opacity':0.45}},'ruta-linea');
 
-      mkStart = new maplibregl.Marker({color:'#e8c44a'}).setLngLat(cur[0]).addTo(map);
+      mkStart = new maplibregl.Marker({color:'#e3b23c'}).setLngLat(cur[0]).addTo(map);
       mkEnd = new maplibregl.Marker({color:'#e0e0e0'}).setLngLat(cur[cur.length-1]).addTo(map);
       fitRoute();
 
@@ -441,7 +441,7 @@
     document.getElementById('mtab-verts').classList.toggle('on',m==='verts');
     document.getElementById('ops-select').style.display=m==='select'?'':'none';
     document.getElementById('mode-hint').innerHTML=m==='select'
-      ?'Haz click en la línea del mapa para colocar los manejadores <b style="color:#e8c44a">A</b> y <b style="color:#d24a3a">B</b>, o arrastra sobre el perfil de elevación. Los manejadores se pueden arrastrar por el track.'
+      ?'Haz click en la línea del mapa para colocar los manejadores <b style="color:#e3b23c">A</b> y <b style="color:#e2492c">B</b>, o arrastra sobre el perfil de elevación. Los manejadores se pueden arrastrar por el track.'
       :'Acércate al track (los puntos aparecen al hacer zoom). <b>Arrastra</b> un punto para moverlo, <b>Alt+click</b> lo elimina, <b>click en la línea</b> inserta un punto nuevo, <b>Shift+click</b> en el mapa añade un waypoint ⚑.';
     updateVerts();
   }
@@ -517,7 +517,7 @@
     ctx.beginPath();ctx.rect(area.left,area.top,area.right-area.left,area.bottom-area.top);ctx.clip();
     ctx.fillStyle='rgba(232,196,74,.18)';
     ctx.fillRect(Math.min(x1,x2),area.top,Math.abs(x2-x1),area.bottom-area.top);
-    ctx.strokeStyle='#e8c44a';ctx.lineWidth=1.5;
+    ctx.strokeStyle='#e3b23c';ctx.lineWidth=1.5;
     [x1,x2].forEach(x=>{ctx.beginPath();ctx.moveTo(x,area.top);ctx.lineTo(x,area.bottom);ctx.stroke();});
     ctx.restore();
   }};
@@ -603,14 +603,14 @@
     const ctx=document.getElementById('edelev');
     if(chart)chart.destroy();
     chart=new Chart(ctx,{type:'line',plugins:[bandPlugin,issueBandsPlugin],
-      data:{datasets:[{data,fill:true,borderColor:'#d24a3a',
+      data:{datasets:[{data,fill:true,borderColor:'#e2492c',
         backgroundColor:'rgba(210,74,58,.15)',pointRadius:0,borderWidth:2,tension:.3}]},
       options:{animation:false,maintainAspectRatio:false,
         plugins:{legend:{display:false},tooltip:{enabled:false}},
         scales:{
           x:{type:'linear',min:xRange()[0],max:xRange()[1],
-             title:{display:true,text:'km',color:'#8aa394'},ticks:{color:'#8aa394',maxTicksLimit:8},grid:{color:'#2c4435'}},
-          y:{title:{display:true,text:'m',color:'#8aa394'},ticks:{color:'#8aa394'},grid:{color:'#2c4435'}}
+             title:{display:true,text:'km',color:'#8b9a8f'},ticks:{color:'#8b9a8f',maxTicksLimit:8},grid:{color:'rgba(236,229,216,.07)'}},
+          y:{title:{display:true,text:'m',color:'#8b9a8f'},ticks:{color:'#8b9a8f'},grid:{color:'rgba(236,229,216,.07)'}}
         }}});
     bindChartDrag(ctx, () => chart);
     bindChartZoom(ctx, () => chart);
@@ -667,8 +667,8 @@
         plugins:{legend:{display:false},tooltip:{enabled:false}},
         scales:{
           x:{type:'linear',min:xRange()[0],max:xRange()[1],
-             title:{display:true,text:'km',color:'#8aa394'},ticks:{color:'#8aa394',maxTicksLimit:8},grid:{color:'#2c4435'}},
-          y:{title:{display:true,text:'km/h',color:'#8aa394'},ticks:{color:'#8aa394'},grid:{color:'#2c4435'}}
+             title:{display:true,text:'km',color:'#8b9a8f'},ticks:{color:'#8b9a8f',maxTicksLimit:8},grid:{color:'rgba(236,229,216,.07)'}},
+          y:{title:{display:true,text:'km/h',color:'#8b9a8f'},ticks:{color:'#8b9a8f'},grid:{color:'rgba(236,229,216,.07)'}}
         }}});
     bindChartDrag(ctx, () => speedChart);
     bindChartZoom(ctx, () => speedChart);

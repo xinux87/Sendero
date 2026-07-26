@@ -57,7 +57,7 @@
       data: {type: 'Feature', geometry: {type: 'LineString', coordinates: coords}}});
     map.addLayer({id: 'pl-ruta-linea', type: 'line', source: 'pl-ruta',
       layout: {'line-join': 'round', 'line-cap': 'round'},
-      paint: {'line-color': '#e8c44a', 'line-width': 3, 'line-opacity': .9}});
+      paint: {'line-color': '#e3b23c', 'line-width': 3, 'line-opacity': .9}});
     // inicio (verde) y fin (rojo) como capas circle, no como marcadores DOM
     map.addSource('pl-ruta-extremos', {type: 'geojson', data: {type: 'FeatureCollection', features: [
       {type: 'Feature', properties: {tipo: 'Inicio'}, geometry: {type: 'Point', coordinates: coords[0]}},
@@ -65,8 +65,8 @@
     ]}});
     map.addLayer({id: 'pl-ruta-extremos', type: 'circle', source: 'pl-ruta-extremos',
       paint: {'circle-radius': 6,
-        'circle-color': ['match', ['get', 'tipo'], 'Inicio', '#5ab87a', '#d24a3a'],
-        'circle-stroke-width': 2.5, 'circle-stroke-color': '#101a14'}});
+        'circle-color': ['match', ['get', 'tipo'], 'Inicio', '#43b97f', '#e2492c'],
+        'circle-stroke-width': 2.5, 'circle-stroke-color': '#0b120e'}});
   }
 
   function initMap() {
@@ -96,7 +96,7 @@
     map.addControl({
       onAdd() {
         const sel = document.createElement('select');
-        sel.style.cssText = 'background:var(--panel,#fff);color:var(--ink,#101a14);border:none;font-size:12px;cursor:pointer;padding:5px 7px;font-family:inherit;width:100%';
+        sel.style.cssText = 'background:var(--panel,#fff);color:var(--ink,#0b120e);border:none;font-size:12px;cursor:pointer;padding:5px 7px;font-family:inherit;width:100%';
         basemapNames().forEach(c => {
           const o = document.createElement('option'); o.value = c; o.textContent = c;
           sel.appendChild(o);
@@ -143,7 +143,7 @@
       type: 'line',
       data: {labels, datasets: [{
         data, fill: true, backgroundColor: grad,
-        borderColor: '#e8c44a', borderWidth: 2, pointRadius: 0, tension: .35,
+        borderColor: '#e3b23c', borderWidth: 2, pointRadius: 0, tension: .35,
       }]},
       options: {
         responsive: true, maintainAspectRatio: false,
@@ -152,11 +152,11 @@
           label: i => `${i.raw} m`,
         }}},
         scales: {
-          x: {ticks: {color: '#8aa394', font: {size: 10},
+          x: {ticks: {color: '#8b9a8f', font: {size: 10},
               callback: (v, i) => i % Math.ceil(labels.length / 8) === 0 ? labels[i].toFixed(1) : ''},
-              grid: {color: '#2c4435'}},
-          y: {ticks: {color: '#8aa394', font: {size: 10}, callback: v => `${v}m`},
-              grid: {color: '#2c4435'}},
+              grid: {color: 'rgba(236,229,216,.07)'}},
+          y: {ticks: {color: '#8b9a8f', font: {size: 10}, callback: v => `${v}m`},
+              grid: {color: 'rgba(236,229,216,.07)'}},
         },
       },
     });

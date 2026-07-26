@@ -24,7 +24,7 @@
 #sec-editor .mode-tabs{display:flex;gap:0;margin-bottom:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 #sec-editor .mtab{flex:1;background:transparent;border:0;color:var(--muted);padding:7px 4px;font-size:12px;
   font-weight:700;cursor:pointer;font-family:inherit;text-transform:uppercase;letter-spacing:.04em}
-#sec-editor .mtab.on{background:var(--pr-yellow);color:#101a14}
+#sec-editor .mtab.on{background:var(--pr-yellow);color:var(--bg)}
 #sec-editor .tool-panel{margin-top:8px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
 #sec-editor .tool-panel input[type=range]{width:100%}
 #sec-editor .tool-info{font-size:12px;color:var(--ink);font-family:var(--mono);margin:6px 0}
@@ -51,10 +51,10 @@
 #sec-editor #issues-list::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 #sec-editor #issues-list{scrollbar-width:thin;scrollbar-color:var(--line) var(--bg)}
 #sec-editor .sel-hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
-#sec-editor .handle-a, #sec-editor .handle-b{width:20px;height:20px;border-radius:50%;border:3px solid #101a14;
+#sec-editor .handle-a, #sec-editor .handle-b{width:20px;height:20px;border-radius:50%;border:3px solid var(--bg);
   box-shadow:0 2px 6px rgba(0,0,0,.7);cursor:grab}
-#sec-editor .handle-a{background:#e8c44a}
-#sec-editor .handle-b{background:#d24a3a}
+#sec-editor .handle-a{background:var(--pr-yellow)}
+#sec-editor .handle-b{background:var(--gr-red)}
 #sec-editor .wpt-marker{font-size:22px;line-height:1;cursor:pointer;
   text-shadow:0 1px 3px rgba(0,0,0,.8);user-select:none}
 #sec-editor .issue-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px}
@@ -63,7 +63,7 @@
 #sec-editor .issue-row .meta{flex:1;min-width:0}
 #sec-editor .issue-row .meta .rng{font-family:var(--mono)}
 #sec-editor .issue-row .meta .det{color:var(--muted);font-size:11px}
-#sec-editor .issue-row.high .ico{filter:drop-shadow(0 0 3px #d24a3a)}
+#sec-editor .issue-row.high .ico{filter:drop-shadow(0 0 3px var(--gr-red))}
 #sec-editor .issue-row .btn{padding:3px 8px;font-size:11px}
 #sec-editor .issue-row.active{background:rgba(232,196,74,.10);box-shadow:inset 3px 0 0 var(--pr-yellow)}
 #sec-editor .issue-row.active .btn{opacity:.6}

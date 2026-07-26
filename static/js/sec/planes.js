@@ -38,7 +38,7 @@
     map.addControl({
       onAdd() {
         const sel = document.createElement('select');
-        sel.style.cssText = 'background:var(--panel,#fff);color:var(--ink,#101a14);border:none;font-size:12px;cursor:pointer;padding:5px 7px;font-family:inherit;width:100%';
+        sel.style.cssText = 'background:var(--panel,#fff);color:var(--ink,#0b120e);border:none;font-size:12px;cursor:pointer;padding:5px 7px;font-family:inherit;width:100%';
         basemapNames().forEach(c => {
           const o = document.createElement('option'); o.value = c; o.textContent = c;
           sel.appendChild(o);
@@ -102,7 +102,7 @@
     const a = activityOf(p.activity_type);
     const div = document.createElement('div');
     div.className = 'plan-card';
-    div.style.borderLeftColor = a ? a.color : '#2c4435';
+    div.style.borderLeftColor = a ? a.color : 'var(--line-strong)';
     div.onclick = () => go('/Plan/' + encodeURIComponent(p.public_id));
     div.innerHTML = `<div class="plan-act">${a ? iconSvg(a, 26) : genericIconSvg(26)}</div>
       <h3>${esc(p.name)}</h3><div class="date">${fmtDate(p.created_at)}</div>

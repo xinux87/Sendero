@@ -426,6 +426,11 @@ def main():
         # "(renombrada)" y el nombre crecería sin fin entre ejecuciones.
         nuevo = nombre.split(" (renombrada)")[0] + " (renombrada)"
         page.evaluate(f"window.prompt = () => {json.dumps(nuevo)}")
+        # Con el rediseño, sobre el mapa cabecera solo están las dos acciones
+        # principales; renombrar/reescanear/borrar viven tras el botón ⋯ (también
+        # en escritorio).
+        page.click("#d-more-btn")
+        page.wait_for_timeout(200)
         page.click("#sec-detalle button:has-text('Renombrar')")
         page.wait_for_timeout(800)
         check(page.text_content("#d-name").strip() == nuevo, "el nombre se actualiza en pantalla")
