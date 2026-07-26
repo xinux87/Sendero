@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.7.1-2e7d32?style=for-the-badge" alt="Versión 0.7.1">
+  <img src="https://img.shields.io/badge/versión-0.9.1-2e7d32?style=for-the-badge" alt="Versión 0.9.1">
   <img src="https://img.shields.io/badge/100%25-autoalojado-17241c?style=for-the-badge" alt="100% autoalojado">
   <img src="https://img.shields.io/badge/Docker-xinux87%2Fsendero-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Hub: xinux87/sendero">
   <img src="https://img.shields.io/badge/Flask%20+%20SQLite-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Flask + SQLite">
@@ -42,16 +42,23 @@ En resumen, Sendero te permite:
 
 ## Dashboard
 
+> ℹ️ Las capturas de esta sección y de las dos siguientes son de una versión anterior a
+> la 0.9.0, que rediseñó el dashboard, Mis Rutas y el detalle de ruta. Lo que describe cada
+> lista debajo sí corresponde a la versión actual.
+
 La portada de Sendero: un resumen de todo lo que has recorrido, con las cifras globales, el mapa de todas tus rutas y tus mejores marcas de un vistazo.
 
 ![Dashboard de Sendero](readme_images/dasboard_es.png)
 
-> **En esta captura se ve:**
-> - **Totales globales**: número de rutas, distancia total, desnivel acumulado y tiempo en movimiento.
-> - **Mapa mundial** de todas las rutas con agrupación por zonas (*clustering*).
-> - **Rutas por actividad**: kilómetros y número de rutas de cada tipo (senderismo, bicicleta, caminata, correr, esquí, otros).
-> - **Rutas por año**: barras con el reparto de tus salidas por año (más abajo en la página).
-> - **Récords personales**: tus mejores marcas —ruta más larga, mayor desnivel acumulado y velocidad media más alta— cada una enlazada a la ruta correspondiente.
+> **Lo que encuentras aquí:**
+> - **Selector de año** y cinco cifras de cabecera: salidas, distancia, desnivel +, horas y zonas, cada una con su contexto (variación respecto al año anterior, media por salida, «N × Everest»…).
+> - **Desnivel acumulado por mes**: doce barras que enseñan de un vistazo tu estacionalidad.
+> - **Zonas más visitadas** y **almacenamiento** (cuánto ocupan la base, los tracks, las fotos, las miniaturas y los mapas descargados).
+> - **Mapa** de todas las rutas con agrupación por zonas (*clustering*).
+> - **Por actividad**: kilómetros y número de rutas de cada tipo (senderismo, bicicleta, caminata, correr, esquí, otros).
+> - **Rutas por año** y **récords personales** —ruta más larga, mayor desnivel y velocidad media más alta—, cada uno enlazado a su ruta.
+>
+> Todo lo anterior, salvo los récords, se calcula **en tu propio dispositivo** con la lista que ya tiene guardada, así que el dashboard también funciona sin conexión y cambiar de año no gasta ni una petición.
 
 ---
 
@@ -61,12 +68,13 @@ Todas tus salidas en un listado y un mapa navegable, con filtros y búsqueda.
 
 ![Listado de rutas en Sendero](readme_images/my_routes_es.png)
 
-> **En esta captura se ve:**
-> - **Filtros** por actividad (chips de colores) y por rango de fechas.
+> **Lo que encuentras aquí:**
+> - **Filtros** por actividad (una píldora del color de cada una), por rango de fechas y **buscador** por nombre o zona.
 > - **Mapa** con selector de capa base (aquí *Satélite*) y agrupación por zonas.
 > - **Orden** por fecha (más reciente / más antiguo) y **modo edición** para selección múltiple.
-> - **Tarjetas agrupadas por mes**, cada una con la **miniatura del track** y el icono de su actividad.
-> - Vistas **Cuadrícula / Panel** y botón **«+ Añadir ruta»** (también acepta arrastrar y soltar el archivo).
+> - **Filtro «⚠ Duplicadas»**, que solo aparece si la importación automática marcó alguna ruta como posible repetida.
+> - **Tarjetas agrupadas por mes**, cada una con el color de su actividad, la **miniatura del track** de fondo, la distancia y la localidad.
+> - Tres vistas — **Cuadrícula**, **Tabla** (densa, para repasar muchas salidas de un tirón) y **Panel** (lista estrecha con el mapa grande) — y botón **«+ Añadir ruta»**, que también acepta arrastrar y soltar.
 
 ---
 
@@ -76,13 +84,15 @@ Cada ruta abre una ficha completa con mapa, estadísticas, perfiles y fotos.
 
 ![Detalle de una ruta en Sendero](readme_images/route_detail_es.png)
 
-> **En esta captura se ve:**
-> - **Nombre, fecha y dispositivo** que grabó la ruta (aquí un *Amazfit T-Rex 3 Pro*).
-> - **Mapa topográfico** con el track y los marcadores de las fotos con GPS; botón **«Vista 3D»**.
-> - **Estadísticas**: distancia, desnivel +/−, tiempo en movimiento, velocidad media y altitud máxima.
-> - **Frecuencia cardíaca** media y máxima.
-> - **Perfil de elevación** interactivo (con velocidad y FC sincronizados al pasar el ratón por el mapa).
-> - Acciones: **Editar, Reescanear, descargar GPX, Renombrar y Eliminar**.
+> **Lo que encuentras aquí:**
+> - **El mapa es la cabecera**: el track sobre topográfico o satélite, y encima el tipo de actividad, la zona, el nombre y la línea de fecha · hora | archivo | dispositivo. Con **«Vista 3D»** y los marcadores de las fotos que llevan GPS.
+> - **Banda de métricas**: distancia (destacada), desnivel +/−, altitud máxima, tiempo en movimiento, velocidad media y frecuencia cardíaca media y máxima.
+> - **Perfil de elevación**, **velocidad** y **frecuencia cardíaca**, sincronizados entre sí y con el mapa al pasar el ratón.
+> - **Datos técnicos** (tiempo total, pausas, ritmo medio, velocidad máxima, altitud mínima, puntos GPS, formato, versión) y **Calidad del track**, con los avisos de GPS de esa ruta y un enlace para corregirlos en el editor.
+> - **Fotos** y **Resumen** editable.
+> - Acciones: **Editar track** y **Exportar GPX** sobre el mapa; reescanear, guardar el mapa sin conexión, renombrar y eliminar tras el botón **⋯**.
+>
+> En el móvil el mapa ocupa el ancho completo y el resto se reparte en cuatro pestañas: Perfil, Fotos, Datos y Notas.
 
 ---
 
@@ -129,6 +139,18 @@ Sí necesitan conexión, y avisan en vez de fallar en silencio: subir rutas o fo
 En **Ajustes → Sin conexión** tienes el panel de control: estado de la copia local, **↓ Descargar todas las rutas** (para llevártelas al monte sin haberlas abierto una a una), cuánto ocupan los mapas descargados con su botón de borrar, y la cola de cambios pendientes de enviar.
 
 > **Nota sobre el mapa base.** Las cuatro capas del selector (Topográfico, Callejero, Satélite, Oscuro) son de terceros y necesitan internet. Si quieres una quinta capa propia que funcione siempre, coloca un archivo **PMTiles** en `data/tiles/` y selecciónalo en **Ajustes → Mapas**; esa la sirve Sendero, así que funciona sin internet pero **con el servidor encendido**. Para el monte con el servidor apagado, lo que vale es el «⬇ Mapa sin conexión» de cada ruta.
+
+## Si algo va raro después de actualizar
+
+El precio de que la app funcione sin conexión es que el navegador guarda su código. Al publicar una versión nueva puede quedarse con parte del anterior, y entonces se ve **la app a medias**: botones que no responden, opciones que no cargan, pantallas incompletas… sin ningún error en el servidor.
+
+La forma rápida de saber si es eso: **abre la misma dirección en una ventana de incógnito**. Si ahí funciona bien, no es la app ni el servidor — es lo que tu navegador tenía guardado.
+
+Para arreglarlo, abre **`/actualizar`** (por ejemplo `https://tu-sendero/actualizar`, también en **Ajustes → Sin conexión → «Actualizar la app en este dispositivo»**). Esa página borra el código guardado, sus cachés y la copia local de rutas y planes, y te deja volver a la app, que se descarga de cero y se sincroniza otra vez. **No toca nada del servidor**: tus rutas, fotos y ajustes siguen intactos.
+
+Si tienes Sendero **instalada como app**, cerrar la ventana no basta: usa `/actualizar` desde dentro de la app o desinstálala y vuelve a instalarla.
+
+> **Detrás de un proxy con autenticación** (Pangolin, Authelia, oauth2-proxy…) puede aparecer en la consola `Access to manifest … blocked by CORS policy`. Es el manifiesto de la PWA, el único archivo que el navegador pide sin tu sesión; el aviso es inofensivo (solo afecta a instalar la app). Si te molesta, comprueba que tu sesión del SSO no ha caducado o excluye `/manifest.webmanifest` de la autenticación en el proxy.
 
 ## Immich (opcional)
 
@@ -257,7 +279,8 @@ En las URLs, `{id}` es el **identificador público** de la ruta o el plan (una c
 | `GET`  | `/api/routes/{id}/gpx` | descargar el archivo original |
 | `POST` | `/api/routes/{id}/rescan` | volver a leer el archivo y recalcular todo |
 | `POST` | `/api/routes/{id}/photos` | subir fotos locales (campo `photos`) |
-| `GET`  | `/api/stats` | estadísticas globales |
+| `GET`  | `/api/stats` | estadísticas globales (récords incluidos) |
+| `GET`  | `/api/storage` | espacio en disco por carpeta: base, tracks, fotos, miniaturas y mapas |
 | `GET`  | `/api/config` | indica si Immich está activo, la distancia de autoselección y la versión |
 | `GET`  | `/api/settings` | leer ajustes actuales |
 | `POST` | `/api/settings` | guardar ajustes (misma función que el modal Ajustes) |
