@@ -1,37 +1,78 @@
-{# Dashboard (sección de la SPA). Markup extraído de templates/app.html; la
-   lógica vive en static/js/sec/dashboard.js y el CSS en static/css/dashboard.css.
-   Los botones de la cabecera están en shell.html (bloque header_actions), no
-   aquí: van fuera de la sección y el router los muestra por data-sec-actions. #}
+{# Dashboard / "Analítica global" (sección de la SPA), con el rediseño de
+   redesign/ (2a): título + selector de año, cinco KPIs, barras de desnivel por
+   mes, zonas más visitadas y almacenamiento. Debajo se conserva lo que ya
+   existía —mapa de todas las rutas, "Por actividad", "Rutas por año" y
+   récords—, restilado con los tokens nuevos.
+
+   La lógica vive en static/js/sec/dashboard.js y el CSS en
+   static/css/dashboard.css. Los botones de la cabecera están en shell.html
+   (bloque header_actions), no aquí: el router los muestra por data-sec-actions.
+   #ov-total-routes, #dash-map, #ov-stale, .act-row y .year-col los comprueba
+   tests/e2e_spa.py. #}
 <section id="sec-dashboard" class="sec hidden">
   <div id="ov-loading" class="ov-loading">Cargando estadísticas…</div>
   <div id="ov-stale" class="stats-stale hidden"></div>
   <div id="ov-content" class="hidden">
-    <div class="ov-section">
-      <div class="ov-section-title">Totales</div>
-      <div class="hero-grid">
-        <div class="hero-card"><div class="v" id="ov-total-routes">–</div><div class="l">Rutas</div></div>
-        <div class="hero-card"><div class="v" id="ov-total-km">–<small> km</small></div><div class="l">Distancia total</div></div>
-        <div class="hero-card"><div class="v" id="ov-total-asc">–<small> m</small></div><div class="l">Desnivel acumulado ↑</div></div>
-        <div class="hero-card"><div class="v" id="ov-total-time">–</div><div class="l">Tiempo en movimiento</div></div>
+
+    <div class="view-head">
+      <div>
+        <h2>Analítica global</h2>
+        <div id="ov-sub" class="sub">Calculado en el contenedor · sin servicios externos</div>
+      </div>
+      <div class="year-pills" id="ov-year-pills"></div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi"><div class="l">Salidas</div><div class="v" id="ov-total-routes">–</div>
+        <div class="d" id="ov-kpi-routes-d"></div></div>
+      <div class="kpi"><div class="l">Distancia</div><div class="v amber" id="ov-total-km">–</div>
+        <div class="d" id="ov-kpi-km-d"></div></div>
+      <div class="kpi"><div class="l">Desnivel +</div><div class="v" id="ov-total-asc">–</div>
+        <div class="d" id="ov-kpi-asc-d"></div></div>
+      <div class="kpi"><div class="l">Horas</div><div class="v" id="ov-total-time">–</div>
+        <div class="d" id="ov-kpi-time-d"></div></div>
+      <div class="kpi"><div class="l">Zonas</div><div class="v" id="ov-total-zonas">–</div>
+        <div class="d" id="ov-kpi-zonas-d"></div></div>
+    </div>
+
+    <div class="ov-cols">
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Desnivel acumulado por mes · m</span>
+          <span id="ov-months-sub" class="panel-sub mono"></span></div>
+        <div class="month-bars" id="ov-month-bars"></div>
+      </div>
+      <div class="ov-side">
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">Zonas más visitadas</span></div>
+          <div class="kv" id="ov-zonas"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">Almacenamiento</span></div>
+          <div class="store-bar"><div id="ov-store-fill"></div></div>
+          <div class="store-foot mono" id="ov-store-foot">—</div>
+        </div>
       </div>
     </div>
-    <div class="ov-section" id="ov-map-section">
-      <div class="ov-section-title">Todas las rutas</div>
+
+    <div class="panel" id="ov-map-section">
+      <div class="panel-head"><span class="panel-title">Todas las rutas</span></div>
       <div id="dash-map"></div>
-      <div id="dash-map-loader" class="hidden" style="height:3px;background:var(--line);border-radius:0 0 8px 8px;overflow:hidden;margin-top:-1px">
-        <div id="dash-map-loader-bar" style="height:100%;width:0;background:var(--pr-yellow);transition:width .1s linear"></div>
+      <div id="dash-map-loader" class="hidden"><div id="dash-map-loader-bar"></div></div>
+    </div>
+
+    <div class="ov-cols">
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Por actividad</span></div>
+        <div class="act-rows" id="ov-act-rows"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Rutas por año</span></div>
+        <div class="year-chart" id="ov-year-chart"></div>
       </div>
     </div>
-    <div class="ov-section">
-      <div class="ov-section-title">Por actividad</div>
-      <div class="act-rows" id="ov-act-rows"></div>
-    </div>
-    <div class="ov-section">
-      <div class="ov-section-title">Rutas por año</div>
-      <div class="year-chart" id="ov-year-chart"></div>
-    </div>
-    <div class="ov-section" id="ov-records-section">
-      <div class="ov-section-title">Récords personales</div>
+
+    <div class="panel" id="ov-records-section">
+      <div class="panel-head"><span class="panel-title">Récords personales</span></div>
       <div class="records-grid" id="ov-records-grid"></div>
     </div>
   </div>

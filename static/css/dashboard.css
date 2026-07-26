@@ -1,57 +1,128 @@
-/* Sección `dashboard`. Extraído de templates/app.html (roadmap §2-§3).
-   Escopado bajo #sec-dashboard: en la SPA las 5 secciones comparten documento y
-   nombres como .act-row o .record-card chocarían. Lo común a varios mapas
+/* Sección `dashboard` — rediseño de redesign/ (2a).
+
+   Escopado bajo #sec-dashboard: en la SPA las 6 secciones comparten documento y
+   nombres como .act-row, .kpi o .record-card chocarían. Lo común a varios mapas
    (overrides de MapLibre) y los loaders flotantes viven en base.html. */
-#sec-dashboard .ov-section{background:var(--panel);border:1px solid var(--line);
-  border-radius:11px;padding:22px 24px;margin-bottom:18px}
-#sec-dashboard .ov-section-title{font-family:'Saira Condensed',sans-serif;font-size:13px;
-  font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:16px}
-#sec-dashboard .hero-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-#sec-dashboard .hero-card{background:var(--panel-2);border:1px solid var(--line);
-  border-radius:9px;padding:16px 18px}
-#sec-dashboard .hero-card .v{font-family:var(--mono);font-size:28px;font-weight:700;
-  color:var(--ink);line-height:1.1}
-#sec-dashboard .hero-card .v small{font-size:14px;font-weight:400;color:var(--muted)}
-#sec-dashboard .hero-card .l{font-size:10px;text-transform:uppercase;letter-spacing:.12em;
-  color:var(--muted);margin-top:4px;font-weight:600}
+
+#sec-dashboard .panel{background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:16px 18px;margin-bottom:16px}
+#sec-dashboard .panel-head{display:flex;align-items:baseline;justify-content:space-between;
+  gap:12px;margin-bottom:10px}
+#sec-dashboard .panel-sub{font-family:var(--mono);font-size:11px;color:var(--muted-dim)}
+
+/* ── selector de año ───────────────────────────────────────────────────────── */
+#sec-dashboard .year-pills{display:flex;gap:8px;flex-wrap:wrap}
+#sec-dashboard .year-pill{padding:7px 15px;border-radius:999px;border:1px solid var(--line-strong);
+  background:transparent;color:var(--ink);font-family:inherit;font-size:13px;cursor:pointer;
+  transition:all .15s}
+#sec-dashboard .year-pill:hover{border-color:rgba(236,229,216,.32)}
+#sec-dashboard .year-pill.on{border-color:var(--pr-yellow);color:var(--pr-yellow)}
+
+/* ── KPIs ──────────────────────────────────────────────────────────────────── */
+#sec-dashboard .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:16px}
+#sec-dashboard .kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;min-width:0}
+#sec-dashboard .kpi .l{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted-dim);margin-bottom:6px}
+#sec-dashboard .kpi .v{font-family:var(--display);font-weight:500;font-size:30px;line-height:1;
+  white-space:nowrap}
+#sec-dashboard .kpi .v.amber{color:var(--pr-yellow)}
+#sec-dashboard .kpi .v small{font-size:14px;color:var(--muted)}
+#sec-dashboard .kpi .d{font-family:var(--mono);font-size:11.5px;color:var(--muted-dim);margin-top:5px}
+#sec-dashboard .kpi .d.up{color:#43b97f}
+#sec-dashboard .kpi .d.down{color:var(--gr-red)}
+
+/* ── dos columnas (contenido | panel lateral de 330 px) ───────────────────── */
+#sec-dashboard .ov-cols{display:grid;grid-template-columns:1fr 330px;gap:16px;align-items:start}
+#sec-dashboard .ov-cols > .panel{margin-bottom:16px}
+#sec-dashboard .ov-side{display:flex;flex-direction:column}
+
+/* ── barras de desnivel por mes ────────────────────────────────────────────── */
+#sec-dashboard .month-bars{display:flex;align-items:flex-end;gap:8px;height:226px;
+  padding-top:6px}
+#sec-dashboard .mb-col{flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:flex-end;height:100%;min-width:0;gap:6px}
+#sec-dashboard .mb-bar{width:100%;max-width:34px;border-radius:3px;background:#3f5a49;
+  min-height:2px;transition:height .3s ease}
+#sec-dashboard .mb-lbl{font-family:var(--mono);font-size:10px;color:var(--muted-faint)}
+#sec-dashboard .mb-empty{color:var(--muted);font-size:13px;align-self:center;margin:auto}
+
+/* ── zonas / almacenamiento ────────────────────────────────────────────────── */
+#sec-dashboard .kv .kv-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;
+  border-bottom:1px solid rgba(236,229,216,.07);font-size:13px}
+#sec-dashboard .kv .kv-row:last-child{border-bottom:0}
+#sec-dashboard .kv .kv-k{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sec-dashboard .kv .kv-v{font-family:var(--mono)}
+#sec-dashboard .store-bar{height:7px;border-radius:4px;background:rgba(236,229,216,.09);
+  overflow:hidden;margin:4px 0 9px}
+/* La barra es la composición del total: un segmento por carpeta (los colores los
+   pone el JS, que es quien sabe qué mide cada parte). */
+#sec-dashboard .store-bar > div{display:flex;height:100%;width:100%}
+#sec-dashboard .store-bar i{display:block;height:100%;transition:width .4s ease}
+#sec-dashboard .store-foot{font-size:11.5px;line-height:1.6;color:var(--muted-dim)}
+
+/* ── por actividad ─────────────────────────────────────────────────────────── */
 #sec-dashboard .act-rows{display:flex;flex-direction:column;gap:10px}
 #sec-dashboard .act-row{display:grid;grid-template-columns:110px 1fr 80px 80px;align-items:center;gap:12px}
-#sec-dashboard .act-label{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink)}
+#sec-dashboard .act-label{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink)}
 #sec-dashboard .act-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-#sec-dashboard .act-bar-bg{background:var(--line);border-radius:4px;height:8px;overflow:hidden}
+#sec-dashboard .act-bar-bg{background:rgba(236,229,216,.09);border-radius:4px;height:8px;overflow:hidden}
 #sec-dashboard .act-bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
-#sec-dashboard .act-meta{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
-#sec-dashboard .act-count{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
-#sec-dashboard .year-chart{display:flex;align-items:flex-end;gap:6px;height:120px;border-bottom:1px solid var(--line)}
-#sec-dashboard .year-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:0}
-#sec-dashboard .year-bar{background:var(--pr-yellow);border-radius:3px 3px 0 0;width:100%;max-width:48px;min-height:2px}
-#sec-dashboard .year-num{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;margin-top:6px}
-#sec-dashboard .year-count{font-family:var(--mono);font-size:10px;color:var(--ink);font-weight:700}
-#sec-dashboard .records-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-#sec-dashboard .record-card{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
-  padding:14px 16px;cursor:pointer;transition:filter .15s,transform .15s}
-#sec-dashboard .record-card:hover{filter:brightness(1.06);transform:translateY(-2px)}
-#sec-dashboard .record-card .rv{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--pr-yellow)}
-#sec-dashboard .record-card .rv small{font-size:12px;color:var(--muted);font-weight:400}
-#sec-dashboard .record-card .rl{font-size:10px;text-transform:uppercase;letter-spacing:.1em;
-  color:var(--muted);margin-bottom:6px;font-weight:600}
-#sec-dashboard .record-card .rn{font-size:13px;color:var(--ink);margin-top:4px;
+#sec-dashboard .act-meta,#sec-dashboard .act-count{font-family:var(--mono);font-size:12px;
+  color:var(--muted-dim);text-align:right}
+
+/* ── rutas por año ─────────────────────────────────────────────────────────── */
+#sec-dashboard .year-chart{display:flex;align-items:flex-end;gap:6px;height:180px;
+  border-bottom:1px solid var(--line)}
+#sec-dashboard .year-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  gap:4px;flex:1;min-width:0;height:100%}
+#sec-dashboard .year-bar{background:#4e7159;border-radius:3px;width:100%;max-width:48px;min-height:2px}
+#sec-dashboard .year-col.on .year-bar{background:var(--pr-yellow)}
+#sec-dashboard .year-num{font-family:var(--mono);font-size:9.5px;color:var(--muted-faint);
+  white-space:nowrap;margin-top:6px}
+#sec-dashboard .year-count{font-family:var(--mono);font-size:10.5px;color:var(--ink)}
+
+/* ── récords ───────────────────────────────────────────────────────────────── */
+#sec-dashboard .records-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+#sec-dashboard .record-card{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;cursor:pointer;transition:background .15s,transform .15s}
+#sec-dashboard .record-card:hover{background:#1b2c21;transform:translateY(-2px)}
+#sec-dashboard .record-card .rl{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;
+  letter-spacing:.14em;color:var(--muted-dim);margin-bottom:6px}
+#sec-dashboard .record-card .rv{font-family:var(--display);font-weight:500;font-size:24px;
+  color:var(--pr-yellow);line-height:1}
+#sec-dashboard .record-card .rv small{font-size:12px;color:var(--muted)}
+#sec-dashboard .record-card .rn{font-size:13px;color:var(--ink);margin-top:6px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── mapa ──────────────────────────────────────────────────────────────────── */
+#sec-dashboard #dash-map{height:340px;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+#sec-dashboard #dash-map-loader{height:3px;background:var(--line);border-radius:0 0 8px 8px;
+  overflow:hidden;margin-top:-1px}
+#sec-dashboard #dash-map-loader-bar{height:100%;width:0;background:var(--pr-yellow);
+  transition:width .1s linear}
 #sec-dashboard .ov-loading{color:var(--muted);font-size:14px;padding:32px 0;text-align:center}
-#sec-dashboard #dash-map{height:320px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
 /* Aviso de estadísticas servidas desde la copia local (sin conexión). */
 #sec-dashboard .stats-stale{font-size:12px;color:var(--pr-yellow);margin-bottom:12px;
-  background:rgba(232,196,74,.1);border:1px solid rgba(232,196,74,.35);
+  background:rgba(227,178,60,.1);border:1px solid rgba(227,178,60,.35);
   border-radius:8px;padding:8px 12px}
+
+@media(max-width:1199px){
+  #sec-dashboard .ov-cols{grid-template-columns:1fr}
+  #sec-dashboard .kpi-grid{grid-template-columns:repeat(3,1fr)}
+}
 @media(max-width:600px){
-  #sec-dashboard .ov-section{padding:16px 14px}
-  #sec-dashboard .hero-grid{grid-template-columns:repeat(2,1fr);gap:10px}
-  #sec-dashboard .hero-card{padding:12px 14px}
-  #sec-dashboard .hero-card .v{font-size:22px}
+  #sec-dashboard .panel{padding:14px}
+  #sec-dashboard .kpi-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  #sec-dashboard .kpi{padding:12px 14px}
+  #sec-dashboard .kpi .v{font-size:23px}
+  #sec-dashboard .month-bars{height:170px;gap:4px}
+  #sec-dashboard .mb-lbl{font-size:8.5px}
   #sec-dashboard .act-row{grid-template-columns:92px 1fr 64px 50px;gap:8px}
   #sec-dashboard .act-label{font-size:12px}
   #sec-dashboard #dash-map{height:40vh;height:40dvh;min-height:260px}
 }
 @media(hover:none) and (pointer:coarse){
   #sec-dashboard .record-card:hover{transform:none}
+  #sec-dashboard .year-pill{min-height:40px}
 }

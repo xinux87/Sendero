@@ -18,7 +18,9 @@
   'use strict';
 
   let map = null, mapLoaded = false;
-  let routes = null;                    // listado ligero (Store.routes())
+  let routes = null;                    // listado ligero, solo las que tienen GPS (mapa)
+  let allRows = [];                     // listado COMPLETO (analítica: KPIs, meses, zonas)
+  let year = 'todo';                    // periodo elegido en el selector de año
   let lineIds = new Set(), lineFeatures = [], lineTimer = null, fetching = false;
   let clusterLabels = {};
   let _tok = 0;
@@ -36,58 +38,248 @@
     return !!el && !el.classList.contains('hidden');
   };
 
-  /* ── estadísticas ──────────────────────────────────────────────────────── */
+  /* ── analítica ─────────────────────────────────────────────────────────────
+     Los KPIs, las barras de desnivel por mes, las zonas, "Por actividad" y
+     "Rutas por año" se calculan EN EL CLIENTE a partir del listado del Store
+     (que ya trae distance_m, ascent_m, moving_s, started_at y locality). Dos
+     consecuencias buenas: el dashboard entero funciona sin conexión y el
+     selector de año no necesita ni una petición.
+
+     Lo ÚNICO que sigue viniendo de /api/stats son los RÉCORDS: necesitan
+     avg_speed y ese campo no está en ROUTE_LIST_COLS. Sin conexión se pintan los
+     de la última sincronización, avisando (#ov-stale). */
+
+  const MESES = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN',
+                 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+  const EVEREST_M = 8848;
+
+  const añoDe = r => (r.started_at || '').slice(0, 4) || null;
+  const añosDisponibles = () =>
+    [...new Set(allRows.map(añoDe).filter(Boolean))].sort().reverse();
+  const filasDelAño = y => (y === 'todo' ? allRows : allRows.filter(r => añoDe(r) === y));
+
+  function agrega(rows) {
+    const zonas = new Map();
+    let km = 0, asc = 0, seg = 0;
+    rows.forEach(r => {
+      km += (r.distance_m || 0) / 1000;
+      asc += r.ascent_m || 0;
+      seg += r.moving_s || r.duration_s || 0;
+      if (r.locality) zonas.set(r.locality, (zonas.get(r.locality) || 0) + 1);
+    });
+    return {n: rows.length, km, asc, seg, zonas};
+  }
+
+  function renderYearPills() {
+    const box = q('#ov-year-pills');
+    if (!box) return;
+    const años = añosDisponibles();
+    box.innerHTML = '';
+    [...años.slice(0, 5).reverse(), 'todo'].forEach(y => {
+      const b = document.createElement('button');
+      b.className = 'year-pill' + (y === year ? ' on' : '');
+      b.textContent = y === 'todo' ? 'Todo' : y;
+      b.onclick = () => setYear(y);
+      box.appendChild(b);
+    });
+  }
+
+  function setYear(y) {
+    year = y;
+    renderAnalytics();
+  }
+
+  function renderKpis() {
+    const a = agrega(filasDelAño(year));
+    const prev = (year !== 'todo') ? agrega(filasDelAño(String(+year - 1))) : null;
+    const set = (sel, html) => { const el = q(sel); if (el) el.innerHTML = html; };
+    const delta = (sel, dif, sufijo) => {
+      const el = q(sel);
+      if (!el) return;
+      if (dif == null) { el.className = 'd'; el.textContent = ''; return; }
+      el.className = 'd' + (dif > 0 ? ' up' : dif < 0 ? ' down' : '');
+      el.textContent = `${dif > 0 ? '+' : ''}${dif} ${sufijo}`;
+    };
+
+    q('#ov-total-routes').textContent = a.n;
+    set('#ov-total-km', `${fmtNum(a.km)}<small> km</small>`);
+    set('#ov-total-asc', `${fmtNum(a.asc)}<small> m</small>`);
+    set('#ov-total-time', `${fmtNum(a.seg / 3600)}<small> h</small>`);
+    q('#ov-total-zonas').textContent = a.zonas.size || '–';
+
+    delta('#ov-kpi-routes-d', prev && prev.n ? a.n - prev.n : null, `vs ${+year - 1}`);
+    q('#ov-kpi-km-d').textContent = a.n ? `media ${(a.km / a.n).toFixed(1)} km` : '';
+    q('#ov-kpi-asc-d').textContent = a.asc
+      ? `${(a.asc / EVEREST_M).toFixed(1)} × Everest` : '';
+    q('#ov-kpi-time-d').textContent = a.n ? `${fmtHM(a.seg / a.n)} de media` : '';
+    const top = [...a.zonas.entries()].sort((x, y2) => y2[1] - x[1])[0];
+    q('#ov-kpi-zonas-d').textContent = top ? `sobre todo ${top[0]}` : '';
+    const sub = q('#ov-sub');
+    if (sub) {
+      sub.textContent = (year === 'todo' ? 'Todas las temporadas' : `Temporada ${year}`)
+        + ' · calculado en el contenedor · sin servicios externos';
+    }
+  }
+
+  /* Doce barras: el desnivel acumulado de cada mes del año elegido (con "Todo",
+     la suma de todos los años, que es lo que enseña la estacionalidad). Los
+     meses más fuertes se destacan en naranja y ámbar, como el prototipo. */
+  function renderMonthBars() {
+    const box = q('#ov-month-bars');
+    if (!box) return;
+    const rows = filasDelAño(year);
+    const porMes = new Array(12).fill(0);
+    rows.forEach(r => {
+      if (!r.started_at) return;
+      const m = +r.started_at.slice(5, 7) - 1;
+      if (m >= 0 && m < 12) porMes[m] += r.ascent_m || 0;
+    });
+    const max = Math.max(...porMes);
+    q('#ov-months-sub').textContent = max
+      ? `máx ${fmtNum(max)} m · total ${fmtNum(porMes.reduce((s, v) => s + v, 0))} m` : '';
+    if (!max) {
+      box.innerHTML = '<div class="mb-empty">Sin datos de desnivel para este periodo.</div>';
+      return;
+    }
+    // Ranking para el color: el mes más fuerte en ámbar, los tres siguientes en
+    // naranja, el resto en verdes apagados.
+    const orden = porMes.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).map(p => p[1]);
+    const color = i => {
+      const pos = orden.indexOf(i);
+      if (!porMes[i]) return '#3f5a49';
+      if (pos === 0) return 'var(--pr-yellow)';
+      if (pos <= 3) return '#e8863c';
+      if (pos <= 6) return '#4e7159';
+      return '#3f5a49';
+    };
+    box.innerHTML = porMes.map((v, i) => {
+      const alto = Math.max(2, Math.round(v / max * 180));
+      return `<div class="mb-col" title="${MESES[i]}: ${fmtNum(v)} m">
+        <div class="mb-bar" style="height:${alto}px;background:${color(i)}"></div>
+        <div class="mb-lbl">${MESES[i]}</div></div>`;
+    }).join('');
+  }
+
+  function renderZonas() {
+    const box = q('#ov-zonas');
+    if (!box) return;
+    const {zonas} = agrega(filasDelAño(year));
+    if (!zonas.size) {
+      box.innerHTML = '<div class="kv-row"><span class="kv-k">Sin localidades. '
+        + 'Se rellenan al importar, con la geocodificación de Ajustes → Editor.</span></div>';
+      return;
+    }
+    box.innerHTML = [...zonas.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([z, n]) => `<div class="kv-row"><span class="kv-k" title="${esc(z)}">${esc(z)}</span>`
+        + `<span class="kv-v">${n}</span></div>`).join('');
+  }
+
+  function renderYearChart() {
+    const box = q('#ov-year-chart');
+    if (!box) return;
+    const porAño = {};
+    allRows.forEach(r => { const y = añoDe(r); if (y) porAño[y] = (porAño[y] || 0) + 1; });
+    const años = Object.entries(porAño).sort();
+    box.innerHTML = '';
+    if (!años.length) {
+      box.innerHTML = '<span style="color:var(--muted);font-size:13px;padding:16px 0">Sin datos de fecha</span>';
+      return;
+    }
+    const maxC = Math.max(...años.map(([, c]) => c));
+    años.forEach(([y, count]) => {
+      const h = Math.max(4, Math.round(count / maxC * 130));
+      const col = document.createElement('div');
+      col.className = 'year-col' + (y === year ? ' on' : '');
+      col.title = `${y}: ${count} ruta${count !== 1 ? 's' : ''}`;
+      col.onclick = () => setYear(y === year ? 'todo' : y);
+      col.style.cursor = 'pointer';
+      col.innerHTML = `<div class="year-count">${count}</div>
+        <div class="year-bar" style="height:${h}px"></div>
+        <div class="year-num">${y}</div>`;
+      box.appendChild(col);
+    });
+  }
+
   function actRow(a, t, total) {
     const pct = Math.round((t.count / total) * 100);
     const row = document.createElement('div');
     row.className = 'act-row';
     row.innerHTML = `<div class="act-label"><div class="act-dot" style="background:${a.color}"></div>${esc(a.label)}</div>
       <div class="act-bar-bg"><div class="act-bar-fill" style="width:${pct}%;background:${a.color}"></div></div>
-      <div class="act-meta">${t.km.toLocaleString('es-ES', {maximumFractionDigits: 0})} km</div>
+      <div class="act-meta">${fmtNum(t.km)} km</div>
       <div class="act-count">${t.count} ruta${t.count !== 1 ? 's' : ''}</div>`;
     return row;
   }
 
-  function renderStats(d, fromCache) {
+  /* "Por actividad" del periodo elegido. */
+  function refreshActRows() {
+    const box = q('#ov-act-rows');
+    if (!box) return;
+    const rows = filasDelAño(year);
+    const byAct = {};
+    rows.forEach(r => {
+      const a = r.activity_type || 'otros';
+      if (!byAct[a]) byAct[a] = {count: 0, km: 0};
+      byAct[a].count++;
+      byAct[a].km += (r.distance_m || 0) / 1000;
+    });
+    const total = rows.length || 1;
+    box.innerHTML = '';
+    ACTIVITIES.forEach(a => {
+      const t = byAct[a.id];
+      if (t) box.appendChild(actRow(a, t, total));
+    });
+  }
+
+  /* Todo lo que depende del listado y del año elegido. */
+  function renderAnalytics() {
     q('#ov-loading').classList.add('hidden');
     q('#ov-content').classList.remove('hidden');
+    renderYearPills();
+    renderKpis();
+    renderMonthBars();
+    renderZonas();
+    refreshActRows();
+    renderYearChart();
+  }
+
+  /* Almacenamiento: /api/storage mide /data con un stat por archivo. La barra es
+     la COMPOSICIÓN del total (no un porcentaje de cuota: aquí no hay cuota). */
+  const STORE_PARTES = [
+    ['db',     'SQLite',     '#e3b23c'],
+    ['gpx',    'tracks',     '#e8863c'],
+    ['photos', 'fotos',      '#3d9be9'],
+    ['thumbs', 'miniaturas', '#43b97f'],
+    ['tiles',  'mapas',      '#8fb69f'],
+  ];
+
+  async function loadStorage() {
+    const tok = _tok;
+    let d;
+    try { d = await (await fetch('/api/storage')).json(); }
+    catch (e) { return; }                 // sin conexión: el panel se queda en "—"
+    if (tok !== _tok) return;
+    const fill = q('#ov-store-fill'), foot = q('#ov-store-foot');
+    if (!fill || !foot) return;
+    const total = d.total || 1;
+    fill.innerHTML = STORE_PARTES.map(([k, , c]) =>
+      `<i style="width:${(d[k] || 0) / total * 100}%;background:${c}"></i>`).join('');
+    foot.innerHTML = STORE_PARTES.filter(([k]) => d[k])
+      .map(([k, etiqueta]) => `${etiqueta} ${_fmtBytes(d[k])}`).join(' · ')
+      + (d.immich_refs ? `<br>${d.immich_refs} foto(s) por referencia (Immich)` : '')
+      + `<br>total ${_fmtBytes(d.total)}`;
+  }
+
+  /* Récords: lo único que necesita el servidor. */
+  function renderRecords(d, fromCache) {
     const stale = q('#ov-stale');
     if (fromCache) {
-      stale.textContent = 'Sin conexión: estadísticas de la última sincronización.';
+      stale.textContent = 'Sin conexión: los récords son de la última sincronización.';
       stale.classList.remove('hidden');
     } else {
       stale.classList.add('hidden');
     }
-    renderTotals(d);
-
-    const actBox = q('#ov-act-rows');
-    actBox.innerHTML = '';
-    const total = d.total_routes || 1;
-    ACTIVITIES.forEach(a => {
-      const t = d.by_type[a.id];
-      if (t) actBox.appendChild(actRow(a, t, total));
-    });
-
-    const yearBox = q('#ov-year-chart');
-    yearBox.innerHTML = '';
-    const years = Object.entries(d.by_year || {});
-    if (!years.length) {
-      yearBox.innerHTML = '<span style="color:var(--muted);font-size:13px;padding:16px 0">Sin datos de fecha</span>';
-    } else {
-      const maxC = Math.max(...years.map(([, c]) => c));
-      years.forEach(([year, count]) => {
-        const h = Math.max(4, Math.round((count / maxC) * 100));
-        const col = document.createElement('div');
-        col.className = 'year-col';
-        col.title = `${year}: ${count} ruta${count !== 1 ? 's' : ''}`;
-        col.innerHTML = `<div class="year-count">${count}</div>
-          <div class="year-bar" style="height:${h}px"></div>
-          <div class="year-num">${year}</div>`;
-        yearBox.appendChild(col);
-      });
-    }
-
-    const rec = d.records || {};
+    const rec = (d && d.records) || {};
     const recGrid = q('#ov-records-grid');
     recGrid.innerHTML = '';
     if (!rec.longest && !rec.highest && !rec.fastest) {
@@ -110,21 +302,13 @@
     if (rec.longest) card('Ruta más larga',
       rec.longest.km.toLocaleString('es-ES', {maximumFractionDigits: 1}), 'km', rec.longest.name);
     if (rec.highest) card('Mayor desnivel ↑',
-      rec.highest.ascent_m.toLocaleString('es-ES', {maximumFractionDigits: 0}), 'm↑', rec.highest.name);
+      fmtNum(rec.highest.ascent_m), 'm↑', rec.highest.name);
     if (rec.fastest) card('Vel. media más alta',
       rec.fastest.avg_speed.toFixed(1), 'km/h', rec.fastest.name);
   }
 
-  function renderTotals(d) {
-    if (!q('#ov-total-routes')) return;
-    q('#ov-total-routes').textContent = d.total_routes;
-    q('#ov-total-km').innerHTML =
-      `${d.total_km.toLocaleString('es-ES', {maximumFractionDigits: 0})}<small> km</small>`;
-    q('#ov-total-asc').innerHTML =
-      `${d.total_ascent_m.toLocaleString('es-ES', {maximumFractionDigits: 0})}<small> m</small>`;
-    q('#ov-total-time').textContent = fmtDur(d.total_moving_s);
-  }
-
+  /* Récords desde /api/stats (el servidor los calcula sobre TODAS las rutas).
+     Si no hay red, se pintan los de la copia local avisando de que lo son. */
   async function loadStats() {
     const tok = _tok;
     let data;
@@ -134,8 +318,6 @@
       data = await res.json();
       if (data.dirty && !data.total_routes) {
         // El servidor no tiene caché todavía: pedir el cálculo y reintentar.
-        q('#ov-loading').classList.remove('hidden');
-        q('#ov-loading').textContent = 'Cargando estadísticas…';
         try { await fetch('/api/stats/refresh', {method: 'POST'}); } catch (e) {}
         if (tok !== _tok) return;
         return loadStats();
@@ -144,16 +326,12 @@
     } catch (e) {
       const cache = await Store.meta('stats');
       if (tok !== _tok) return;
-      if (!cache) {
-        q('#ov-loading').textContent =
-          'No hay estadísticas guardadas en este dispositivo. Conéctate una vez para calcularlas.';
-        return;
-      }
-      renderStats(cache, true);
+      if (cache) renderRecords(cache, true);
+      else q('#ov-records-section').classList.add('hidden');
       return;
     }
     if (tok !== _tok) return;
-    renderStats(data, false);
+    renderRecords(data, false);
     if (data.dirty) regenInBackground();
   }
 
@@ -165,7 +343,7 @@
     const loader = document.createElement('div');
     loader.id = 'stats-regen-loader';
     loader.className = 'upload-loader';
-    loader.innerHTML = `<div class="upload-loader-title">Regenerando estadísticas</div>
+    loader.innerHTML = `<div class="upload-loader-title">Regenerando récords</div>
       <div class="upload-bar-bg"><div class="upload-bar-fill" id="stats-regen-bar"></div></div>
       <div class="upload-filename">Calculando…</div>`;
     document.body.appendChild(loader);
@@ -180,7 +358,7 @@
         fetch('/api/stats').then(r => r.json()).then(d => {
           if (d.dirty) return;
           Store.setMeta('stats', d);
-          if (tok === _tok) renderTotals(d);
+          if (tok === _tok) renderRecords(d, false);
         }).catch(() => {});
       }, 600);
     }).catch(() => { clearInterval(iv); loader.remove(); });
@@ -192,12 +370,10 @@
     if (btn) { btn.disabled = true; btn.textContent = '↻ Calculando…'; }
     try {
       await fetch('/api/stats/refresh', {method: 'POST'});
-      q('#ov-content').classList.add('hidden');
-      q('#ov-loading').textContent = 'Cargando estadísticas…';
-      q('#ov-loading').classList.remove('hidden');
       await Store.syncNow({force: true});
-      await loadStats();
       await reloadRoutes();
+      await loadStats();
+      await loadStorage();
     } catch (e) {
       toast('No se pudieron recalcular las estadísticas');
     } finally {
@@ -399,39 +575,20 @@
     loadLinesForView();
   }
 
-  /* Relee el listado del Store y repinta el mapa y "Por actividad". Las stats
-     globales no: las calcula el servidor y tienen su propio camino. */
+  /* Relee el listado del Store y repinta mapa y analítica. Los récords no: los
+     calcula el servidor y tienen su propio camino (loadStats). */
   async function reloadRoutes() {
     const tok = _tok;
     try {
       const rows = await Store.routes();
       if (tok !== _tok) return;
+      allRows = rows;
       routes = rows.filter(r => r.start_lat != null && r.start_lon != null);
     } catch (e) {
       routes = routes || [];
     }
     paintRoutes(false);
-    refreshActRows();
-  }
-
-  /* "Por actividad" desde el listado (no del geojson pesado), que es lo que
-     permite que siga al día sin recalcular las stats del servidor. */
-  function refreshActRows() {
-    if (!routes || !routes.length) return;
-    const byAct = {};
-    routes.forEach(r => {
-      const a = r.activity_type || 'otros';
-      if (!byAct[a]) byAct[a] = {count: 0, km: 0};
-      byAct[a].count++;
-      byAct[a].km += (r.distance_m || 0) / 1000;
-    });
-    const total = routes.length || 1;
-    const box = q('#ov-act-rows');
-    box.innerHTML = '';
-    ACTIVITIES.forEach(a => {
-      const t = byAct[a.id];
-      if (t) box.appendChild(actRow(a, t, total));
-    });
+    renderAnalytics();
   }
 
   /* ── montaje ───────────────────────────────────────────────────────────── */
@@ -442,17 +599,25 @@
     q('#ov-records-section').classList.remove('hidden');
     q('#ov-map-section').classList.remove('hidden');
 
-    // Mapa y estadísticas son dos caminos independientes: ninguno espera al otro.
-    initMap();
+    // Tres caminos independientes: ninguno espera a los otros. La analítica sale
+    // del listado local (instantánea y sin red); los récords y el almacenamiento
+    // son peticiones que pueden fallar sin dejar la vista vacía.
+    //
+    // OJO con el orden: el mapa se crea DESPUÉS de renderAnalytics(), que es
+    // quien quita el .hidden de #ov-content. Creándolo antes, MapLibre mide un
+    // contenedor de 0 px (display:none) y luego solo repinta teselas en la
+    // esquina, aunque después se llame a resize().
     const lista = Store.routes().then(rows => {
       if (tok !== _tok) return;
+      allRows = rows;
       routes = rows.filter(r => r.start_lat != null && r.start_lon != null);
-      paintRoutes(true);
-      refreshActRows();
+      renderAnalytics();
+      initMap();
     }).catch(() => {});
-    await loadStats();
     await lista;
     if (tok !== _tok) return;
+    loadStats();
+    loadStorage();
     // Una sincronización posterior (otro dispositivo, el watcher, mifit) repinta.
     if (!_unsub) {
       _unsub = Store.onChange(ev => {
@@ -467,7 +632,8 @@
     destroyMap();
     if (_unsub) { _unsub(); _unsub = null; }
     routes = null;
+    allRows = [];
   }
 
-  window.SEC.dashboard = {mount, unmount, refreshStats};
+  window.SEC.dashboard = {mount, unmount, refreshStats, setYear};
 })();

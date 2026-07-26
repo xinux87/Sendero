@@ -89,3 +89,49 @@ def save_gpx_types():
     con.commit()
     refresh_config()
     return "", 204
+
+
+# ── Almacenamiento ──────────────────────────────────────────────────────────
+# Lo consume el panel "Almacenamiento" del dashboard (rediseño 2a). Todo sale de
+# un os.scandir por carpeta de /data: no hay tabla ni caché que mantener, y a
+# cambio la cifra nunca se queda vieja. Se pide una vez por visita al dashboard.
+
+_STORAGE_DIRS = (
+    ("db",       lambda: [cfg.DB_PATH, cfg.DB_PATH.with_name(cfg.DB_PATH.name + "-wal")]),
+    ("gpx",      lambda: _walk(cfg.GPX_DIR)),
+    ("photos",   lambda: _walk(cfg.PHOTO_DIR)),
+    ("thumbs",   lambda: _walk(cfg.THUMB_DIR)),
+    ("tiles",    lambda: _walk(cfg.TILES_DIR)),
+)
+
+
+def _walk(path):
+    """Todos los archivos bajo `path`, recursivo y tolerante a carpetas que no
+    existen (una instalación nueva no tiene data/gpx/versions/ hasta la primera
+    edición)."""
+    try:
+        return [p for p in path.rglob("*") if p.is_file()]
+    except OSError:
+        return []
+
+
+def _size(paths):
+    total = 0
+    for p in paths:
+        try:
+            total += p.stat().st_size
+        except OSError:
+            pass                      # borrado entre el listado y el stat
+    return total
+
+
+@settings_bp.route("/api/storage")
+def api_storage():
+    out = {clave: _size(f()) for clave, f in _STORAGE_DIRS}
+    out["total"] = sum(out.values())
+    # Fotos por referencia (Immich): no ocupan disco aquí, pero saber cuántas hay
+    # explica que "fotos" pese poco y en la UI se dice.
+    row = db().execute(
+        "SELECT COUNT(*) AS n FROM photos WHERE immich_id IS NOT NULL").fetchone()
+    out["immich_refs"] = row["n"] if row else 0
+    return jsonify(out)
