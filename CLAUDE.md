@@ -147,7 +147,8 @@ api/
   photos.py     — subida y borrado de fotos locales; proxy de fotos Immich
   planned.py    — CRUD de rutas planificadas
   immich_api.py — candidatos Immich, selección, proxy de miniaturas
-  settings.py   — lectura/escritura de ajustes (Immich, tipos GPX personalizados)
+  settings.py   — lectura/escritura de ajustes (Immich, tipos GPX personalizados) y
+                  /api/storage (tamaño de /data por carpeta, con un stat por archivo)
   mifit.py      — ajustes/estado/disparo de la auto-importación Mi Fit/Zepp
   sync.py       — sincronización delta: /api/sync/state (ETag → 304), /changes, /manifest
   maps.py       — mapa base offline: sirve data/tiles/*.pmtiles con Range (206) y
@@ -202,6 +203,37 @@ El router (`static/js/core/router.js`) monta la sección según `location.pathna
 así que **navegar entre vistas no pide ningún documento**: solo el JSON que haga
 falta, y a menudo ni eso (lo tiene el Store).
 
+**Tres de las seis vistas siguen el rediseño de `redesign/`** (v0.9.0): `detalle`,
+`rutas` y `dashboard`, con la opción **2a** en pantalla grande y la **2d** en móvil
+(`redesign/README.md` tiene los tokens y las medidas; `redesign/screenshots/` el
+resultado esperado). `planes`, `plan` y `editor` NO se rediseñaron a mano: heredan
+la paleta y la tipografía porque lo que cambió fue el **valor** de las variables de
+`base.html`, no su nombre. Si rediseñas una de esas tres, el patrón a seguir es el
+de las otras (panel `--panel` + borde `--line` + radio 12, título de panel en
+`.panel-title`, cifras en Oswald, datos en mono).
+
+### Tokens de diseño — están en `templates/base.html` y en ningún otro sitio
+| Token | Valor | Uso |
+|---|---|---|
+| `--bg` / `--bg-deep` | `#0b120e` / `#070c09` | fondo de app / lienzo |
+| `--panel` / `--panel-2` | `#101a14` / `#16241c` | tarjetas y paneles / inputs y filas realzadas |
+| `--line` / `--line-strong` | `rgba(236,229,216,.09)` / `.16` | borde de tarjeta / de control |
+| `--ink` | `#ece5d8` | texto principal (crema) |
+| `--muted` / `--muted-dim` / `--muted-faint` | `#8b9a8f` / `#7f9184` / `#68786d` | texto secundario / etiquetas / ejes y fechas |
+| `--sage` | `#8fb69f` | títulos de panel y curvas de nivel |
+| `--pr-yellow` | `#e3b23c` | ámbar: cifras clave, estado activo, avisos |
+| `--gr-red` | `#e2492c` | rojo: acción primaria (`--gr-red-hover` al pasar) |
+| `--display` / `--mono` | Oswald / IBM Plex Mono | títulos y cifras / datos y etiquetas |
+
+Los colores de actividad viven en `ACTIVITIES` (`static/shared.js`), no en CSS:
+`senderismo #e8863c` · `bicicleta #3d9be9` · `caminata #43b97f` · `correr #e34b4b` ·
+`esquí #a86ee0` · `otros #e055c0`, con el glifo del icono en `#0b120e` (tinta oscura
+sobre el color, no blanca). **Nada de hex sueltos** en plantillas ni en el CSS de
+las secciones: si necesitas un color que no está, añade el token aquí. Las únicas
+excepciones son los `rgba()` de velos y separadores del propio rediseño y los
+colores de serie de las gráficas (elevación `#f0b070`, velocidad `#3d9be9`, FC
+`#e34b4b`, barras `#3f5a49`/`#4e7159`/`#e8863c`), que van en el JS que las pinta.
+
 > **En `templates/` solo hay tres cosas**: `base.html` (el chrome: cabecera, modal
 > de Ajustes, CSS global), `shell.html` (el shell de la SPA) y `sec/` con las 6
 > secciones. Nada más. La app multipágina anterior (`app.html`, `sendero.html`,
@@ -221,7 +253,12 @@ en vez del shell); (5) la ruta Flask que sirva `shell.html`.
 ```
 static/vendor/     maplibre-gl-4.7.1.js|css, chart-4.4.1.umd.min.js, pmtiles-3.0.6.js
                    (antes unpkg/cdnjs; nombre con versión = cacheables como inmutables)
-static/fonts/      las 3 familias en .woff2 + fonts.css (antes fonts.googleapis.com)
+static/fonts/      Oswald + IBM Plex Sans + IBM Plex Mono en .woff2 + fonts.css
+                   (autoalojadas: el contenedor no pide nada a internet). Oswald e
+                   IBM Plex Sans son VARIABLES: un archivo por subconjunto cubre
+                   los pesos 400-600; IBM Plex Mono es estático, uno por peso. Solo
+                   los subconjuntos latin y latin-ext. La cabecera de fonts.css
+                   explica cómo regenerarlas
 static/sw.js       Service Worker (lo sirve /sw.js, no /static/sw.js — ver api/pwa.py)
 static/icons/      icon-192.png, icon-512.png, icon-maskable-512.png, generados de
                    static/icon.svg con cairosvg (el maskable al 80% sobre el fondo)
@@ -259,10 +296,10 @@ archivo, nunca en `mount()`.
 |---------|-----------|-----------|
 | `templates/base.html` | — | CSS global, header (con el badge `#net-badge` de estado de conexión), toast, modal de Ajustes, `<link rel="manifest">` y `theme-color`. Carga `static/vendor/*`, `static/fonts/fonts.css`, `static/shared.js` y `static/js/core/chrome.js` (que registra el Service Worker). No redeclares en una plantilla nada que ya esté en `shared.js`/`chrome.js` (dos `const` globales con el mismo nombre en scripts distintos = SyntaxError) |
 | `templates/shell.html` | **todas** las vistas (`/dashboard`, `/rutas`, `/planificacion`, `/Sendero/<id>`, `/Sendero/<id>/editor`, `/Plan/<id>`, `/app-shell`) | Shell de la SPA: incluye los 6 `templates/sec/*.html`, la tab bar, las acciones de cabecera por sección (`data-sec-actions`), carga `core/loader.js`+`store.js`+`router.js` y llama a `Router.start()`. Cero datos inyectados salvo el `bootstrap_json` opcional de la primera carga (`/app-shell` lo sirve **sin** él: es el que precachea el SW) |
-| `templates/sec/detalle.html` | (sección `detalle` del shell) | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación/velocidad/FC (Chart.js), notas, fotos, modal Immich, lightbox. Lógica en `static/js/sec/detalle.js`, estilos en `static/css/detalle.css`. Los ids genéricos llevan prefijo `d-` (`#d-map`, `#d-stats`, `#d-elev`, `#d-notes`…) para no chocar con otras secciones del mismo documento |
+| `templates/sec/detalle.html` | (sección `detalle` del shell) | Detalle de ruta con el rediseño 2a/2d: **mapa cabecera** (`.d-hero`, 360 px, con el título y el chip de actividad encima del velo), banda de 7 métricas (`#d-stats`), y cuerpo a dos columnas (perfil + velocidad + FC + fotos ‖ datos técnicos + calidad del track + resumen). En móvil el cuerpo son pestañas: `data-tab` en la sección y `data-dtab` en cada bloque (ver «Pestañas del detalle en móvil»). Los ids genéricos llevan prefijo `d-` (`#d-map`, `#d-stats`, `#d-elev`, `#d-notes`…) para no chocar con otras secciones del mismo documento |
 | `templates/sec/plan.html` | (sección `plan` del shell) | Detalle de ruta planificada. Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
-| `templates/sec/dashboard.html` | (sección `dashboard`) | Totales, mapa de todas las rutas, "Por actividad", "Rutas por año" y récords. Lógica en `static/js/sec/dashboard.js` |
-| `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros, mapa de visión general, modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
+| `templates/sec/dashboard.html` | (sección `dashboard`) | "Analítica global": selector de año, 5 KPIs, desnivel por mes, zonas más visitadas, almacenamiento, mapa de todas las rutas, "Por actividad", "Rutas por año" y récords. Lógica en `static/js/sec/dashboard.js` |
+| `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros (actividad, fechas y **buscador**), mapa de visión general, tres vistas (⊞ Cuadrícula · ☰ Tabla · ▤ Panel), modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
 | `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa y alta por GPX. Lógica en `static/js/sec/planes.js` |
 | `templates/sec/editor.html` | (sección `editor`) | Editor de rutas. Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` |
 
@@ -320,7 +357,8 @@ archivo, nunca en `mount()`.
 | POST | `/api/routes/<id>/photos` | sube fotos locales |
 | GET | `/api/photos/<pid>/file` | sirve foto local o proxy Immich |
 | DELETE | `/api/photos/<pid>` | borra foto |
-| GET | `/api/stats` | estadísticas globales (desde caché en settings) |
+| GET | `/api/stats` | estadísticas globales (desde caché en settings). Del dashboard solo alimenta los RÉCORDS: el resto de la analítica se calcula en el cliente |
+| GET | `/api/storage` | tamaño en disco de `/data`: `{db,gpx,photos,thumbs,tiles,total,immich_refs}`. Lo pinta el panel «Almacenamiento» del dashboard |
 | POST | `/api/stats/refresh` | recalcula y guarda caché de stats |
 | GET | `/api/planned` | lista rutas planificadas |
 | POST | `/api/planned` | crea ruta planificada desde GPX |
@@ -345,9 +383,11 @@ archivo, nunca en `mount()`.
 
 ### Helper `_build_route_dict(rid)` en `api/routes.py`
 Construye el dict completo de una ruta (geojson, elevation, heart_rate, speed, photos,
-auto_summary, thumb_file, `version`…). Lo usan `get_route()` (API JSON) y
+auto_summary, thumb_file, `version`, `n_points`…). Lo usan `get_route()` (API JSON) y
 `sendero_page()` (inyección en template). **Si añades campos al objeto ruta,
-añádelos aquí.** El campo `version` se deriva de `MAX(version_n)` en
+añádelos aquí.** `n_points` se calcula aquí y no en `_route_payload()` a propósito:
+tiene que ser el número de puntos del track COMPLETO, antes de que `?lite=1` decime
+el `geojson` (si no, "Puntos GPS" del detalle mentiría por un factor de 20). El campo `version` se deriva de `MAX(version_n)` en
 `route_versions` (0 = nunca editada); no hay columna `version` en `routes` a propósito.
 
 ### Editor de rutas (`api/editor.py` + `core/editing.py` + `static/js/sec/editor.js`)
@@ -594,6 +634,38 @@ desmonta cuando la sección no cambia.
 | `hoverD` | distancia (km) resaltada ahora mismo en el hover sincronizado mapa↔gráficos, o `null` |
 | `trackCumKm` | distancia acumulada (km) por punto de `current.geojson`, recalculada en cada `renderMap()` |
 
+### Qué pinta cada `render*()` del detalle (rediseño 2a)
+`renderAll()` los llama en orden; todos leen de `current` y ninguno pide red:
+
+| Función | Dónde escribe | Notas |
+|---|---|---|
+| `renderActivity()` | `#d-activity-badge-sm` (chip sobre el mapa) | fondo translúcido oscuro a propósito: el color solo no se lee sobre una capa satélite. Abre el selector de actividad al pulsarlo — es la ÚNICA forma de cambiarla (ya no hay tarjeta de actividad en la banda) |
+| `renderStats()` | `#d-stats` | 7 tarjetas `.stat` (8 con FC máx). La primera lleva `.acc` + `border-left-color` de la actividad y la cifra en ámbar. `tests/e2e_spa.py` exige ≥7 |
+| `renderTech()` | `#d-tech` | filas `.kv-row` solo con lo que la ruta tiene. Cadencia y temperatura NO se inventan: el modelo no las guarda |
+| `renderQuality()` | `#d-quality-badge` / `#d-quality-body` | los `gps_issues`; `severity:'high'` → `.warn.crit` (ámbar), el resto `.warn.info`. Sin avisos: «Sin errores detectados» |
+| `renderElev()` | `#d-elev` + `#d-elev-sub` | área con degradado del color de la actividad (`_areaGradient`), línea `#f0b070`, y el subtítulo «X m salida · Y m cima · pendiente máx. N %» (`_elevSub`, tramos ≥30 m para que el ruido del GPS no dé porcentajes absurdos) |
+| `renderSpeed()` / `renderHR()` | `#speed-section` / `#hr-section` + sus pies | ocultan su panel entero si la serie está vacía (lo comprueba la suite e2e) |
+| `renderGallery()` + `renderPhotosHead()` | `#d-gallery`, `#d-photos-count`, `#d-photos-all` | el pie de cada miniatura es la hora de la foto; la cabecera dice cuántas son y si vienen de Immich |
+
+Los tres `Chart` comparten `_scales()` (rejilla `rgba(236,229,216,.07)`, ejes en mono
+y sin títulos: la unidad la dice el título del panel) y `fmtNum` en las marcas del
+eje Y (1 950, no 1,950).
+
+### Pestañas del detalle en móvil (<768 px)
+El cuerpo del detalle pasa de dos columnas a cuatro pestañas (Perfil / Fotos /
+Datos / Notas) **solo con CSS**: la sección lleva `data-tab="<activa>"` y cada
+bloque `data-dtab="<pestaña>"`; por debajo de 768 px se oculta todo `[data-dtab]`
+salvo el que coincide. `SEC.detalle.setTab(name)` cambia el atributo, marca la
+pestaña y **redimensiona los Charts** (mientras su panel estuvo en `display:none`
+su canvas medía 0). `resetView()` vuelve siempre a «Perfil».
+
+Las acciones del mapa cabecera viven en `.d-hero-actions`, que está FUERA de
+`.d-hero` (que recorta con `overflow:hidden`) y dentro de `.d-hero-wrap`: así en
+pantalla estrecha pueden caer debajo del mapa en flujo normal. Sobre el mapa solo
+están «✎ Editar track» y «↓ Exportar GPX»; el resto va tras el `⋯`
+(`#d-actions-more`), **también en escritorio** — si automatizas un click en
+«Renombrar», «Reescanear» o «Eliminar», abre antes el menú.
+
 ### Mapa base offline autoalojado (PMTiles)
 La 5ª capa del selector, «Offline (local)», es la única que no depende de terceros: la
 sirve Sendero desde un archivo **PMTiles** en `data/tiles/`. Un PMTiles es un único
@@ -739,26 +811,62 @@ de cargar siempre todas las líneas completas:
   `map.on('moveend', scheduleLineLoad)` (debounce 350 ms), y solo si el zoom ya pasó
   `LINES_PREFETCH_ZOOM` (`LINES_MINZOOM - 2`, para que estén listas antes de volverse
   visibles). `lineIds` evita volver a pedir rutas ya cargadas.
-- **Sin filtros**: este mapa NO tiene filtros de actividad ni de año (los tiene el de
-  "Mis Rutas", que sí filtra `ov-lines` por la lista). Las barras de "Rutas por año" y las
-  filas de "Por actividad" son informativas, no clicables. *(Versiones anteriores de este
-  documento describían `toggleDashYear`/`toggleDashAct`/`_dashApplyFilters`: nunca
-  existieron en el código.)*
-- **Estadísticas**: vienen de `GET /api/stats` (las calcula el servidor) y se guardan en
-  el Store con `Store.setMeta('stats', …)`. Sin conexión se pintan las últimas guardadas y
-  aparece el aviso `#ov-stale`. "Por actividad" **sí** se recalcula del listado local, así
-  que sigue al día aunque las stats sean de la última sincronización. Los récords no se
-  pueden recalcular en el cliente: `avg_speed` no está en `ROUTE_LIST_COLS`.
-- **`reloadRoutes()`** repinta mapa y "Por actividad" desde el Store; se llama al montar y
+- **El mapa no tiene filtros propios** (los tiene el de "Mis Rutas", que sí filtra
+  `ov-lines` por la lista). El selector de año de la analítica NO lo afecta: el mapa
+  muestra siempre todas las rutas con GPS.
+- **Se crea DESPUÉS de que `renderAnalytics()` quite el `.hidden` de `#ov-content`.**
+  Creándolo con el panel en `display:none`, MapLibre mide un contenedor de 0 px y luego
+  solo repinta teselas en una esquina, aunque después se llame a `resize()`.
+
+### Analítica del dashboard (`static/js/sec/dashboard.js`)
+Desde el rediseño, **casi todo se calcula en el cliente** con el listado que ya tiene el
+Store (`allRows`, que incluye `distance_m`, `ascent_m`, `moving_s`, `started_at` y
+`locality`). Dos consecuencias: el dashboard funciona sin conexión y el selector de año
+no gasta ni una petición.
+
+- `year` ('todo' por defecto) lo cambian las píldoras de año y las barras de "Rutas por
+  año"; `renderAnalytics()` repinta KPIs, meses, zonas, "Por actividad" y el año.
+- **KPIs**: Salidas (`#ov-total-routes`), Distancia, Desnivel +, Horas y Zonas, cada uno
+  con su línea de contexto (delta vs el año anterior, media por salida, "N × Everest",
+  media de horas, zona más visitada).
+- **Desnivel por mes**: 12 barras del año elegido (con 'todo', la suma de todos los años,
+  que es lo que enseña la estacionalidad). El color va por ranking: el mes más fuerte en
+  ámbar, los tres siguientes en naranja, el resto en verdes apagados.
+- **Zonas más visitadas**: recuento de `locality`. Si ninguna ruta la tiene, lo dice y
+  apunta a Ajustes → Editor (la geocodificación puede estar desactivada).
+- **Almacenamiento**: `GET /api/storage`. La barra es la COMPOSICIÓN del total (base,
+  tracks, fotos, miniaturas, teselas), no un porcentaje de cuota: aquí no hay cuota.
+- **Lo ÚNICO que sigue viniendo del servidor son los récords** (`GET /api/stats`):
+  necesitan `avg_speed`, que no está en `ROUTE_LIST_COLS`. Se guardan en el Store con
+  `Store.setMeta('stats', …)`; sin conexión se pintan los últimos conocidos y aparece el
+  aviso `#ov-stale`. Si el servidor los marca como sucios, `regenInBackground()` los
+  recalcula por detrás sin ocultar lo que ya se ve.
+- **`reloadRoutes()`** repinta mapa y analítica desde el Store; se llama al montar y
   cuando `Store.onChange` avisa de una sincronización con cambios.
 - Si añades una representación nueva por zoom (p.ej. una capa intermedia), sigue el mismo
   patrón: dato ligero primero (instantáneo), dato pesado filtrado por bbox después, en
   segundo plano, sin loader que bloquee.
 
 ### Listado de rutas en `static/js/sec/rutas.js` — scroll infinito
-Cada tarjeta (`makeCard`) muestra nombre, fecha, **distancia** (`fmtKm(r.distance_m)`) y
-**localidad** (`r.locality`, con icono de pin `pinSvg()`) en una línea `.card-meta`, más
-el badge de posible duplicada. `distance_m` y `locality` vienen ya en el listado.
+Cada tarjeta (`makeCard`) muestra nombre (Oswald 19 px), fecha larga en versalitas
+(`fmtDateLong`), **distancia** (`fmtKm(r.distance_m)`, en ámbar) y **localidad**
+(`r.locality`, con icono de pin `pinSvg()`) en una línea `.card-meta`, más el badge de
+posible duplicada, el borde izquierdo del color de la actividad y la miniatura del track
+al 22 % anclada abajo a la derecha. `distance_m` y `locality` vienen ya en el listado.
+
+**Tres vistas** (`viewMode`, botones en la cabecera y estado en `sessionStorage`):
+- `'a'` ⊞ Cuadrícula — tarjetas en rejilla de 3.
+- `'t'` ☰ Tabla — la variante densa del rediseño: `makeRow()` en vez de `makeCard()`,
+  con el mismo agrupado por mes (cada mes es su propia `<table class="rtable">`, con
+  `table-layout:fixed` y `<colgroup>` para que las columnas de meses distintos cuadren).
+  El "Estado" solo puede decir lo que trae el listado (posible duplicada), no los avisos
+  de GPS: `gps_issues` no está en `ROUTE_LIST_COLS`.
+- `'b'` ▤ Panel — lista estrecha + mapa grande (se fuerza a `'a'` en móvil).
+Cambiar de vista repinta la lista (`renderList()`), porque es otro markup.
+
+**Buscador** (`#route-search` → `setSearch`, debounce 180 ms): filtra en cliente por
+nombre y localidad, que es lo que hay en el listado (el nombre del archivo no está).
+Se guarda con el resto de filtros y `clearFilters()` lo vacía también.
 
 `reload()` pide el listado completo a **`Store.routes()`** (IndexedDB; si está vacío
 espera la primera sincronización, y si no devuelve lo local al instante y sincroniza por
@@ -899,8 +1007,12 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 8. **Idioma** — UI y mensajes al usuario en **español**. Código y comentarios pueden
    mezclar español/inglés como ya están.
 
-9. **Identidad visual** — paleta CSS (`--gr-red`, `--pr-yellow`, `--panel` #17241c,
-   curvas de nivel en header). No metas framework de UI ni cambies la paleta sin pedirlo.
+9. **Identidad visual** — los tokens del rediseño están en `:root` de
+   `templates/base.html` y son la única fuente de verdad (ver "Tokens de diseño"):
+   `--bg` #0b120e, `--panel` #101a14, `--ink` #ece5d8, `--pr-yellow` #e3b23c,
+   `--gr-red` #e2492c, `--sage` #8fb69f, más las curvas de nivel del header.
+   **Nada de hex sueltos** en plantillas ni en el CSS de las secciones, y no metas
+   framework de UI ni cambies la paleta sin pedirlo.
 
 10. **`{{ bootstrap_json | safe }}` en shell.html** (y `{{ route_json | safe }}` en
     el editor pide los suyos a `/api/routes/<id>/editor`) — intencional. El JSON viene de
@@ -1078,6 +1190,15 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - No hay autenticación. Intencional para LAN.
 - Las plantillas de la app multipágina **ya no existen** (ver "Frontend"). Para ver
   cómo era algo antes de la SPA: `git show v0.7.1:templates/<archivo>`.
+- **`python app.py` no recarga las plantillas**: sin `debug=True`, Jinja compila cada
+  plantilla una vez y la guarda en memoria mientras viva el proceso. Editar
+  `templates/*.html` y recargar el navegador NO enseña el cambio (el CSS y el JS sí,
+  que son estáticos) — hay que reiniciar el servidor. Cuesta un rato de depuración
+  creer que una regla CSS "no aplica" cuando lo que falta es el markup nuevo.
+- **Las capturas de página completa de un mapa o una gráfica salen a medias**: el
+  contenido WebGL (MapLibre) y los `<canvas>` de Chart.js no se repintan para el
+  viewport ampliado que usa `full_page=True`, así que se ven cortados o comprimidos
+  aunque en pantalla estén bien. Para juzgar el aspecto, captura del viewport.
 - **Docker Desktop sobre WSL2 (esta instalación) puede dejar procesos `gunicorn`/
   `watch.py` huérfanos** tras varios `docker compose down`/`up --build` seguidos: el
   proceso sigue vivo (visible en `ps aux` del host, propiedad de `root`) y sigue
@@ -1168,3 +1289,15 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   sincronizado sigue funcionando en las 4 direcciones (mapa→gráficos y cada gráfico→resto)?
   Si añades un `Chart` nuevo, usa `ctx.onmouseleave=...` (asignación directa, no
   `addEventListener`) para no acumular listeners en cada `renderAll()`.
+- Si tocaste el color o la tipografía: ¿sale de un token de `base.html` (regla 9)? Un hex
+  suelto en una sección es lo que hace que la próxima vez la paleta quede a medias.
+  Comprobación: `grep -rn "#[0-9a-f]\{6\}" static/css/ templates/sec/`. Lo que sí puede
+  aparecer ahí son los colores de las **series de gráficas** (`#3f5a49`, `#4e7159`,
+  `#e8863c`…), el degradado del mapa cabecera, las sombras `#000000xx` y los badges de
+  fuente de los planes; cualquier otro hex nuevo es que falta un token.
+- Si tocaste el detalle en móvil: ¿las cuatro pestañas siguen mostrando su bloque
+  (`data-tab`/`data-dtab`) y `setTab()` redimensiona los Charts? ¿Las acciones del mapa
+  cabecera caen debajo del mapa por debajo de 1200 px (están en `.d-hero-wrap`, fuera de
+  `.d-hero`, que recorta)?
+- Si tocaste la analítica del dashboard: ¿sigue saliendo del listado del Store (o sea,
+  sigue funcionando sin conexión) y el selector de año sin pedir nada al servidor?

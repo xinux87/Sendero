@@ -5,6 +5,78 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.0] — 2026-07-26
+
+Rediseño de las tres vistas principales (dashboard, Mis Rutas y detalle de ruta) según el
+handoff de `redesign/`: la opción **2a** en pantalla grande y la **2d** en móvil. No es una
+identidad nueva: formaliza la que ya tenía la app (verde muy oscuro, wordmark condensado,
+píldoras de actividad de colores, ámbar para las cifras, rojo para la acción principal) y la
+aplica a las tres pantallas con tokens en un solo sitio.
+
+### Cambiado
+- **Detalle de ruta: el mapa es la cabecera.** Bloque de 360 px con el selector de capa y
+  los controles de zoom encima, y sobre el velo inferior el chip de actividad, la zona, el
+  título y la línea `fecha · hora | archivo | dispositivo`. Debajo, la banda de **7
+  métricas** (la primera con el borde del color de la actividad y la cifra en ámbar) y un
+  cuerpo a dos columnas: perfil de elevación + velocidad + FC + fotos a la izquierda, y
+  **Datos técnicos**, **Calidad del track** y **Resumen** a la derecha.
+  - «Calidad del track» lista los `gps_issues` de la ruta (los mismos que ve el editor) con
+    su severidad y un enlace para corregirlos; sin avisos dice «Sin errores detectados».
+  - «Datos técnicos» solo muestra lo que la ruta tiene de verdad: tiempo total, pausas,
+    ritmo medio, velocidad máxima, altitud mínima, puntos GPS, formato, versión e
+    importación. Nada de cadencia ni temperatura: el modelo no las guarda.
+  - Sobre el mapa quedan solo «✎ Editar track» y «↓ Exportar GPX»; reescanear, mapa sin
+    conexión, renombrar y eliminar pasan al menú **⋯** (también en escritorio).
+- **En móvil el cuerpo del detalle son pestañas** (Perfil / Fotos / Datos / Notas), el mapa
+  cabecera baja a 236 px a ancho completo y la banda de métricas va a 3 columnas. La
+  cabecera de la app muestra una flecha de volver en las vistas de detalle.
+- **Mis Rutas**: panel de filtros con las seis píldoras de actividad en su color (sólidas al
+  estar activas), rango de fechas, **buscador nuevo** por nombre y zona, y fila de ORDEN.
+  Las tarjetas llevan el borde izquierdo del color de la actividad, la miniatura del track
+  anclada abajo a la derecha, la fecha larga en versalitas y la distancia en ámbar.
+- **Vista nueva «☰ Tabla»** en Mis Rutas (la variante densa del rediseño): mismo agrupado
+  por mes, con Ruta · Zona · Fecha · Dist. · D+ · Tiempo · Actividad · Estado. Conviven con
+  «⊞ Cuadrícula» y «▤ Panel»; la elección se recuerda en la sesión.
+- **Dashboard = «Analítica global»**: selector de año, cinco KPIs (salidas, distancia,
+  desnivel +, horas y zonas) con su comparativa, barras de **desnivel acumulado por mes**,
+  **zonas más visitadas** y **almacenamiento**. Todo eso se calcula en el cliente desde el
+  listado que ya tiene el Store, así que el dashboard entero funciona sin conexión y el
+  selector de año no gasta ni una petición. Del servidor solo siguen viniendo los récords
+  (necesitan `avg_speed`, que no está en el listado). Se conservan el mapa de todas las
+  rutas, «Por actividad» y «Rutas por año», restilados.
+- **Tipografía**: Oswald (títulos, wordmark y cifras), IBM Plex Sans (interfaz) e IBM Plex
+  Mono (datos y etiquetas), autoalojadas en `static/fonts/` como las anteriores. Se van
+  Saira Condensed, Inter y Space Mono. Oswald e IBM Plex Sans son variables: un archivo por
+  subconjunto cubre los pesos 400-600, así que el precache pesa menos que antes (192 KB).
+- **Paleta**: los tokens del rediseño sustituyen los valores de las variables CSS de siempre
+  (`--bg`, `--panel`, `--line`, `--ink`, `--pr-yellow`, `--gr-red`…) y se añaden
+  `--bg-deep`, `--panel-2`, `--line-strong`, `--muted-dim`, `--muted-faint`, `--sage`,
+  `--display`. Al cambiar el valor y no el nombre, las vistas que no se han rediseñado a
+  mano (Mis Planes, detalle de plan, editor) heredan la paleta nueva. Los colores de
+  actividad también se actualizan, con el glifo del icono en oscuro sobre el color.
+- El logo, los iconos de la PWA, el `theme-color` y la página de «sin conexión» del Service
+  Worker adoptan la paleta nueva. Las miniaturas de track se generan con el fondo de la
+  tarjeta (`#101a14`) para que no se vean como un recuadro; las anteriores conservan el
+  fondo viejo hasta que se reescanee la ruta.
+
+### Añadido
+- `GET /api/storage`: tamaño en disco de la base, los tracks, las fotos, las miniaturas y
+  las teselas (más el número de fotos que son solo referencia a Immich). Lo consume el panel
+  «Almacenamiento» del dashboard.
+- El objeto ruta lleva `n_points` (puntos del track completo). Se calcula antes de que
+  `?lite=1` decime el `geojson`, así que «Puntos GPS» no cuenta los de la versión ligera.
+
+### Interno
+- `DB_VERSION` del Store sube a 2: sin eso, un detalle ya guardado en IndexedDB no recibiría
+  nunca `n_points` (su `rev` no cambia, así que el Store seguiría sirviendo su copia).
+- Formatos nuevos en `chrome.js` y compartidos por las tres vistas: `fmtNum` (millares con
+  espacio fino), `fmtHM`, `fmtHMS`, `fmtPace`, `fmtDateLong`, `fmtDateTime`.
+- El mapa del dashboard se crea **después** de mostrar el contenido: creándolo con el panel
+  en `display:none`, MapLibre mide 0 px y luego solo repinta teselas en una esquina.
+- `tests/e2e_spa.py` abre el menú ⋯ antes de renombrar; `tests/sec_smoke.js` gana
+  `querySelectorAll` y los formatos nuevos en su DOM de mentira. Las 127 comprobaciones de
+  la suite e2e siguen pasando.
+
 ## [0.8.0] — 2026-07-26
 
 El editor deja de perder puntos al corregir saltos de GPS, y se va el rastro de la app
