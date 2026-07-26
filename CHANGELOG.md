@@ -5,6 +5,20 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.1] — 2026-07-26
+
+### Corregido
+- **El manifiesto de la PWA ya no falla detrás de un proxy con autenticación.** Con Sendero
+  publicado tras Pangolin (o Authelia, oauth2-proxy y compañía), la consola del navegador
+  daba `Access to manifest … has been blocked by CORS policy` y la app no se podía instalar.
+  El motivo: el manifiesto es el único subrecurso que el navegador pide **sin cookies**
+  (modo anónimo, por especificación), así que el proxy lo veía como una petición sin sesión,
+  respondía con un 302 al SSO —que vive en otro dominio— y el navegador bloqueaba la
+  redirección cruzada. Ahora el `<link rel="manifest">` lleva
+  `crossorigin="use-credentials"`: la petición viaja con las cookies del sitio y el proxy la
+  deja pasar. En una LAN sin proxy no cambia nada. El aviso salía desde la 0.7.0, cuando
+  llegó la PWA; no lo introdujo el rediseño.
+
 ## [0.9.0] — 2026-07-26
 
 Rediseño de las tres vistas principales (dashboard, Mis Rutas y detalle de ruta) según el

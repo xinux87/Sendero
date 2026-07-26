@@ -1208,6 +1208,14 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - No hay autenticación. Intencional para LAN.
 - Las plantillas de la app multipágina **ya no existen** (ver "Frontend"). Para ver
   cómo era algo antes de la SPA: `git show v0.7.1:templates/<archivo>`.
+- **Detrás de un proxy con autenticación** (Pangolin, Authelia, oauth2-proxy…), el
+  `<link rel="manifest">` de `base.html` NECESITA `crossorigin="use-credentials"`. Es el
+  único subrecurso que el navegador pide sin cookies, así que sin ese atributo el proxy lo
+  ve sin sesión, redirige al SSO (otro dominio) y el navegador bloquea la redirección con
+  `blocked by CORS policy: No 'Access-Control-Allow-Origin' header`. Si aun así falla, es
+  que el SSO no deja cookie en el dominio del recurso: entonces hay que excluir
+  `/manifest.webmanifest` de la autenticación en el proxy. El Service Worker (`/sw.js`) no
+  sufre esto: se registra con credenciales `same-origin`.
 - **`python app.py` no recarga las plantillas**: sin `debug=True`, Jinja compila cada
   plantilla una vez y la guarda en memoria mientras viva el proceso. Editar
   `templates/*.html` y recargar el navegador NO enseña el cambio (el CSS y el JS sí,

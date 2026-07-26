@@ -7,7 +7,16 @@
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <!-- PWA. El manifiesto y el Service Worker se sirven desde la raíz
      (api/pwa.py), no desde /static: el ámbito de un SW es su carpeta. -->
-<link rel="manifest" href="/manifest.webmanifest">
+<!-- crossorigin="use-credentials" NO es decorativo: el manifiesto es el ÚNICO
+     subrecurso que el navegador pide sin cookies (modo anónimo, por especificación).
+     Detrás de un proxy con autenticación (Pangolin, Authelia, oauth2-proxy…) esa
+     petición llega sin sesión, el proxy responde con un 302 al SSO —que vive en otro
+     dominio— y el navegador bloquea la redirección cruzada:
+       "Access to manifest … has been blocked by CORS policy: No
+        'Access-Control-Allow-Origin' header is present"
+     Con este atributo la petición viaja con las cookies del sitio, el proxy la deja
+     pasar y devuelve el JSON. En una LAN sin proxy no cambia nada. -->
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <meta name="theme-color" content="#0b120e">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <!-- Librerías vendorizadas en static/vendor/ (antes unpkg.com y cdnjs.com). Van
