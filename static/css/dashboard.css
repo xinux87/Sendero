@@ -32,19 +32,32 @@
 #sec-dashboard .kpi .d.up{color:#43b97f}
 #sec-dashboard .kpi .d.down{color:var(--gr-red)}
 
-/* ── dos columnas (contenido | panel lateral de 330 px) ───────────────────── */
-#sec-dashboard .ov-cols{display:grid;grid-template-columns:1fr 330px;gap:16px;align-items:start}
-#sec-dashboard .ov-cols > .panel{margin-bottom:16px}
-#sec-dashboard .ov-side{display:flex;flex-direction:column}
+/* ── dos columnas (contenido | panel lateral de 330 px) ───────────────────────
+   Las dos celdas de la fila miden LO MISMO (align-items:stretch, el de serie):
+   el panel de las barras por mes acaba a la misma altura que la pila de "Zonas
+   más visitadas" + "Almacenamiento". El hueco lo absorbe quien pueda: a la
+   izquierda las barras (`.month-bars{flex:1}`), a la derecha la lista de zonas.
+   Los márgenes inferiores se quitan de los paneles y los pone la fila, porque un
+   margin-bottom dentro de una celda de grid falsearía la altura. */
+#sec-dashboard .ov-cols{display:grid;grid-template-columns:1fr 330px;gap:16px;
+  margin-bottom:16px}
+#sec-dashboard .ov-cols > .panel{margin-bottom:0;display:flex;flex-direction:column}
+#sec-dashboard .ov-side{display:flex;flex-direction:column;gap:16px}
+#sec-dashboard .ov-side > .panel{margin-bottom:0}
+#sec-dashboard .ov-side > .panel:first-child{flex:1}
 
-/* ── barras de desnivel por mes ────────────────────────────────────────────── */
-#sec-dashboard .month-bars{display:flex;align-items:flex-end;gap:8px;height:226px;
-  padding-top:6px}
-#sec-dashboard .mb-col{flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:flex-end;height:100%;min-width:0;gap:6px}
+/* ── barras de desnivel por mes ──────────────────────────────────────────────
+   Las alturas van en PORCENTAJE de `.mb-track`, no en píxeles: así las barras
+   llenan el alto que le toque al panel al cuadrarse con la columna de la
+   derecha, sin que el JS tenga que medir nada. */
+#sec-dashboard .month-bars{display:flex;align-items:stretch;gap:8px;flex:1;
+  min-height:170px;padding-top:6px}
+#sec-dashboard .mb-col{flex:1;display:flex;flex-direction:column;min-width:0;gap:6px}
+#sec-dashboard .mb-track{flex:1;display:flex;align-items:flex-end;justify-content:center}
 #sec-dashboard .mb-bar{width:100%;max-width:34px;border-radius:3px;background:#3f5a49;
   min-height:2px;transition:height .3s ease}
-#sec-dashboard .mb-lbl{font-family:var(--mono);font-size:10px;color:var(--muted-faint)}
+#sec-dashboard .mb-lbl{font-family:var(--mono);font-size:10px;color:var(--muted-faint);
+  text-align:center}
 #sec-dashboard .mb-empty{color:var(--muted);font-size:13px;align-self:center;margin:auto}
 
 /* ── zonas / almacenamiento ────────────────────────────────────────────────── */
@@ -116,7 +129,7 @@
   #sec-dashboard .kpi-grid{grid-template-columns:repeat(2,1fr);gap:10px}
   #sec-dashboard .kpi{padding:12px 14px}
   #sec-dashboard .kpi .v{font-size:23px}
-  #sec-dashboard .month-bars{height:170px;gap:4px}
+  #sec-dashboard .month-bars{min-height:150px;gap:4px}
   #sec-dashboard .mb-lbl{font-size:8.5px}
   #sec-dashboard .act-row{grid-template-columns:92px 1fr 64px 50px;gap:8px}
   #sec-dashboard .act-label{font-size:12px}

@@ -153,9 +153,12 @@
       return '#3f5a49';
     };
     box.innerHTML = porMes.map((v, i) => {
-      const alto = Math.max(2, Math.round(v / max * 180));
+      // En %, no en px: la barra se mide contra `.mb-track`, que crece con el
+      // panel cuando este se cuadra con la columna de la derecha.
+      const alto = Math.max(1, +(v / max * 100).toFixed(1));
       return `<div class="mb-col" title="${MESES[i]}: ${fmtNum(v)} m">
-        <div class="mb-bar" style="height:${alto}px;background:${color(i)}"></div>
+        <div class="mb-track"><div class="mb-bar"
+          style="height:${alto}%;background:${color(i)}"></div></div>
         <div class="mb-lbl">${MESES[i]}</div></div>`;
     }).join('');
   }
