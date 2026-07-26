@@ -5,6 +5,32 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.7.1] — 2026-07-26
+
+Arreglo de la vista 3D. **La 0.7.0 no llegó a publicarse como imagen**, así que si vienes
+de la 0.6.0 esta versión te trae además todo lo que hay en su entrada de abajo (la SPA
+completa, la PWA y el funcionamiento sin conexión).
+
+### Corregido
+- **La vista 3D del mapa ya funciona.** Se quedaba en negro desde que se añadió (junio), y
+  no era culpa del servicio de relieve: responde bien y sus datos son correctos. El código
+  activaba el relieve y movía la cámara en el mismo instante, y con rutas de alta montaña
+  eso dejaba la superficie del terreno por encima de la cámara. Ahora el mapa se inclina
+  primero y el relieve aparece al terminar el movimiento. De paso, si el relieve no se
+  puede descargar (sin internet), te queda la vista inclinada en 2D en lugar de un
+  rectángulo negro.
+  Solo se notaba con dos condiciones a la vez —altitud por encima de unos 1500 m y el mapa
+  bastante acercado—, que es la razón de que aguantara tantos meses sin que se viera el
+  patrón.
+
+### Interno
+- La prueba de la vista 3D compara el peso del PNG del mapa (en negro comprime a ~9 KB;
+  con relieve, a cientos) usando teselas reales, y `tests/e2e_seed.py` siembra una ruta de
+  alta montaña con recorrido corto: sin esas dos condiciones el fallo no se reproduce y la
+  prueba pasaba con el código roto.
+- Dos comprobaciones del panel «Sin conexión» dejan de depender de un texto de progreso
+  exacto y del instante en que el servidor recalcula sus estadísticas.
+
 ## [0.7.0] — 2026-07-26
 
 Segundo y último tramo del plan de **SPA completa + funcionamiento sin conexión**
@@ -52,12 +78,6 @@ mismos GPX, mismas fotos, misma base de datos.
   único que llevaba las teselas escritas a mano, y por eso ignoraba la capa offline.
 
 ### Corregido
-- **La vista 3D del mapa ya funciona.** Se quedaba en negro desde que se añadió, y no
-  era culpa del servicio de relieve: el código activaba el terreno y movía la cámara en
-  el mismo instante, y con rutas de alta montaña la superficie del terreno acababa por
-  encima de la cámara. Ahora el mapa se inclina primero y el relieve aparece al terminar
-  el movimiento; si el relieve no se puede descargar, queda la vista inclinada en vez de
-  un rectángulo negro.
 - El botón ✕ de borrar una foto en el detalle no funcionaba desde 0.5.2: el manejador se
   generaba con el identificador opaco sin comillas y el navegador lo leía como una variable
   inexistente.
