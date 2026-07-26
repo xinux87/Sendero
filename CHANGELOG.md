@@ -28,12 +28,16 @@ aplica a las tres pantallas con tokens en un solo sitio.
   - Sobre el mapa quedan solo «✎ Editar track» y «↓ Exportar GPX»; reescanear, mapa sin
     conexión, renombrar y eliminar pasan al menú **⋯** (también en escritorio).
 - **En móvil el cuerpo del detalle son pestañas** (Perfil / Fotos / Datos / Notas), el mapa
-  cabecera baja a 236 px a ancho completo y la banda de métricas va a 3 columnas. La
-  cabecera de la app muestra una flecha de volver en las vistas de detalle.
+  cabecera baja a 236 px a ancho completo, la banda de métricas va a 3 columnas y las cuatro
+  acciones del mapa caen debajo en rejilla 2×2. La cabecera de la app muestra una flecha de
+  volver en las vistas de detalle.
 - **Mis Rutas**: panel de filtros con las seis píldoras de actividad en su color (sólidas al
   estar activas), rango de fechas, **buscador nuevo** por nombre y zona, y fila de ORDEN.
-  Las tarjetas llevan el borde izquierdo del color de la actividad, la miniatura del track
-  anclada abajo a la derecha, la fecha larga en versalitas y la distancia en ámbar.
+  Los cuatro controles de la fila de filtros comparten línea de base y miden lo mismo (el
+  buscador es una píldora más). Las tarjetas llevan el borde izquierdo del color de la
+  actividad, la fecha larga en versalitas, la distancia en ámbar y la miniatura del track
+  ocupando el alto completo pegada al borde derecho, escalando con la tarjeta y **detrás**
+  del texto, así que nombre, fecha, localidad y avisos se leen encima.
 - **Vista nueva «☰ Tabla»** en Mis Rutas (la variante densa del rediseño): mismo agrupado
   por mes, con Ruta · Zona · Fecha · Dist. · D+ · Tiempo · Actividad · Estado. Conviven con
   «⊞ Cuadrícula» y «▤ Panel»; la elección se recuerda en la sesión.
@@ -44,6 +48,11 @@ aplica a las tres pantallas con tokens en un solo sitio.
   selector de año no gasta ni una petición. Del servidor solo siguen viniendo los récords
   (necesitan `avg_speed`, que no está en el listado). Se conservan el mapa de todas las
   rutas, «Por actividad» y «Rutas por año», restilados.
+  - El panel de las barras por mes y la pila de «Zonas más visitadas» + «Almacenamiento»
+    **acaban a la misma altura**, con las barras en porcentaje de su carril para que llenen
+    el alto que les toque (comprobado con 1, 4 y 8 zonas).
+  - El subtítulo dice solo el periodo («Todas las temporadas» / «Temporada 2026»): lo demás
+    era texto del prototipo sin ninguna función.
 - **Tipografía**: Oswald (títulos, wordmark y cifras), IBM Plex Sans (interfaz) e IBM Plex
   Mono (datos y etiquetas), autoalojadas en `static/fonts/` como las anteriores. Se van
   Saira Condensed, Inter y Space Mono. Oswald e IBM Plex Sans son variables: un archivo por
