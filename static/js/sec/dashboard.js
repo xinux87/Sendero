@@ -114,11 +114,10 @@
     q('#ov-kpi-time-d').textContent = a.n ? `${fmtHM(a.seg / a.n)} de media` : '';
     const top = [...a.zonas.entries()].sort((x, y2) => y2[1] - x[1])[0];
     q('#ov-kpi-zonas-d').textContent = top ? `sobre todo ${top[0]}` : '';
+    // El subtítulo solo dice el periodo: es la única parte que cambia con el
+    // selector de año (el resto era texto decorativo del prototipo).
     const sub = q('#ov-sub');
-    if (sub) {
-      sub.textContent = (year === 'todo' ? 'Todas las temporadas' : `Temporada ${year}`)
-        + ' · sin servicios externos';
-    }
+    if (sub) sub.textContent = year === 'todo' ? 'Todas las temporadas' : `Temporada ${year}`;
   }
 
   /* Doce barras: el desnivel acumulado de cada mes del año elegido (con "Todo",
