@@ -332,7 +332,8 @@ archivo, nunca en `mount()`.
 | GET | `/Plan/<public_id>` | `shell.html` (sección `plan`) con el plan como `bootstrap_json`; por nombre redirige 302 al `public_id` |
 | GET | `/app-shell` | `shell.html` **sin** `bootstrap_json`. Lo precachea el Service Worker y es lo que se sirve al navegar sin conexión a una vista que el shell aloja |
 | GET | `/sw.js` | `static/sw.js` con `self.APP_VERSION = "X.Y.Z"` inyectada delante (`Cache-Control: no-cache`, `Service-Worker-Allowed: /`) |
-| GET | `/manifest.webmanifest` | manifiesto de la PWA (`application/manifest+json`) |
+| GET | `/manifest.webmanifest` | manifiesto de la PWA (`application/manifest+json`). El `<link>` de `base.html` lo pide con `crossorigin="use-credentials"` (ver Quirks: proxy con autenticación) |
+| GET | `/actualizar` | página de reparación: desregistra el Service Worker, borra sus cachés, la IndexedDB del Store y las preferencias de sesión, y ofrece volver a la app. `Cache-Control: no-store`, el SW **no la intercepta** y su JS va inline (un `<script src>` podría venir de la caché vieja, que es el problema que arregla). Enlazada desde Ajustes → Sin conexión |
 | GET | `/api/routes` | lista paginada (incluye `thumb_file`); sin `limit` devuelve todas (es barata, ~130 KB/500 rutas) |
 | GET | `/api/routes/geojson` | FeatureCollection de líneas decimadas (props: id, name, activity, year, km). Acepta `?bbox=minLon,minLat,maxLon,maxLat`; sin él devuelve todas (no lo usa el dashboard salvo fallback) |
 | POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb. Dedup (ver sección): 409 exacta (hash) o blanda (firma); `?auto=1` importa la blanda marcada (`dup_suspect_of`) en vez de bloquear; `?force=1` la importa limpia (el usuario ya la aceptó en la web) |
@@ -1208,6 +1209,15 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - No hay autenticación. Intencional para LAN.
 - Las plantillas de la app multipágina **ya no existen** (ver "Frontend"). Para ver
   cómo era algo antes de la SPA: `git show v0.7.1:templates/<archivo>`.
+- **Código viejo pegado en el navegador tras publicar una versión.** Es el peor fallo de
+  esta arquitectura: el documento llega de red (nuevo) pero `static/js/**` se sirve con
+  revalidación por detrás, así que la primera carga tras actualizar puede ejecutar el JS
+  anterior; y con una PWA instalada el Service Worker no se releva mientras quede una
+  ventana viva. Síntoma: "no cargan las opciones", botones que no responden, secciones a
+  medias — sin ningún error claro en el servidor. Salida: **`/actualizar`** (enlazado en
+  Ajustes → Sin conexión), que borra SW, cachés, IndexedDB y sesión; o cerrar del todo la
+  PWA. Antes de sospechar del código, comprueba la misma URL en una ventana de incógnito:
+  si ahí funciona, es esto.
 - **Detrás de un proxy con autenticación** (Pangolin, Authelia, oauth2-proxy…), el
   `<link rel="manifest">` de `base.html` NECESITA `crossorigin="use-credentials"`. Es el
   único subrecurso que el navegador pide sin cookies, así que sin ese atributo el proxy lo
@@ -1250,6 +1260,9 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   (~115 asserts en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
   Worker, modo sin conexión y cola de escrituras). Necesita un servidor con
   `SENDERO_DATA` **de pruebas** y `python tests/e2e_seed.py` para sembrarlo.
+- Si tocaste `/actualizar` o el Service Worker: comprueba que la página sigue llegando de
+  red (el SW no debe interceptarla) y que deja SW, cachés, IndexedDB y sessionStorage a
+  cero; y que al volver a la app se rehacen los cuatro.
 - Si tocaste la PWA (`static/sw.js`, `api/pwa.py`, el precache): `node tests/sw_smoke.js`,
   y comprueba que **todas** las URLs de `PRECACHE_URLS` devuelven 200 (un 404 se salta sin
   romper la instalación, pero deja esa pieza sin cachear y la app no arranca sin conexión).

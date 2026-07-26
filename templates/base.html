@@ -656,6 +656,21 @@ header .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;marg
         </div>
         <button class="btn ghost sm" onclick="offClear()"
                 style="border-color:var(--gr-red);color:var(--gr-red)">Vaciar copia local</button>
+
+        <hr class="cfg-actions-sep">
+        <div class="cfg-subhead"><span class="n">6</span> Forzar la actualización de la app</div>
+        <div class="cfg-hint" style="margin-bottom:10px">
+          Si tras publicar una versión la app se comporta raro (botones que no responden,
+          pantallas a medias), puede que el navegador se haya quedado con el código de la
+          versión anterior. Esto abre una página que <strong style="color:var(--ink)">borra el
+          código guardado y la copia local</strong> y vuelve a descargar todo. Es la salida
+          sin tener que buscar cómo se borran los datos del sitio en cada navegador.
+        </div>
+        {# Enlace normal, no fetch: la página tiene que llegar de red y ejecutarse fuera de
+           este documento. Va en el HTML (no en el JS) a propósito, para que siga estando
+           aunque el navegador tenga el JS viejo en caché — que es justo el caso que arregla. #}
+        <a class="btn ghost sm" href="/actualizar"
+           style="text-decoration:none">↻ Actualizar la app en este dispositivo</a>
       </div>
 
       <!-- sección Mi Fit / Zepp -->

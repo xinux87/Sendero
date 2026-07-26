@@ -249,6 +249,11 @@ self.addEventListener('fetch', e => {
     return;                                             // resto: red y nada más
   }
 
+  // La página de reparación (/actualizar) NO se intercepta: es la que desregistra
+  // este Service Worker y borra sus cachés, así que tiene que llegar de red tal
+  // cual, sin pasar por aquí ni acabar guardada en ninguna caché.
+  if (url.pathname === '/actualizar') return;
+
   if (req.mode === 'navigate') { e.respondWith(handleDocument(req)); return; }
 
   // Nuestro código: nombre sin versión ⇒ revalidar por detrás (ver arriba).

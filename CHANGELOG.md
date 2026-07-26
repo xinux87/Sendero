@@ -7,6 +7,17 @@ panel de Ajustes y en `GET /api/config`.
 
 ## [0.9.1] — 2026-07-26
 
+### Añadido
+- **Página de reparación `/actualizar`**, enlazada desde Ajustes → Sin conexión («Actualizar
+  la app en este dispositivo»). Desregistra el Service Worker, borra sus cachés, la copia
+  local (IndexedDB) y las preferencias de sesión, y ofrece volver a la app, que se descarga
+  de cero. Existe porque el peor fallo de esta arquitectura es quedarse con el código de la
+  versión anterior pegado en el navegador —el síntoma es "no cargan las opciones", sin
+  ningún error en el servidor— y salir de ahí exigía DevTools o dar con dónde se borran los
+  datos del sitio, que en un móvil o en una PWA instalada no es evidente. La página llega
+  siempre de red (el Service Worker no la intercepta) y su JS va inline, porque un
+  `<script src>` podría servirse justo de la caché vieja que se quiere tirar.
+
 ### Corregido
 - **El manifiesto de la PWA ya no falla detrás de un proxy con autenticación.** Con Sendero
   publicado tras Pangolin (o Authelia, oauth2-proxy y compañía), la consola del navegador
