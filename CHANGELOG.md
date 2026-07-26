@@ -52,6 +52,12 @@ mismos GPX, mismas fotos, misma base de datos.
   único que llevaba las teselas escritas a mano, y por eso ignoraba la capa offline.
 
 ### Corregido
+- **La vista 3D del mapa ya funciona.** Se quedaba en negro desde que se añadió, y no
+  era culpa del servicio de relieve: el código activaba el terreno y movía la cámara en
+  el mismo instante, y con rutas de alta montaña la superficie del terreno acababa por
+  encima de la cámara. Ahora el mapa se inclina primero y el relieve aparece al terminar
+  el movimiento; si el relieve no se puede descargar, queda la vista inclinada en vez de
+  un rectángulo negro.
 - El botón ✕ de borrar una foto en el detalle no funcionaba desde 0.5.2: el manejador se
   generaba con el identificador opaco sin comillas y el navegador lo leía como una variable
   inexistente.

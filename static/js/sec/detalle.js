@@ -144,8 +144,22 @@
     map3dMode = !map3dMode;
     $('#d-btn3d').textContent = map3dMode ? 'Vista 2D' : 'Vista 3D';
     if (map3dMode) {
-      map.setTerrain({source: 'terrain', exaggeration: 1.5});
+      /* OJO, y esto costó un bug de meses: NO se puede mover la cámara en el
+         mismo tick en el que se activa el terreno. Haciendo
+             map.setTerrain(...); map.easeTo({pitch:60});
+         el mapa se queda COMPLETAMENTE NEGRO y no se recupera — el terreno
+         todavía no tiene su primera tesela de DEM cuando la cámara se
+         reproyecta, y la transformación queda en un estado inservible. Da igual
+         la duración de la animación: con duration:0 pasa lo mismo.
+
+         Así que primero se inclina y el relieve se enciende al acabar el
+         movimiento. De paso queda mejor (el mapa se ladea y luego "crece" el
+         relieve), y si el DEM no llegara nunca —sin internet— lo peor que pasa
+         es que se queda la vista inclinada en 2D en vez de un rectángulo negro. */
       map.easeTo({pitch: 60, duration: 800});
+      map.once('moveend', () => {
+        if (map3dMode && map) map.setTerrain({source: 'terrain', exaggeration: 1.5});
+      });
     } else {
       map.setTerrain(null);
       map.easeTo({pitch: 0, bearing: 0, duration: 600});

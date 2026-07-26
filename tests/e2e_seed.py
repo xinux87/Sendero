@@ -17,14 +17,15 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8124"
 
 
 def gpx(name, n=120, lat0=42.60, lon0=-1.60, ele0=800.0, ele_step=6.0,
-        start="2026-05-01T09:00:00", step_s=30, tipo="hiking", hr=True):
+        start="2026-05-01T09:00:00", step_s=30, tipo="hiking", hr=True,
+        dlat=0.0006, dlon=0.0004):
     t0 = dt.datetime.fromisoformat(start)
     pts = []
     for i in range(n):
         # una "montaña": sube y baja, con una curva en el trazado
         ele = ele0 + (ele_step * i if i < n // 2 else ele_step * (n - i))
-        lat = lat0 + i * 0.0006
-        lon = lon0 + i * 0.0004 + (0.0008 if n // 3 < i < 2 * n // 3 else 0)
+        lat = lat0 + i * dlat
+        lon = lon0 + i * dlon + (dlon * 2 if n // 3 < i < 2 * n // 3 else 0)
         ts = (t0 + dt.timedelta(seconds=i * step_s)).strftime("%Y-%m-%dT%H:%M:%SZ")
         ext = (f'<extensions><gpxtpx:TrackPointExtension>'
                f'<gpxtpx:hr>{110 + i % 40}</gpxtpx:hr>'
@@ -65,6 +66,18 @@ if __name__ == "__main__":
                                              start="2026-04-18T10:30:00", step_s=15, ele_step=2.0)),
         ("Carrera matinal por el río", dict(n=90, tipo="running", lat0=42.81, lon0=-1.64,
                                             start="2026-03-07T07:15:00", step_s=20, ele_step=1.0)),
+        # Ruta de ALTA MONTAÑA, y no es decorativa: la vista 3D solo se rompía por
+        # encima de ~1500 m, porque con exageración 1.5 la superficie del terreno
+        # sube por encima de la cámara. Sin una ruta así, el test del 3D pasaba
+        # igual con el código roto. Coordenadas reales (Andorra) para que el DEM
+        # de verdad devuelva altitudes de verdad.
+        # El span importa tanto como la altitud: fitBounds tiene que dejar el zoom
+        # alto (~14), que es donde la cámara queda cerca del terreno. Con una ruta
+        # extendida el encuadre se aleja y el fallo no aparece.
+        ("Pico de alta montaña", dict(n=200, tipo="hiking", lat0=42.6050, lon0=1.5500,
+                                      ele0=1950.0, ele_step=6.0, step_s=10,
+                                      dlat=0.000025, dlon=0.00015,
+                                      start="2026-07-11T07:00:00")),
     ]
     creadas = []
     for nombre, kw in rutas:

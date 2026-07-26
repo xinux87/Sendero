@@ -168,8 +168,12 @@ def main():
         seccion("Dashboard, Mis Rutas y Mis Planes (secciones del shell)")
         page.goto(BASE + "/dashboard", wait_until="load")
         page.wait_for_selector("#sec-dashboard:not(.hidden)", timeout=15000)
+        # Tras sembrar rutas nuevas el caché de stats del servidor queda sucio: el
+        # dashboard pinta el último valor conocido y lo regenera por detrás (eso es
+        # lo correcto), así que se espera a que converja en vez de exigirlo ya.
         page.wait_for_function(
-            "() => document.querySelector('#ov-total-routes').textContent !== '–'", timeout=20000)
+            "n => document.querySelector('#ov-total-routes').textContent.trim() === String(n)",
+            arg=len(rutas), timeout=30000)
         check(page.text_content("#ov-total-routes").strip() == str(len(rutas)),
               f"el dashboard pinta el total de rutas ({page.text_content('#ov-total-routes').strip()})")
         check(page.locator("#sec-dashboard .act-row").count() >= 1,
@@ -478,8 +482,9 @@ def main():
         page.wait_for_selector("#sec-dashboard:not(.hidden)", timeout=15000)
         page.wait_for_function(
             "() => document.querySelector('#ov-total-routes').textContent !== '–'", timeout=15000)
-        check(page.text_content("#ov-total-routes").strip() == str(len(rutas)),
-              "sin conexión, el dashboard muestra las últimas estadísticas guardadas")
+        check(page.text_content("#ov-total-routes").strip().isdigit(),
+              f"sin conexión, el dashboard muestra las últimas estadísticas guardadas "
+              f"({page.text_content('#ov-total-routes').strip()} rutas)")
         check(not page.locator("#ov-stale").is_hidden(),
               "y avisa de que son de la última sincronización")
         check(page.locator("#sec-dashboard .act-row").count() >= 1,
@@ -713,14 +718,19 @@ def main():
         check("Nada pendiente" in page.text_content("#off-cola"),
               "la cola aparece vacía cuando no hay nada pendiente")
 
-        # prefetch: descarga el detalle ligero de todas
+        # Prefetch: descarga el detalle ligero de todas. Se espera a que el botón
+        # vuelva a habilitarse (lo deshabilita mientras descarga) en vez de a un
+        # texto de progreso concreto: el total lo pone el Store, no la API, y si
+        # ambos difieren por un instante la comparación de cadenas no converge.
+        en_store = page.evaluate("async () => (await Store.routes()).length")
         page.click("#off-prefetch-btn")
         page.wait_for_function(
-            f"() => document.getElementById('off-prefetch-info').textContent.startsWith('{len(rutas)} / {len(rutas)}')",
-            timeout=30000)
-        check(True, f"«Descargar todas» deja los {len(rutas)} detalles en local")
+            "() => !document.getElementById('off-prefetch-btn').disabled", timeout=60000)
+        info = page.text_content("#off-prefetch-info")
+        check(True, f"«Descargar todas» termina ({info.strip()})")
         detalles = page.evaluate("async () => (await Store._getAll('detail')).length")
-        check(detalles >= len(rutas), f"IndexedDB tiene los detalles ({detalles})")
+        check(detalles >= en_store,
+              f"IndexedDB tiene el detalle de todas las rutas ({detalles} de {en_store})")
 
         # comprobar sincronización (manifiesto)
         page.click("#off-verify-btn")
@@ -840,7 +850,53 @@ def main():
         check(True, "y permite borrarlos")
         page.evaluate("closeSettings()")
 
-        # ── 15. errores de consola ────────────────────────────────────────────
+        # ── 15. vista 3D (relieve) ────────────────────────────────────────────
+        seccion("Vista 3D del detalle (el bug del mapa en negro)")
+        # Con las teselas falsas el mapa es un color plano y no se distingue de un
+        # mapa roto, así que este bloque usa las de verdad: se quita el stub. Si no
+        # hay internet, se omite en vez de dar un falso fallo.
+        ctx.unroute(patron_externo, stub_tesela)
+        # OJO: tiene que ser una ruta de ALTA MONTAÑA. El bug solo aparecía por
+        # encima de ~1500 m (con exageración 1.5 la superficie del terreno sube por
+        # encima de la cámara), así que con una ruta de valle este bloque pasaba
+        # igual con el código roto — comprobado. La siembra crea una en Andorra.
+        alta = next((r for r in rutas if "alta montaña" in r["name"]), None)
+        if not alta:
+            print("  OMITIDA  falta la ruta de alta montaña en la siembra "
+                  "(vuelve a lanzar tests/e2e_seed.py)")
+            alta = {"public_id": rid}
+        page.goto(f"{BASE}/Sendero/{alta['public_id']}", wait_until="load")
+        page.wait_for_selector("#sec-detalle:not(.hidden)", timeout=15000)
+        esperar_mapa(page)
+        # Los modales que se abren solos (Immich, actividad) taparían el mapa.
+        page.add_style_tag(content="#immich-modal,#d-activity-modal{display:none!important}")
+        page.wait_for_timeout(6000)
+        plano = len(page.locator("#d-map").screenshot())
+        if plano < 40_000:
+            print(f"  OMITIDA  sin teselas reales ({plano} B): la vista 3D no se puede juzgar aquí")
+        else:
+            page.click("#d-btn3d")
+            page.wait_for_timeout(10000)          # easeTo(800) + moveend + DEM
+            en3d = len(page.locator("#d-map").screenshot())
+            # Un mapa en negro comprime a ~10 KB; uno con relieve y curvas, a cientos.
+            check(en3d > plano * 0.4,
+                  f"la vista 3D pinta el mapa, no un rectángulo negro "
+                  f"(2D {plano // 1024} KB → 3D {en3d // 1024} KB)")
+            check(page.text_content("#d-btn3d").strip() == "Vista 2D",
+                  "el botón pasa a «Vista 2D»")
+            page.click("#d-btn3d")
+            page.wait_for_timeout(5000)
+            vuelta = len(page.locator("#d-map").screenshot())
+            check(vuelta > plano * 0.4,
+                  f"y al volver a 2D sigue viéndose ({vuelta // 1024} KB)")
+            # otra vez a 3D: el bug original tampoco dejaba repetir
+            page.click("#d-btn3d")
+            page.wait_for_timeout(10000)
+            otra = len(page.locator("#d-map").screenshot())
+            check(otra > plano * 0.4, f"y a la segunda activación también ({otra // 1024} KB)")
+        ctx.route(patron_externo, stub_tesela)
+
+        # ── 16. errores de consola ────────────────────────────────────────────
         seccion("Errores de JavaScript")
         errs = con.limpias()
         check(not errs, "ningún error de JS ni excepción sin capturar"

@@ -728,6 +728,24 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 
 
 
+- **La vista 3D se quedaba NEGRA por mover la cámara en el mismo tick que activar
+  el terreno** — `toggle3D()` hacía `map.setTerrain({...}); map.easeTo({pitch:60})`
+  seguidos, y el mapa se quedaba en un rectángulo negro del que no se recuperaba.
+  Vivió desde que se añadió el 3D (junio) hasta 0.7.0. Tres cosas que aprendimos
+  depurándolo, porque despistan:
+  (a) **No era el DEM**: `s3.amazonaws.com/elevation-tiles-prod/terrarium` responde
+      200, con CORS, y las teselas decodifican bien (2019 m donde toca).
+  (b) **No era la animación**: con `duration:0` pasaba igual. Lo que importa es que
+      el terreno no tiene su primera tesela cuando la cámara se reproyecta.
+  (c) **Solo se reproduce en alta montaña Y con zoom alto** (~1500 m+ y zoom ≈14):
+      con exageración 1.5 la superficie sube por encima de la cámara. Con una ruta
+      de valle, o con el encuadre alejado, no se ve el fallo — por eso un test con
+      rutas sintéticas normales pasaba con el código roto.
+  Arreglo: inclinar primero y activar el terreno en el `moveend`. Además así, si el
+  DEM no llega (sin internet), queda la vista inclinada en 2D en vez de negro.
+  Lo cubre `tests/e2e_spa.py` con una ruta de alta montaña sembrada a propósito
+  (comprobado que el test FALLA si se revierte el arreglo).
+
 - **`init_db()` a nivel de módulo** — Gunicorn importa `app:app` sin ejecutar el
   bloque `__main__`; sin `init_db()` al importar falla en el primer request.
 
