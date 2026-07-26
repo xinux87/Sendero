@@ -100,8 +100,10 @@
           <div id="speedfix-panel" class="tool-panel hidden">
             <input type="range" id="speedfix-thr" min="5" max="200" value="40" oninput="SEC.editor.speedFixPreview()">
             <div class="tool-info" id="speedfix-info">—</div>
-            <div class="sel-hint" style="margin-top:0">Elimina los puntos que exigirían ir más rápido
-              que el umbral (saltos de GPS). Marcados en rojo en el mapa.</div>
+            <div class="sel-hint" style="margin-top:0">Recoloca los puntos que exigirían ir más rápido
+              que el umbral (saltos de GPS): en vez de perderlos, cada uno pasa a la media
+              entre el punto válido anterior y el siguiente (posición y altitud). Marcados
+              en rojo en el mapa, y en blanco discontinuo el track resultante.</div>
             <div style="display:flex;gap:6px;margin-top:6px">
               <button class="btn sm" id="speedfix-apply" onclick="SEC.editor.applySpeedFix()">Aplicar</button>
               <button class="btn ghost sm" onclick="SEC.editor.closeSpeedFix()">Cancelar</button>

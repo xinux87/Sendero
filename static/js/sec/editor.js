@@ -55,6 +55,7 @@
   let posOverride = new Map(), eleOverride = new Map();
   let dragVert = null, suppressLineClick = false;
   let spikePreviewData = null, spikeItems = null, simpKeep = null, speedErrIdxs = null;
+  let speedFixPlan = null; // {moves:[[i,lon,lat[,ele]],…], drops:[i,…]} de planSpeedFix()
   let wpts = [], wptMarkers = [];      // waypoints del estado actual + sus markers
   const EMPTY_FC = {type:'FeatureCollection',features:[]};
   let timeMs = null;       // Date.parse de P.time por índice ORIGINAL (null si no hay)
@@ -749,6 +750,19 @@
     } else if(op.op==='move_point'){
       const oi=idxMap[op.i];
       posOverride=new Map(posOverride); posOverride.set(oi,[op.lon,op.lat]);
+    } else if(op.op==='move_points'){
+      // lote de move_point (corrección de velocidad excesiva): items [i,lon,lat[,ele]]
+      posOverride=new Map(posOverride);
+      let el=null;
+      op.items.forEach(it=>{
+        const oi=idxMap[it[0]];
+        posOverride.set(oi,[it[1],it[2]]);
+        if(it.length>3&&it[3]!=null){
+          if(!el)el=new Map(eleOverride);
+          el.set(oi,it[3]);
+        }
+      });
+      if(el)eleOverride=el;
     } else if(op.op==='insert_point'){
       // El punto nuevo se añade al final de los arrays de P con un índice
       // original nuevo; si luego se deshace, la entrada queda huérfana (inofensiva).
@@ -949,6 +963,47 @@
     }
     return idxs;
   }
+  /* Convierte los puntos marcados en un plan de CORRECCIÓN, no de borrado.
+     Cada tira contigua de puntos malos se recoloca interpolando entre el último
+     punto válido anterior (A) y el primer válido posterior (B): para un punto
+     suelto a mitad de camino en el tiempo eso es exactamente la MEDIA de A y B,
+     y para una tira el reparto va proporcional a (t−tA)/(tB−tA) (espaciado
+     uniforme si falta algún timestamp). Así el punto no se pierde: se le quita la
+     desviación. La elevación se interpola igual cuando A y B la tienen, porque un
+     salto de GPS suele traer también una altitud falsa y el punto recolocado debe
+     ser coherente con su nueva posición.
+     Único caso en que sí se elimina: una tira que llega al final del track (o
+     empieza en el primer punto), porque sin un punto válido al otro lado no hay
+     nada con lo que promediar. */
+  function planSpeedFix(idxs){
+    const moves=[], drops=[], n=idxMap.length;
+    for(let k=0;k<idxs.length;){
+      let j=k;
+      while(j+1<idxs.length&&idxs[j+1]===idxs[j]+1)j++;
+      const i0=idxs[k], i1=idxs[j], a=i0-1, b=i1+1;
+      k=j+1;
+      if(a<0||b>=n){for(let q=i0;q<=i1;q++)drops.push(q);continue;}
+      const A=cur[a], B=cur[b];
+      const tA=timeMs?timeMs[idxMap[a]]:null, tB=timeMs?timeMs[idxMap[b]]:null;
+      const span=(tA!=null&&tB!=null)?tB-tA:0;
+      const eA=P.ele?eleOf(idxMap[a]):null, eB=P.ele?eleOf(idxMap[b]):null;
+      const m=i1-i0+1;
+      for(let q=0;q<m;q++){
+        const i=i0+q;
+        let f=(q+1)/(m+1);
+        const ti=timeMs?timeMs[idxMap[i]]:null;
+        if(span>0&&ti!=null){
+          const g=(ti-tA)/span;
+          if(g>0&&g<1)f=g;
+        }
+        const it=[i, A[0]+(B[0]-A[0])*f, A[1]+(B[1]-A[1])*f];
+        if(eA!=null&&eB!=null)it.push(Math.round((eA+(eB-eA)*f)*10)/10);
+        moves.push(it);
+      }
+    }
+    return {moves,drops};
+  }
+
   function toggleSpeedFix(){
     const panel=document.getElementById('speedfix-panel');
     if(panel.classList.contains('hidden')){
@@ -965,26 +1020,49 @@
   function speedFixPreview(){
     const thr=+document.getElementById('speedfix-thr').value;
     speedErrIdxs=detectSpeedErr(thr);
-    const n=speedErrIdxs.length;
+    speedFixPlan=planSpeedFix(speedErrIdxs);
+    const nm=speedFixPlan.moves.length, nd=speedFixPlan.drops.length;
     document.getElementById('speedfix-info').textContent=
-      `Umbral ${thr} km/h — ${fmt(n)} punto${n!==1?'s':''} a eliminar`;
-    document.getElementById('speedfix-apply').disabled=!n||idxMap.length-n<2;
+      `Umbral ${thr} km/h — ${fmt(nm)} punto${nm!==1?'s':''} a corregir`+
+      (nd?` · ${fmt(nd)} sin punto válido al otro lado (se eliminan)`:'');
+    document.getElementById('speedfix-apply').disabled=(!nm&&!nd)||idxMap.length-nd<2;
     if(map&&map.getSource('speederr'))
       map.getSource('speederr').setData({type:'FeatureCollection',
         features:speedErrIdxs.map(i=>({type:'Feature',geometry:{type:'Point',coordinates:cur[i]},properties:{}}))});
+    // ghost: el track tal como quedaría, con los marcados ya interpolados
+    if(map&&map.getSource('ghost')){
+      if(!nm&&!nd)map.getSource('ghost').setData(EMPTY_FC);
+      else{
+        const fixed=cur.slice();
+        speedFixPlan.moves.forEach(([i,lon,lat])=>{fixed[i]=[lon,lat];});
+        const drop=new Set(speedFixPlan.drops);
+        map.getSource('ghost').setData({type:'Feature',geometry:{type:'LineString',
+          coordinates:fixed.filter((_,i)=>!drop.has(i))}});
+      }
+    }
   }
   function closeSpeedFix(){
     const panel=document.getElementById('speedfix-panel');
     if(panel)panel.classList.add('hidden');
-    speedErrIdxs=null;
+    speedErrIdxs=null;speedFixPlan=null;
     if(map&&map.getSource('speederr'))map.getSource('speederr').setData(EMPTY_FC);
+    if(map&&map.getSource('ghost'))map.getSource('ghost').setData(EMPTY_FC);
   }
   function applySpeedFix(){
-    if(!speedErrIdxs||!speedErrIdxs.length)return;
-    const n=speedErrIdxs.length;
-    doOp({op:'delete_points',indices:speedErrIdxs,
-      desc:`Corregida velocidad excesiva (−${n} punto${n!==1?'s':''})`});
-    toast(`Velocidad corregida: eliminados ${fmt(n)} punto${n!==1?'s':''}`);
+    const plan=speedFixPlan;   // doOp → applyState → closeSpeedFix lo pone a null
+    if(!plan||(!plan.moves.length&&!plan.drops.length))return;
+    const nm=plan.moves.length, nd=plan.drops.length;
+    if(idxMap.length-nd<2)return;
+    // Primero mover (no reindexa) y luego borrar: al revés, los índices de los
+    // movimientos ya no señalarían los mismos puntos.
+    if(nm)doOp({op:'move_points',items:plan.moves,
+      desc:`Corregida velocidad excesiva (${nm} punto${nm!==1?'s':''} interpolado${nm!==1?'s':''})`});
+    if(nd)doOp({op:'delete_points',indices:plan.drops,
+      desc:`Eliminado${nd!==1?'s':''} ${nd} punto${nd!==1?'s':''} de GPS sin referencia`});
+    const parts=[];
+    if(nm)parts.push(`${fmt(nm)} punto${nm!==1?'s':''} recolocado${nm!==1?'s':''} por interpolación`);
+    if(nd)parts.push(`${fmt(nd)} eliminado${nd!==1?'s':''} (sin punto válido al otro lado)`);
+    toast('Velocidad corregida: '+parts.join(' · '));
   }
 
   /* ── waypoints ──────────────────────────────────────────────────────────── */
@@ -1205,7 +1283,7 @@
     const issues=R.gps_issues||[];
     if(!issues.length)return;
     if(opsList.length){toast('Los avisos son del estado guardado: deshaz o guarda los cambios primero');return;}
-    let nEle=0,nSpd=0;
+    let nEle=0,nSpd=0,nDrop=0;
 
     // 1) Elevación/altitud primero (no cambian geometría → los km de los avisos
     //    siguen siendo válidos). Un fallo de barómetro genera DOS avisos de
@@ -1239,20 +1317,31 @@
       }
     }
 
-    // 2) Velocidad: eliminación de saltos con el umbral de la actividad.
+    // 2) Velocidad: los saltos de GPS se RECOLOCAN interpolando entre los puntos
+    //    válidos de alrededor (ver planSpeedFix), no se borran. Solo caen los que
+    //    no tienen punto válido a un lado (una tira que llega al final del track).
     const spd=issues.filter(it=>it.type==='speed');
     if(spd.length&&timeMs){
       const idxs=detectSpeedErr(Math.min(...spd.map(it=>it.threshold)));
-      if(idxs.length&&idxMap.length-idxs.length>=2){
-        doOp({op:'delete_points',indices:idxs,
-          desc:`Corregida velocidad excesiva (−${idxs.length} punto${idxs.length!==1?'s':''}, avisos GPS)`});
-        nSpd=idxs.length;
+      const plan=planSpeedFix(idxs);
+      if(idxMap.length-plan.drops.length>=2){
+        if(plan.moves.length){
+          doOp({op:'move_points',items:plan.moves,
+            desc:`Corregida velocidad excesiva (${plan.moves.length} punto${plan.moves.length!==1?'s':''} interpolado${plan.moves.length!==1?'s':''}, avisos GPS)`});
+          nSpd=plan.moves.length;
+        }
+        if(plan.drops.length){
+          doOp({op:'delete_points',indices:plan.drops,
+            desc:`Eliminado${plan.drops.length!==1?'s':''} ${plan.drops.length} punto${plan.drops.length!==1?'s':''} de GPS sin referencia`});
+          nDrop=plan.drops.length;
+        }
       }
     }
 
-    if(!nEle&&!nSpd){toast('No se encontró nada que corregir con los umbrales actuales');return;}
+    if(!nEle&&!nSpd&&!nDrop){toast('No se encontró nada que corregir con los umbrales actuales');return;}
     const parts=[];
-    if(nSpd)parts.push(`${fmt(nSpd)} punto${nSpd!==1?'s':''} de velocidad eliminado${nSpd!==1?'s':''}`);
+    if(nSpd)parts.push(`${fmt(nSpd)} punto${nSpd!==1?'s':''} de velocidad recolocado${nSpd!==1?'s':''}`);
+    if(nDrop)parts.push(`${fmt(nDrop)} eliminado${nDrop!==1?'s':''} sin referencia`);
     if(nEle)parts.push(`elevación corregida en ${fmt(nEle)} punto${nEle!==1?'s':''}`);
     toast('Corregido: '+parts.join(' · ')+'. Revisa el resultado y guarda.');
   }
@@ -1450,6 +1539,7 @@
     selA = null; selB = null; baseStats = null;
     posOverride = new Map(); eleOverride = new Map();
     spikePreviewData = null; spikeItems = null; simpKeep = null; speedErrIdxs = null;
+    speedFixPlan = null;
     wpts = []; viewMin = null; viewMax = null;
     mode = 'select';
     leaving = false;

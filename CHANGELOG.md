@@ -5,9 +5,35 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
-## Sin publicar
+## [0.8.0] — 2026-07-26
+
+El editor deja de perder puntos al corregir saltos de GPS, y se va el rastro de la app
+multipágina que quedaba muerto en el repositorio.
+
+### Cambiado
+- **El editor ya no borra los puntos con velocidad imposible: los arregla.** «⚡ Corregir
+  velocidad excesiva» (y el «✔ Corregir todo» de los avisos GPS) recolocaba los puntos que
+  exigirían superar el umbral de la actividad eliminándolos, así que un salto de GPS se
+  llevaba por delante puntos reales del track. Ahora cada punto marcado se **recoloca entre
+  el último punto válido anterior y el primero válido posterior** — para un salto suelto, la
+  media exacta de los dos — repartiendo una tira de varios en proporción a su hora
+  (espaciado uniforme si a algún punto le falta el `<time>`). La altitud se promedia igual,
+  porque un salto de GPS suele traer también una altitud falsa y el punto recolocado debe
+  ser coherente con su nueva posición. El track conserva el mismo número de puntos, y el
+  resultado no puede volver a pasarse del umbral (el punto queda sobre el tramo A–B, que la
+  detección ya validó). Único caso en que se sigue eliminando: una tira que llega al final
+  del track, porque sin un punto válido al otro lado no hay nada con lo que promediar; el
+  panel lo dice y lo cuenta aparte.
+- El panel de la herramienta muestra ahora en blanco discontinuo el track tal como quedaría,
+  además de los puntos marcados en rojo.
 
 ### Interno
+- Op nueva del editor `move_points{items:[[i,lon,lat[,ele]],…]}` (`core/editing.py` +
+  `doOp()`), el lote de `move_point` que emite la corrección de velocidad: cientos de puntos
+  corregidos son **una** op, o sea un solo paso de deshacer y una sola línea en el resumen.
+- Prueba de humo nueva: `node tests/speedfix_smoke.js` (geometría de la corrección: la media
+  exacta, el reparto por tiempo, que no se pierde ningún punto y que tras corregir no queda
+  ninguna velocidad por encima del umbral).
 - **Fuera las siete plantillas de la app multipágina** (`app.html`, `sendero.html`,
   `editor.html`, `rutas.html`, `overview.html`, `planificacion.html`,
   `plan_detalle.html`): 6.410 líneas que no servía ninguna ruta desde la 0.7.0. Se

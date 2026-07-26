@@ -101,6 +101,33 @@ def test_move_point(make_gpx_xml):
     assert pts["ele"][2] == 999.0
 
 
+def test_move_points_lote_con_y_sin_ele(make_gpx_xml):
+    """El lote que emite la corrección de velocidad excesiva: items de 3 o 4
+    elementos, y los puntos NO se pierden (n no cambia)."""
+    xml = make_gpx_xml(tracks=[(5,)])
+    original = extract_points(gpxpy.parse(xml))
+    pts = _apply(xml, [{"op": "move_points", "items": [
+        [1, -3.1, 42.1, 555.68],   # con elevación → se redondea a 1 decimal
+        [3, -3.3, 42.3],           # sin elevación → conserva la suya
+    ]}])
+    assert pts["n"] == original["n"]            # nada se elimina
+    assert pts["lonlat"][1] == [-3.1, 42.1]
+    assert pts["ele"][1] == 555.7
+    assert pts["lonlat"][3] == [-3.3, 42.3]
+    assert pts["ele"][3] == original["ele"][3]
+    assert pts["time"] == original["time"]      # los timestamps sobreviven
+
+
+def test_move_points_valida(make_gpx_xml):
+    xml = make_gpx_xml(tracks=[(5,)])
+    with pytest.raises(EditError):
+        apply_ops(gpxpy.parse(xml), [{"op": "move_points", "items": []}])
+    with pytest.raises(EditError):
+        apply_ops(gpxpy.parse(xml), [{"op": "move_points", "items": [[99, 0, 0]]}])
+    with pytest.raises(EditError):
+        apply_ops(gpxpy.parse(xml), [{"op": "move_points", "items": [[0, "x", 0]]}])
+
+
 def test_insert_point_ele_media_y_sin_time(make_gpx_xml):
     pts = _apply(make_gpx_xml(tracks=[(5,)]),
                  [{"op": "insert_point", "after": 2, "lon": -3.0005, "lat": 42.0025}])

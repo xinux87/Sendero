@@ -45,6 +45,7 @@ python -m pytest                   # tests unitarios (tests/): editing, parsers,
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
 node tests/sec_smoke.js            # sec/detalle.js carga contra los ids reales del markup
 node tests/tiles_smoke.js          # geometría del corredor de teselas (§6.2)
+node tests/speedfix_smoke.js       # corrección de velocidad excesiva del editor (interpolación)
 
 # end-to-end en un navegador real (Playwright; NO va en requirements-dev.txt)
 python -m venv /tmp/pw && /tmp/pw/bin/pip install playwright
@@ -169,11 +170,14 @@ un hilo de gunicorn (evita duplicar el importador con 2 workers).
 `tests/` — pytest sin BD ni Flask (funciones puras): `conftest.py` trae un constructor
 de GPX sintéticos (`make_gpx_xml`) y un FIT de muestra (`tests/fixtures/Activity.fit`).
 Si tocas una op del editor o el aplanado, añade/ajusta el test correspondiente.
-Además hay dos pruebas de humo de JavaScript que se lanzan con **Node a pelo** (sin npm
+Además hay cuatro pruebas de humo de JavaScript que se lanzan con **Node a pelo** (sin npm
 ni dependencias, regla 1; pytest ignora los `.js`): `node tests/sw_smoke.js` ejecuta
 `static/sw.js` con `caches`/`fetch` simulados y comprueba install/activate y qué
-estrategia le toca a cada URL, y `node tests/sec_smoke.js` carga `static/js/sec/detalle.js`
-contra los ids reales de `templates/sec/detalle.html` (pilla un selector que ya no existe).
+estrategia le toca a cada URL; `node tests/sec_smoke.js` carga `static/js/sec/detalle.js`
+contra los ids reales de `templates/sec/detalle.html` (pilla un selector que ya no existe);
+`node tests/tiles_smoke.js` mide el corredor de teselas; y `node tests/speedfix_smoke.js`
+extrae del propio `sec/editor.js` la geometría de la corrección de velocidad excesiva
+(`planSpeedFix`/`detectSpeedErr`) y la ejecuta contra tracks sintéticos con saltos de GPS.
 
 Rendimiento transversal: la BD corre en WAL (`init_db()`), las respuestas de texto van
 con gzip/brotli (flask-compress en `app.py`, mínimo 500 bytes), y los binarios llevan
@@ -358,8 +362,8 @@ Lo que sabe hacer, todo con versionado:
 - **Correcciones**: simplificación Douglas-Peucker con preview (compila a
   `delete_points`), picos de elevación (`set_ele`), velocidad excesiva (saltos de GPS:
   los puntos que exigirían superar el umbral de la actividad — Ajustes → "GPS
-  incorrecto", inyectado como `gps_max_speed` — se eliminan vía `delete_points`) y
-  recálculo de elevación contra un DEM (`POST /elevation-dem`, requiere `DEM_URL` en
+  incorrecto", `gps_max_speed` de `/api/routes/<id>/editor` — **no se eliminan: se
+  recolocan** con `move_points`, ver abajo) y recálculo de elevación contra un DEM (`POST /elevation-dem`, requiere `DEM_URL` en
   Ajustes → Editor; servicio OpenTopoData comentado en docker-compose.yml).
 - **Tiempos y waypoints**: `shift_time` (desplaza todos los timestamps y reactiva el
   cruce con Immich) y `wpt_add`/`wpt_move`/`wpt_rename`/`wpt_del` sobre
@@ -368,7 +372,27 @@ Lo que sabe hacer, todo con versionado:
   GPS" los lista con bandas rojas en las gráficas y tramos rojos en el mapa (solo si no
   hay cambios pendientes: los km son del estado guardado), y "Corregir" hace zoom al
   tramo y abre la herramienta según `type` (speed → velocidad excesiva con el umbral del
-  aviso; elevation → picos). "✔ Corregir todo" lo resuelve en 2 ops deshacibles.
+  aviso; elevation → picos). "✔ Corregir todo" lo resuelve en 2 ops deshacibles (3 si
+  además hay que eliminar un salto al final del track, ver abajo).
+
+**Corrección de velocidad excesiva: se arregla el punto, no se borra** (`planSpeedFix()`
+en `sec/editor.js`, probado con `node tests/speedfix_smoke.js`). Hasta la 0.7.1 los puntos
+marcados se eliminaban (`delete_points`), así que un salto de GPS se llevaba por delante
+puntos reales. Ahora cada tira contigua de puntos marcados se recoloca entre el último
+punto válido anterior (A) y el primero válido posterior (B):
+- Un punto suelto a mitad de camino en el tiempo queda en la **media exacta** de A y B;
+  una tira de varios se reparte proporcional a `(t−tA)/(tB−tA)`, y cae a espaciado
+  uniforme si a algún punto le falta el `<time>`.
+- **La altitud se promedia igual** cuando A y B la tienen: un salto de GPS suele traer
+  también una altitud falsa, y el punto recolocado debe ser coherente con su posición.
+- **El resultado no puede volver a pasarse del umbral**: `detectSpeedErr()` solo acepta B
+  como válido si la velocidad A→B ya cumplía, y los puntos interpolados caen sobre ese
+  mismo tramo con reparto temporal. Si tocas el reparto, mantén esa propiedad (el smoke
+  test la comprueba re-detectando sobre el track corregido).
+- **Único caso en que se elimina**: una tira que llega al final del track (o arranca en el
+  primer punto), porque sin un punto válido al otro lado no hay nada con lo que promediar.
+  El panel lo cuenta aparte y se aplica en un `delete_points` propio, **después** del
+  `move_points` (al revés reindexaría los movimientos).
 
 **Smoke test end-to-end del editor** (`PID` = `public_id` de una ruta de prueba; los
 endpoints del editor resuelven `public_id`, no el id entero):
@@ -412,6 +436,10 @@ servidor deben aplicar cada op EXACTAMENTE igual — si añades una op nueva,
 impleméntala en `doOp()` (`sec/editor.js`) y en `apply_ops()` (`core/editing.py`) y
 verifica que la misma secuencia produce las mismas coordenadas en ambos.
 `delete_points` (puntos sueltos) NO parte el segmento; `delete_range` sí.
+`move_points` es el lote de `move_point` (items `[i,lon,lat]` o `[i,lon,lat,ele]`): existe
+para que una corrección de cientos de puntos sea **una** op — un solo paso de deshacer y
+una sola línea en el resumen. En el cliente escribe `posOverride` y, si el item trae el 4º
+elemento, también `eleOverride`.
 
 **Principio central: el cliente manda OPERACIONES por índice de punto, nunca
 coordenadas.** El servidor re-parsea el GPX con gpxpy, aplica las ops sobre los
@@ -1105,6 +1133,10 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   salir con cambios sin guardar sigue preguntando. Ya no basta `beforeunload`: salir del
   editor puede ser un simple cambio de sección, y de eso se encarga un listener en fase de
   captura dentro de `sec/editor.js`.
+- Si tocaste la corrección de velocidad excesiva o los avisos GPS del editor:
+  `node tests/speedfix_smoke.js` (y recuerda que la herramienta **recoloca** los puntos, no
+  los borra: si vuelve a aparecer un `delete_points` con todos los marcados, es una
+  regresión). El nombre de las funciones importa: el test las extrae por nombre del archivo.
 - Si tocaste `chrome.js`, `router.js` o `store.js`: recuerda que `Router` y `Store` son
   `const` de un script clásico y **no** están en `window` (ver "Bugs corregidos"). Para
   saber si están cargados: `typeof X !== 'undefined'`.

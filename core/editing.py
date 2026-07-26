@@ -152,8 +152,9 @@ def apply_ops(gpx, ops):
     Lanza EditError con mensaje en español si algo no valida.
 
     Ops F1: delete_range{start,end} · reverse{}
-    Ops F2: move_point{i,lon,lat[,ele]} · insert_point{after,lon,lat} ·
-            delete_points{indices:[…]} · set_ele{items:[[i,e],…]}
+    Ops F2: move_point{i,lon,lat[,ele]} · move_points{items:[[i,lon,lat[,ele]],…]} ·
+            insert_point{after,lon,lat} · delete_points{indices:[…]} ·
+            set_ele{items:[[i,e],…]}
     Ops F3: shift_time{seconds} · wpt_add{lon,lat,name} · wpt_move{i,lon,lat} ·
             wpt_rename{i,name} · wpt_del{i}  (índices sobre gpx.waypoints en ese
             momento de la secuencia, misma semántica que los puntos)
@@ -212,6 +213,27 @@ def apply_ops(gpx, ops):
             if op.get("ele") is not None:
                 p.elevation = float(op["ele"])
             moved += 1
+        elif kind == "move_points":
+            # Igual que move_point pero en lote, para que una corrección de cientos
+            # de puntos (velocidad excesiva) sea UNA op: un solo paso de deshacer en
+            # el cliente y una sola entrada en la lista de cambios pendientes.
+            items = op.get("items")
+            if not isinstance(items, list) or not items:
+                raise EditError("Operación move_points sin items")
+            for it in items:
+                try:
+                    i = int(it[0])
+                    lon, lat = float(it[1]), float(it[2])
+                    ele = float(it[3]) if len(it) > 3 and it[3] is not None else None
+                except (TypeError, ValueError, IndexError):
+                    raise EditError("Operación move_points mal formada")
+                if not (0 <= i < n):
+                    raise EditError(f"move_points: índice fuera de límites ({i})")
+                p = flat[i][1]
+                p.longitude, p.latitude = lon, lat
+                if ele is not None:
+                    p.elevation = round(ele, 1)
+            moved += len(items)
         elif kind == "insert_point":
             try:
                 after = int(op["after"])
