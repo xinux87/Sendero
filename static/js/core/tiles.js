@@ -1,4 +1,4 @@
-/* Mapa sin conexión de UNA ruta (roadmap §6.2, versión simplificada).
+/* Mapa sin conexión de UNA ruta.
 
    El planteamiento original era descargar zonas enteras. Se cambió por algo
    mucho más pequeño y que además resuelve mejor el caso de verdad:

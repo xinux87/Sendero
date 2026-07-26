@@ -1,4 +1,5 @@
-/* Sección `rutas` ("Mis Rutas"). Portado de templates/app.html (roadmap §2-§3).
+/* Sección `rutas` ("Mis Rutas"). Portado de la app multipágina
+   (`git show v0.7.1:templates/app.html`).
    Markup en templates/sec/rutas.html, CSS en static/css/rutas.css.
 
    El cambio de fondo: el listado ya NO viene de `fetch('/api/routes')` cacheado

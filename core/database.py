@@ -399,7 +399,7 @@ def init_db():
     con.close()
 
 
-# ── Sincronización delta (roadmap/spa-offline-sync.md §4) ────────────────────
+# ── Sincronización delta ─────────────────────────────────────────────────────
 # Un contador monotónico global (sync_seq) y una fila por entidad viva o borrada
 # (sync_log). Los mantienen TRIGGERS, no el código Python: las mutaciones de
 # routes/photos/planned_routes están repartidas en 13 sitios de 5 blueprints, y

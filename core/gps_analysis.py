@@ -4,8 +4,7 @@ tiempo (fallo de GPS/barómetro) y velocidades irreales para el tipo de activida
 Función pura, sin Flask ni acceso a BD. Consume el mismo formato de puntos que
 devuelve extract_points() en core/editing.py — arrays paralelos lonlat/ele/time,
 1:1 por índice — para que sea directamente reutilizable desde el editor de rutas
-sin volver a parsear nada. Ver roadmap/logicaGPXincorrectos.md para el contrato
-de integración completo.
+sin volver a parsear nada.
 """
 import datetime as dt
 import math

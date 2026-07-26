@@ -1,4 +1,5 @@
-/* Sección `dashboard`. Portado de templates/app.html (roadmap §2-§3).
+/* Sección `dashboard`. Portado de la app multipágina
+   (`git show v0.7.1:templates/app.html`).
    Markup en templates/sec/dashboard.html, CSS en static/css/dashboard.css.
 
    Dos cambios de fondo respecto a la versión de app.html:

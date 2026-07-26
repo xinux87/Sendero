@@ -1,4 +1,5 @@
-/* Sección `editor`: editor de rutas. Portado de templates/editor.html (roadmap §2-§3).
+/* Sección `editor`: editor de rutas. Portado de la app multipágina
+   (`git show v0.7.1:templates/editor.html`).
    Markup en templates/sec/editor.html, CSS en static/css/editor.css.
 
    Es la última de las 6 vistas que entra en el shell, y la más delicada: de este
@@ -1439,7 +1440,7 @@
   /* ── montaje ───────────────────────────────────────────────────────────── */
   function resetState() {
     // Mapa, gráficas y marcadores: sin esto, cada visita dejaría un contexto
-    // WebGL y dos Chart vivos (la fuga nº 1 de esta conversión, roadmap §9.3).
+    // WebGL y dos Chart vivos (la fuga nº 1 de esta conversión).
     destroyMarkers();
     if (chart) { try { chart.destroy(); } catch (e) {} chart = null; }
     if (speedChart) { try { speedChart.destroy(); } catch (e) {} speedChart = null; }

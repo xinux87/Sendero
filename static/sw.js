@@ -1,4 +1,4 @@
-/* Service Worker de Sendero (roadmap/spa-offline-sync.md §5).
+/* Service Worker de Sendero.
 
    Se sirve desde `/sw.js` (ver api/pwa.py), NO como archivo estático: la ruta
    Flask le pone delante `self.APP_VERSION = "X.Y.Z"` leyéndolo de

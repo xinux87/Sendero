@@ -1,6 +1,6 @@
 # type: ignore
-# Vendorizado desde `roadmap/mifit exporter/src/exporters/base_exporter.py`.
-# Basado en https://github.com/mireq/MiFitDataExport
+# Vendorizado de `src/exporters/base_exporter.py` del exporter de Huami
+# (https://github.com/mireq/MiFitDataExport).
 #
 # Decodifica el detalle crudo de un entrenamiento de Huami (arrays comprimidos
 # como deltas, separados por ';') a una lista de puntos con lat/lon/alt/hr/cad.

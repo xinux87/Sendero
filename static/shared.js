@@ -171,7 +171,7 @@ function buildStyle(capa){
   if(capa===OFFLINE_LAYER&&hasOfflineMap()&&ensurePmtiles()){
     // Teselas raster propias en PMTiles. Un basemap vectorial necesitaría además
     // glyphs y sprite locales; con raster no hace falta ninguno de los dos, así
-    // que funciona sin conexión sin más piezas (roadmap §6.1).
+    // que funciona sin conexión sin más piezas.
     return {version:8,
       sources:{basemap:{type:'raster',tiles:['pmtiles://'+offlineMapUrl()+'/{z}/{x}/{y}'],
                         tileSize:256,maxzoom:MAP_CFG.offline_maxzoom||14,

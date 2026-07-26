@@ -1,4 +1,4 @@
-"""Lógica pura de la sincronización delta (roadmap/spa-offline-sync.md §4).
+"""Lógica pura de la sincronización delta.
 
 Aquí solo hay funciones sin BD ni Flask, para que se puedan probar en tests/:
 el esquema (sync_seq/sync_log/triggers) vive en core/database.py y los endpoints

@@ -1,7 +1,7 @@
 /* Chrome de la aplicación: helpers globales ($, fmtKm, fmtDur, fmtDate, esc,
    toast), navegación del header y modal de Ajustes. Extraído del <script> inline
    de templates/base.html para que el Service Worker pueda cachearlo por URL,
-   separado del HTML (roadmap/spa-offline-sync.md §2).
+   separado del HTML.
 
    OJO: este archivo NO va envuelto en un IIFE a propósito. Sus funciones se
    llaman desde atributos onclick= del propio base.html (openSettings, cfgNav,
@@ -40,12 +40,11 @@ function fmtDate(iso){if(!iso)return"Sin fecha";const d=new Date(iso);
   return d.toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"});}
 function esc(s){return(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
 
-/* ── PWA: Service Worker e indicador de estado (roadmap §5) ───────────────── */
+/* ── PWA: Service Worker e indicador de estado ────────────────────────────── */
 
-/* El SW se registra desde AQUÍ, no desde el shell, aunque el plan lo pusiera en
-   el shell: chrome.js lo carga base.html, así que vale para cualquier documento
-   que la app llegue a servir en el futuro sin tener que acordarse de registrarlo
-   otra vez. */
+/* El SW se registra desde AQUÍ y no desde el shell: chrome.js lo carga
+   base.html, así que vale para cualquier documento que la app llegue a servir
+   en el futuro sin tener que acordarse de registrarlo otra vez. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js', {scope: '/'})
@@ -88,7 +87,7 @@ window.addEventListener('load', () => {
   }
 });
 
-/* ── Ajustes → Sin conexión (roadmap §6.3 y §7) ────────────────────────────
+/* ── Ajustes → Sin conexión ────────────────────────────────────────────────
    Todo esto es UI sobre lo que ya hace static/js/core/store.js: prefetchAll(),
    usage(), verify(), flushOutbox() y clearLocal(). En el editor (que no carga el
    Store) la sección avisa en vez de romperse. */

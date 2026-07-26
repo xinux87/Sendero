@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Sendero{% endblock %}</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
-<!-- PWA (roadmap §5). El manifiesto y el Service Worker se sirven desde la raíz
+<!-- PWA. El manifiesto y el Service Worker se sirven desde la raíz
      (api/pwa.py), no desde /static: el ámbito de un SW es su carpeta. -->
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#17241c">
@@ -22,7 +22,7 @@
 {% block head_libs %}{% endblock %}
 <!-- Fuentes locales (static/fonts/): vendorizadas para funcionar sin conexión.
      Antes venían de fonts.googleapis.com, que rompía la carga en una LAN sin
-     internet. Si añades un peso nuevo, regenera fonts.css (roadmap §1). -->
+     internet. Si añades un peso nuevo, regenera fonts.css. -->
 <link href="/static/fonts/fonts.css" rel="stylesheet">
 <style>
 :root{
@@ -53,7 +53,7 @@ header .brand{display:flex;align-items:center;gap:14px}
 header .brand-logo{height:48px;width:48px;flex-shrink:0}
 header h1{font-size:40px;font-weight:700;text-transform:uppercase;line-height:1}
 header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transform:uppercase}
-/* Indicador de conexión / cola de escrituras (roadmap §5.4). En móvil el .tag se
+/* Indicador de conexión / cola de escrituras. En móvil el .tag se
    oculta, pero este no: es justo donde más falta hace saber si hay red. */
 .net-badge{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:20px;
   font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
@@ -274,7 +274,7 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 </style>
 <!-- CSS de las secciones de la SPA, en archivos propios para que el Service
      Worker los cachee por URL. Va DESPUÉS del <style> de base para que pueda
-     sobrescribirlo con la misma especificidad (roadmap §2). -->
+     sobrescribirlo con la misma especificidad. -->
 {% block head_css %}{% endblock %}
 </head>
 <body data-map-cfg='{{ map_cfg_json }}' data-planner-url='{{ planner_url }}'>
@@ -293,7 +293,7 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
       <div>
         <h1>Sendero</h1>
         <span class="tag">Bitácora de montaña</span>
-        <!-- Estado de conexión y de la cola de escrituras (roadmap §5.4).
+        <!-- Estado de conexión y de la cola de escrituras.
              Oculto mientras todo va bien: solo aparece si hay algo que contar. -->
         <span id="net-badge" class="net-badge hidden"></span>
       </div>
@@ -501,7 +501,7 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
         <button class="btn" onclick="saveMapSettings()">Guardar ajustes</button>
       </div>
 
-      <!-- ── SIN CONEXIÓN (roadmap §6.3 y §7) ────────────────────────────── -->
+      <!-- ── SIN CONEXIÓN ─────────────────────────────────────────────────── -->
       <div id="cfg-sec-offline" class="cfg-sec-content hidden">
         <p style="font-size:13px;color:var(--muted);margin:0 0 20px;line-height:1.6">
           Sendero guarda en este dispositivo la lista de rutas y planes, y el detalle de las
@@ -537,8 +537,9 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
         <div class="cfg-subhead"><span class="n">3</span> Mapas descargados</div>
         <div class="cfg-hint" style="margin-bottom:10px">
           El botón «⬇ Mapa sin conexión» de cada ruta o plan guarda solo la franja de teselas
-          por la que pasa el track (unas 250 para 40 km, ~6 MB), no una región entera. Es lo
-          que hace que el mapa se vea en el monte con el servidor apagado.
+          por la que pasa el track (entre 250 y 380 para 40 km, unos 6-9 MB según lo recta que
+          vaya), no una región entera. Es lo que hace que el mapa se vea en el monte con el
+          servidor apagado.
         </div>
         <div id="off-tiles" class="cfg-hint" style="margin-bottom:10px">—</div>
         <button class="btn ghost sm" onclick="offClearTiles()"

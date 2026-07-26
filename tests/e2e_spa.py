@@ -756,7 +756,7 @@ def main():
         check(True, "«Enviar ahora» vacía la cola al volver la red")
         page.evaluate("closeSettings()")
 
-        # ── 14. mapa sin conexión de una ruta (roadmap §6.2) ──────────────────
+        # ── 14. mapa sin conexión de una ruta ─────────────────────────────────
         seccion("Mapa sin conexión de UNA ruta (corredor de teselas)")
         page.goto(f"{BASE}/Plan/{pid_plan}", wait_until="load")
         page.wait_for_selector("#sec-plan:not(.hidden)", timeout=15000)

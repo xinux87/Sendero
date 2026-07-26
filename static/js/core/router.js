@@ -1,4 +1,4 @@
-/* Router de la SPA (roadmap/spa-offline-sync.md §3).
+/* Router de la SPA.
 
    Generaliza el router que ya existía en app.html (_showSec/_spaNavTo/popstate)
    de 3 a 6 vistas, añadiendo las tres que antes eran documentos aparte: detalle
@@ -9,7 +9,7 @@
    `mount` puede ser async; `unmount` DEBE destruir mapas y Charts de la sección.
    Sin eso, navegar entre secciones acumula instancias de MapLibre y listeners
    para siempre — es la fuga más probable de toda la conversión, porque no falla
-   de golpe, se degrada (roadmap §9.3).
+   de golpe, se degrada.
 */
 const Router = (() => {
   'use strict';

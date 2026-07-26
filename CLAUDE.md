@@ -8,32 +8,33 @@ para tocar el código sin romperlo. Si algo de aquí contradice al README, este 
 Monolito Flask + SQLite que sube/visualiza GPX y FIT, les asocia fotos (locales o de
 Immich por referencia), genera thumbnails PNG de cada track y guarda un resumen por ruta.
 
-## Por dónde vamos (migración terminada — pendiente de publicar)
-La conversión a **SPA completa + funcionamiento sin conexión + sincronización delta**
-(`roadmap/spa-offline-sync.md`) está **completa**: las 6 vistas son secciones de un
-único documento. Ya no hay dos mundos, así que no hay que elegir entre plantilla
-vieja y nueva — todo se toca en `static/js/sec/` (ver "Frontend").
+## Qué forma tiene hoy
+**Una SPA**: las 6 vistas (dashboard, rutas, planes, detalle de ruta, detalle de plan,
+editor) son secciones de un único documento (`templates/shell.html`), y todo el JS de
+vista vive en `static/js/sec/` (ver "Frontend"). Cambiar de sección no pide ningún
+documento nuevo: solo el JSON que haga falta, y a menudo ni eso.
 
-- **Hecho**: vendorizado sin CDN (fase 1), JS extraído a módulos por sección (2), shell
-  único con las 6 vistas (3), sincronización delta servidor+cliente (4), PWA con Service
-  Worker (5), mapa base offline con PMTiles (6.1), prefetch de detalles y panel de gestión
-  en Ajustes → Sin conexión (6.3), y cola de escrituras con su UI (7).
-- **Lo que funciona sin conexión**: abrir la app en cualquier vista (shell y código
+**Y una PWA que funciona sin conexión**, apoyada en un Service Worker que precachea el
+shell y el código, y en un almacén local (IndexedDB) que se pone al día con
+sincronización delta. Lo que eso significa en la práctica:
+
+- **Funciona sin conexión**: abrir la app en cualquier vista (shell y código
   precacheados), los listados de rutas y planes, el dashboard (con las últimas
-  estadísticas guardadas, avisando), el detalle de rutas y planes sincronizados, el mapa
-  base si hay un `.pmtiles` en `data/tiles/`, y editar nombre/notas/actividad (se encolan
-  y se envían al volver la red).
-- **Lo que NO funciona sin conexión, a propósito**: el **editor** (opera sobre el estado
+  estadísticas guardadas, avisando), el detalle de rutas y planes ya sincronizados, el
+  mapa base si hay un `.pmtiles` en `data/tiles/`, y editar nombre/notas/actividad (se
+  encolan y se envían al volver la red).
+- **NO funciona sin conexión, a propósito**: el **editor** (opera sobre el estado
   guardado en el servidor y cada guardado lleva `base_version`; encolar eso sería
   inventarse decisiones del servidor), subir rutas o fotos, Immich, reescanear y borrar.
   Todas avisan en vez de fallar en silencio.
-- **Mapa sin conexión por ruta** (§6.2, replanteada): el botón «⬇ Mapa sin conexión» del
-  detalle de una ruta o de un plan descarga solo el **corredor** de teselas del track
-  (40 km ≈ 380 teselas ≈ 9 MB), no una región. Es lo que hace que el mapa se vea con el
-  servidor apagado — la capa PMTiles de §6.1 necesita el servidor. Descargar regiones
-  enteras sigue descartado: las 4 capas son de terceros y su política de uso no lo admite.
-- **Al publicar**: `APP_VERSION` invalida el precache del Service Worker, así que este
-  trabajo NO debe salir sin subir la versión (ver "Publicar una versión").
+- **Mapa sin conexión por ruta**: el botón «⬇ Mapa sin conexión» del detalle de una ruta
+  o de un plan descarga solo el **corredor** de teselas del track (40 km ≈ 250-380
+  teselas ≈ 6-9 MB), no una región. Es lo que hace que el mapa se vea con el **servidor
+  apagado** — la capa PMTiles la sirve Sendero, así que esa necesita el servidor encendido.
+  Descargar regiones enteras está descartado: las 4 capas son de terceros y su política
+  de uso no lo admite.
+- **Al publicar**: `APP_VERSION` invalida el precache del Service Worker, así que ningún
+  cambio de frontend debe salir sin subir la versión (ver "Publicar una versión").
 
 ## Comandos
 ```bash
@@ -134,7 +135,7 @@ core/
                   compatible Nominatim configurable (GEOCODE_URL, Ajustes → Editor;
                   vacío = desactivado). _format_locality() es pura (tests/test_geocode.py)
   immich.py     — cliente HTTP para Immich (immich_get, immich_search, min_dist_to_track)
-  mifit/        — cliente Huami (Mi Fit/Zepp) vendorizado de roadmap/mifit exporter:
+  mifit/        — cliente Huami (Mi Fit/Zepp) vendorizado de MiFitDataExport:
                   api.py (HTTP+modelos), points.py (decodifica el detalle crudo),
                   gpx.py (build_gpx/workout_filename), sync.py (iter_new_workouts).
                   Solo el camino GPX-por-token; añade únicamente 'pydantic' a deps.
@@ -199,11 +200,10 @@ falta, y a menudo ni eso (lo tiene el Store).
 
 > **En `templates/` solo hay tres cosas**: `base.html` (el chrome: cabecera, modal
 > de Ajustes, CSS global), `shell.html` (el shell de la SPA) y `sec/` con las 6
-> secciones. Nada más. Las siete plantillas legacy de la app multipágina
-> (`app.html`, `sendero.html`, `editor.html`, `rutas.html`, `overview.html`,
-> `planificacion.html`, `plan_detalle.html`) se borraron justo después de v0.7.1:
-> eran 6.410 líneas que no servía nadie y hacían que se editara el archivo
-> equivocado. Siguen en git: `git show v0.7.1:templates/app.html`.
+> secciones. Nada más. La app multipágina anterior (`app.html`, `sendero.html`,
+> `editor.html`, `rutas.html`, `overview.html`, `planificacion.html`,
+> `plan_detalle.html`) se borró tras la v0.7.1; si necesitas ver cómo era algo
+> antes de la SPA: `git show v0.7.1:templates/app.html`.
 
 **Si añades una sección nueva** hacen falta cinco cosas, y olvidar cualquiera la
 rompe de una forma distinta: (1) el archivo en `templates/sec/`, incluido en
@@ -260,7 +260,7 @@ archivo, nunca en `mount()`.
 | `templates/sec/dashboard.html` | (sección `dashboard`) | Totales, mapa de todas las rutas, "Por actividad", "Rutas por año" y récords. Lógica en `static/js/sec/dashboard.js` |
 | `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros, mapa de visión general, modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
 | `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa y alta por GPX. Lógica en `static/js/sec/planes.js` |
-| `templates/sec/editor.html` | (sección `editor`) | Editor de rutas (F1-F3). Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` |
+| `templates/sec/editor.html` | (sección `editor`) | Editor de rutas. Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` |
 
 ### Navegación
 - **La URL canónica de todo es el `public_id`**, en rutas y en planes: `/Sendero/<pid>`,
@@ -347,26 +347,63 @@ añádelos aquí.** El campo `version` se deriva de `MAX(version_n)` en
 `route_versions` (0 = nunca editada); no hay columna `version` en `routes` a propósito.
 
 ### Editor de rutas (`api/editor.py` + `core/editing.py` + `static/js/sec/editor.js`)
-Fase 1: recortar inicio/fin, eliminar tramo intermedio, invertir ruta, con
-versionado completo. Fase 2: dos modos de edición — "Seleccionar" (tramos A–B) y
-"Editar puntos" (arrastrar vértice = `move_point`, Alt+click = `delete_points`,
-click en línea = `insert_point`) — más simplificación Douglas-Peucker con preview
-(compila a `delete_points`), corrección de picos de elevación (`set_ele`),
-corrección de velocidad excesiva (saltos de GPS: puntos que exigirían superar el
-umbral de la actividad — Ajustes → "GPS incorrecto", inyectado como
-`gps_max_speed` en la página del editor — se eliminan vía `delete_points`) y
-dividir ruta en dos (`POST /split`, server-side sobre el estado guardado).
-Fase 3: `shift_time` (desplazar todos los timestamps; reactiva el cruce Immich),
-waypoints (`wpt_add`/`wpt_move`/`wpt_rename`/`wpt_del`, sobre `gpx.waypoints`;
-Shift+click en modo "Editar puntos" añade, popup del marker ⚑ renombra/borra),
-unir rutas (`POST /api/routes/merge`, ruta NUEVA), elevación DEM
-(`POST /elevation-dem`, requiere `DEM_URL` en Ajustes → Editor; servicio
-OpenTopoData comentado en docker-compose.yml) e integración con `gps_issues`:
-la página inyecta los avisos, el panel "⚠ Avisos GPS" los lista con bandas rojas
-en las gráficas y tramos rojos en el mapa (solo sin cambios pendientes: los km
-son del estado guardado), y "Corregir" hace zoom al tramo y abre la herramienta
-según `type` (speed → velocidad excesiva con el umbral del aviso; elevation →
-picos). El roadmap de la fase 4 está en `roadmap/editorplan.md`.
+Lo que sabe hacer, todo con versionado:
+
+- **Dos modos de edición**: "Seleccionar" (tramos A–B) y "Editar puntos" (arrastrar
+  vértice = `move_point`, Alt+click = `delete_points`, click en la línea =
+  `insert_point`, Shift+click = waypoint).
+- **Recortes y estructura**: recortar inicio/fin, eliminar tramo intermedio, invertir
+  ruta, dividir en dos (`POST /split`, server-side sobre el estado guardado) y unir
+  rutas (`POST /api/routes/merge`, que crea una ruta NUEVA).
+- **Correcciones**: simplificación Douglas-Peucker con preview (compila a
+  `delete_points`), picos de elevación (`set_ele`), velocidad excesiva (saltos de GPS:
+  los puntos que exigirían superar el umbral de la actividad — Ajustes → "GPS
+  incorrecto", inyectado como `gps_max_speed` — se eliminan vía `delete_points`) y
+  recálculo de elevación contra un DEM (`POST /elevation-dem`, requiere `DEM_URL` en
+  Ajustes → Editor; servicio OpenTopoData comentado en docker-compose.yml).
+- **Tiempos y waypoints**: `shift_time` (desplaza todos los timestamps y reactiva el
+  cruce con Immich) y `wpt_add`/`wpt_move`/`wpt_rename`/`wpt_del` sobre
+  `gpx.waypoints` (el popup del marker ⚑ renombra y borra).
+- **Integración con `gps_issues`**: la página inyecta los avisos, el panel "⚠ Avisos
+  GPS" los lista con bandas rojas en las gráficas y tramos rojos en el mapa (solo si no
+  hay cambios pendientes: los km son del estado guardado), y "Corregir" hace zoom al
+  tramo y abre la herramienta según `type` (speed → velocidad excesiva con el umbral del
+  aviso; elevation → picos). "✔ Corregir todo" lo resuelve en 2 ops deshacibles.
+
+**Smoke test end-to-end del editor** (`PID` = `public_id` de una ruta de prueba; los
+endpoints del editor resuelven `public_id`, no el id entero):
+
+```bash
+curl -s localhost:8090/api/routes/$PID/points | python3 -c \
+  "import json,sys;d=json.load(sys.stdin);print(d['version'],d['n'],d['segments'])"  # 0, n, segmentos
+
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"base_version":0,"summary":"Recorte de prueba","ops":[{"op":"delete_range","start":0,"end":9}]}' \
+  localhost:8090/api/routes/$PID/edit | python3 -c \
+  "import json,sys;d=json.load(sys.stdin);print(d['version'],d['distance_m'])"       # 2, distancia menor
+
+# repetir ese mismo POST con base_version:0  → HTTP 409 (version_conflict)
+curl -s localhost:8090/api/routes/$PID/versions            # v1 "Archivo original" + v2
+curl -s localhost:8090/api/routes/$PID/versions/2/gpx | python3 -c \
+  "import gpxpy,sys;gpxpy.parse(sys.stdin);print('GPX válido')"
+curl -s -X POST localhost:8090/api/routes/$PID/versions/1/restore | python3 -c \
+  "import json,sys;print(json.load(sys.stdin)['version'])"  # 3, y stats como las originales
+curl -sI localhost:8090/api/routes/$PID/thumb               # 200 image/png, MISMO nombre de archivo
+# caso .fit: el primer guardado materializa <stem>.gpx y el .fit queda como v1
+# DELETE /api/routes/$PID → versions/<id>/ desaparece y route_versions queda limpia
+```
+
+En el navegador: click en la línea coloca A y B; arrastrar A hace snap y mueve la banda
+del perfil (y al revés); recortar/eliminar/invertir actualizan las stats en vivo (invertir
+avisa de que se pierden los timestamps); Ctrl+Z / Ctrl+Y; Guardar con resumen editable →
+toast "v2" y el historial se refresca; Restaurar v1; salir con cambios pendientes pide
+confirmación; y "Mis Rutas" refleja la distancia nueva.
+
+Hubo además un **planificador interno** (dibujo por anclas con routing BRouter,
+`/planificacion/crear`, `POST /api/planned/draw`, `BROUTER_URL`): se implementó y se
+revirtió el mismo día. Hoy "Dibujar ruta nueva" abre una web externa configurable
+(`PLANNER_URL`). El único resto es la columna `draw_anchors` de `planned_routes`, que
+no lee ni escribe nadie. Si vuelve a plantearse, es un rediseño, no un revert.
 
 **Paridad cliente/servidor**: el cliente mantiene el estado con `idxMap`
 (orden/supervivencia) + `posOverride`/`eleOverride` (valores editados por índice
@@ -453,9 +490,10 @@ hash leyendo el archivo; solo filas con `content_hash IS NULL`). Al añadir la c
 
 ### Auto-importación Mi Fit / Zepp (`core/mifit/` + `mifit_sync.py` + `api/mifit.py`)
 Descarga los entrenamientos del reloj Amazfit/Zepp/Mi Fit (API de Huami) y los
-importa como rutas. Plan completo en `roadmap/mifit-sync.md` (fase 4 = auth por
-navegador `mifit-auth`, pendiente). Implementado (fases 1-3):
-- **`core/mifit/`** — vendorizado de `roadmap/mifit exporter` (solo GPX-por-token).
+importa como rutas. Funciona con el **token pegado a mano**; capturarlo con un clic
+(un servicio-navegador `mifit-auth` con Firefox/noVNC) está pensado pero **sin hacer**,
+y es lo único pendiente de esta pieza.
+- **`core/mifit/`** — vendorizado de MiFitDataExport (solo GPX-por-token).
   `iter_new_workouts(api, since_trackid)` genera `(trackid, nombre, gpx_str)` de lo
   nuevo con GPS, en orden ascendente; salta los indoor (sin puntos). El GPX nombra el
   track `"DD-MM-YYYY hiking"` etc.: esas palabras inglesas ya están en las keywords de
@@ -528,6 +566,32 @@ desmonta cuando la sección no cambia.
 | `hoverD` | distancia (km) resaltada ahora mismo en el hover sincronizado mapa↔gráficos, o `null` |
 | `trackCumKm` | distancia acumulada (km) por punto de `current.geojson`, recalculada en cada `renderMap()` |
 
+### Mapa base offline autoalojado (PMTiles)
+La 5ª capa del selector, «Offline (local)», es la única que no depende de terceros: la
+sirve Sendero desde un archivo **PMTiles** en `data/tiles/`. Un PMTiles es un único
+archivo con todas las teselas dentro, que se lee por *range requests*, así que no hace
+falta un servidor de teselas: `GET /tiles/<archivo>.pmtiles` (`api/maps.py`) responde
+206 y `pmtiles.js` pide los bytes que necesite. **Necesita el servidor encendido** — para
+el monte con el servidor apagado es el corredor por ruta de la sección siguiente.
+
+- **Es RASTER, no vectorial** (`buildStyle()` en `static/shared.js`: `type:'raster'`,
+  `pmtiles://<url>/{z}/{x}/{y}`). Es deliberado: un basemap vectorial necesitaría además
+  `style.json`, `glyphs` (fuentes en PBF) y `sprite` locales, y si los `glyphs` siguen
+  apuntando a un CDN los nombres de los pueblos desaparecen sin internet aunque las
+  teselas sí estén. Con raster no hace falta ninguna de esas piezas.
+- **Cómo se genera**: cualquier tileset raster convertido a PMTiles (la ruta habitual es
+  MBTiles → `pmtiles convert` de `go-pmtiles`). Ojo con la licencia del tileset de
+  partida: por eso no vale con volcarse OpenTopoMap. Un extracto regional son decenas de
+  MB; un país entero, del orden de GB.
+- **Configuración** en Ajustes → Mapas (claves de `settings`, en `_SETTINGS_KEYS`):
+  `MAP_OFFLINE_FILE` (nombre del archivo dentro de `data/tiles/`; vacío o inexistente ⇒
+  la capa no se ofrece siquiera en el selector), `MAP_OFFLINE_MAXZOOM` (14 por defecto;
+  tiene que coincidir con el del archivo o MapLibre pedirá teselas que no existen),
+  `MAP_OFFLINE_ATTRIBUTION` y `MAP_DEFAULT_LAYER`.
+- **No hay ningún `.pmtiles` en esta instalación** (`data/tiles/` está vacío), así que
+  este camino está implementado pero **no probado con un archivo real**. Si añades uno,
+  compruébalo antes de fiarte.
+
 ### Mapa sin conexión de una ruta (`static/js/core/tiles.js`)
 El botón «⬇ Mapa sin conexión» (detalle de ruta y de plan) guarda en el navegador la franja
 de teselas por la que pasa el track. Es lo único que hace visible el mapa **sin servidor**:
@@ -535,7 +599,9 @@ la capa «Offline (local)» de §6.1 la sirve Sendero desde su `.pmtiles`, así 
 servidor encendido; esto no.
 
 - **Corredor, no bbox**: `forTrack(coords)` toma las teselas que pisa el track más un anillo
-  de vecinas, en los zooms 10-15. Para 40 km son ~380 teselas (~9 MB); el bbox completo de
+  de vecinas, en los zooms 10-15. Para 40 km son 250-380 teselas (6-9 MB) según lo recta
+  que vaya el track — `tests/tiles_smoke.js` mide 381 con una recta, que es el peor caso,
+  y una ruta real que serpentea en un valle repite teselas y baja de 300; el bbox completo de
   esa misma ruta serían miles. Van **ordenadas por zoom ascendente**: si la descarga se
   corta, queda al menos la vista general.
 - **Caché aparte y que sobrevive a las versiones**: `sendero-tiles-v1` no lleva
@@ -748,11 +814,6 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
   inmediatamente después de `#sec-detalle .overlay{display:flex}`. Sin ella el modal
   Immich aparece al cargar.
 
-- **La app fue multipágina, luego fue `app.html` con 3 secciones, y hoy es un shell
-  con 6.** Cada etapa dejó documentación que hablaba de la anterior. Si algo aquí
-  menciona una plantilla que no existe en `templates/`, es un resto: lo que se sirve
-  es `shell.html` y solo eso.
-
 - **Columnas pequeñas añadidas con `ALTER TABLE` después de `geojson`/`elevation`/
   `heart_rate` hacen lentísima cualquier query que las lea**, aunque no pidas el geojson.
   `ALTER TABLE ADD COLUMN` añade la columna al final del registro físico de cada fila;
@@ -936,7 +997,7 @@ Las columnas que devuelve el listado están en **una sola constante**,
 campos distintos según si la ruta llegó por la carga inicial o por una sync.
 
 ### Tablas `sync_seq` y `sync_log` (sincronización delta)
-Ver `roadmap/spa-offline-sync.md` §4. `sync_seq` es un contador monotónico global
+`sync_seq` es un contador monotónico global
 (una sola fila); `sync_log` tiene **una fila por entidad viva o borrada**
 (`entity` `'route'|'planned'`, `entity_id` = PK interna, `public_id`, `rev`, `op`
 `'up'|'del'`), y esas filas **no se borran nunca**: `op='del'` es la tombstone que
@@ -987,11 +1048,8 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - La validación de extensión en `create_route` acepta cualquier nombre que termine en
   `gpx` o `.fit`. No endurezcas sin revisar el watcher.
 - No hay autenticación. Intencional para LAN.
-- Las plantillas de la app multipágina (`app.html`, `sendero.html`, `editor.html`,
-  `rutas.html`, `overview.html`, `planificacion.html`, `plan_detalle.html`) **ya no
-  existen**: se borraron justo después de v0.7.1, cuando llevaban una versión entera
-  sin que las sirviera nadie. Si necesitas ver cómo era algo antes de la SPA:
-  `git show v0.7.1:templates/<archivo>`.
+- Las plantillas de la app multipágina **ya no existen** (ver "Frontend"). Para ver
+  cómo era algo antes de la SPA: `git show v0.7.1:templates/<archivo>`.
 - **Docker Desktop sobre WSL2 (esta instalación) puede dejar procesos `gunicorn`/
   `watch.py` huérfanos** tras varios `docker compose down`/`up --build` seguidos: el
   proceso sigue vivo (visible en `ps aux` del host, propiedad de `root`) y sigue
@@ -1066,7 +1124,7 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tocaste el editor (`core/editing.py`/`api/editor.py`): ¿el orden de aplanado
   sigue siendo idéntico al de `analyse_gpx()`? ¿El activo sigue siendo igual a la
   versión más alta tras guardar y tras restaurar? ¿Los `<time>`/HR sobreviven a un
-  recorte? (smoke test en `roadmap/editorplan.md` §8).
+  recorte? (smoke test al final de "Editor de rutas").
 - Si tras `docker compose up -d --build` los cambios no se reflejan en `localhost:8090`
   pese a que el build no falla: revisa el quirk de procesos huérfanos de Docker
   Desktop/WSL2 antes de sospechar del código.

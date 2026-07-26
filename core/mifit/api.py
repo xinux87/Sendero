@@ -1,6 +1,7 @@
 """Cliente HTTP de la API de entrenamientos de Huami (Mi Fit / Zepp).
 
-Vendorizado desde `roadmap/mifit exporter/src/api.py`. Las constantes de
+Vendorizado de `src/api.py` del exporter de Huami
+(https://github.com/mireq/MiFitDataExport). Las constantes de
 `src/constants.py` se han puesto inline (son dos). Los modelos pydantic se
 mantienen tal cual: replican la respuesta real de la API y están probados.
 """

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.4.0-2e7d32?style=for-the-badge" alt="Versión 0.4.0">
+  <img src="https://img.shields.io/badge/versión-0.7.1-2e7d32?style=for-the-badge" alt="Versión 0.7.1">
   <img src="https://img.shields.io/badge/100%25-autoalojado-17241c?style=for-the-badge" alt="100% autoalojado">
   <img src="https://img.shields.io/badge/Docker-xinux87%2Fsendero-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Hub: xinux87/sendero">
   <img src="https://img.shields.io/badge/Flask%20+%20SQLite-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Flask + SQLite">
@@ -17,6 +17,8 @@
 ---
 
 **Sendero** es una bitácora autoalojada de rutas de montaña: una sola aplicación (Flask + SQLite, en un contenedor Docker) donde subes tus tracks **GPX** y **FIT** y los conviertes en un registro visual y navegable de tus salidas. Cada ruta se dibuja sobre mapas topográficos y de satélite con su perfil de elevación, velocidad y frecuencia cardíaca, calcula las estadísticas automáticamente y te deja asociar fotos —locales o de tu **Immich** por referencia—. Incluye un editor de tracks completo, detección de errores de GPS, analíticas globales y planificación de rutas futuras. Todo corre en un **único contenedor** en tu red local: sin servicios externos ni telemetría.
+
+Es además una **aplicación instalable** (PWA) que **funciona sin conexión**: puedes llevarte el móvil al monte, con el servidor apagado en casa, y seguir consultando tus rutas y el mapa de la que vas a hacer.
 
 ---
 
@@ -34,6 +36,7 @@ En resumen, Sendero te permite:
 - 🔄 **Importación automática** — deja caer los GPX en una carpeta vigilada y aparecen solos.
 - ⌚ **Sincronización con Mi Fit / Zepp** — baja los entrenamientos de tu reloj Amazfit/Zepp directamente de la cuenta Huami, sin exportar a mano.
 - 🧹 **Sin rutas duplicadas** — detecta reimportaciones del mismo archivo o del mismo entrenamiento y evita repetirlas.
+- 📴 **Uso sin conexión** — instálala como app y consulta tus rutas (mapa incluido) sin red y con el servidor apagado.
 
 ---
 
@@ -109,6 +112,23 @@ Un editor de tracks completo con versionado *append-only*: cada guardado crea un
 ## Planificación (Mis Planes)
 
 ¿Una ruta que quieres hacer? Sube su GPX a **Mis Planes** y quedará en una lista separada de tus salidas ya realizadas, con su mapa, estadísticas, notas y descarga del GPX. Desde ahí también puedes **dibujar una ruta nueva** en un planificador externo configurable (por defecto [brouter-web](https://brouter.de/brouter-web)).
+
+## Sin conexión (y como app instalable)
+
+Sendero es una **PWA**: desde el navegador puedes instalarla en el móvil o el escritorio y queda con su icono, sin barra de direcciones. Y guarda en el dispositivo la lista de rutas y planes y el detalle de las que abres, de modo que **sigue funcionando sin red y con el servidor apagado**.
+
+Sin conexión puedes:
+
+- Abrir la app en **cualquier pantalla** — dashboard, Mis Rutas, Mis Planes y las fichas.
+- Consultar el **detalle** de las rutas y planes que ya se hayan sincronizado, con sus perfiles y sus fotos.
+- **Editar** nombre, notas y tipo de actividad: los cambios se guardan y se envían solos al recuperar la red (la cabecera muestra cuántos quedan sin enviar).
+- Ver el **mapa**, si antes has pulsado **«⬇ Mapa sin conexión»** en la ficha de esa ruta o plan. Ese botón guarda solo la franja de teselas por la que pasa el track —entre 250 y 380 para 40 km, unos 6-9 MB según lo recta que vaya la ruta—, no una región entera. Es lo que hace que el mapa se vea en el monte.
+
+Sí necesitan conexión, y avisan en vez de fallar en silencio: subir rutas o fotos, el editor, Immich, reescanear y borrar.
+
+En **Ajustes → Sin conexión** tienes el panel de control: estado de la copia local, **↓ Descargar todas las rutas** (para llevártelas al monte sin haberlas abierto una a una), cuánto ocupan los mapas descargados con su botón de borrar, y la cola de cambios pendientes de enviar.
+
+> **Nota sobre el mapa base.** Las cuatro capas del selector (Topográfico, Callejero, Satélite, Oscuro) son de terceros y necesitan internet. Si quieres una quinta capa propia que funcione siempre, coloca un archivo **PMTiles** en `data/tiles/` y selecciónalo en **Ajustes → Mapas**; esa la sirve Sendero, así que funciona sin internet pero **con el servidor encendido**. Para el monte con el servidor apagado, lo que vale es el «⬇ Mapa sin conexión» de cada ruta.
 
 ## Immich (opcional)
 
@@ -199,30 +219,45 @@ sendero/
 ├── app.py              # entrada Flask: registra blueprints, init_db() y refresh_config()
 ├── watch.py            # importador automático de carpeta (servicio aparte, no parte del server)
 ├── mifit_sync.py       # sincronizador Mi Fit/Zepp (servicio aparte, opcional)
-├── core/               # lógica: config, BD, parseo GPX/FIT, thumbnails, edición, EXIF, Immich, análisis GPS, dedup, cliente Mi Fit (core/mifit/)
-├── api/                # blueprints REST: rutas, editor, fotos, planificación, Immich, ajustes, Mi Fit
+├── core/               # lógica: config, BD, parseo GPX/FIT, thumbnails, edición, EXIF,
+│                       #   Immich, análisis GPS, dedup, geocoding, cliente Mi Fit (core/mifit/)
+├── api/                # blueprints REST: rutas, editor, fotos, planificación, Immich,
+│                       #   ajustes, Mi Fit, sincronización, mapas y PWA
 ├── templates/
-│   ├── app.html            # SPA: Dashboard, Mis Rutas y Mis Planes (MapLibre GL)
-│   ├── sendero.html        # detalle de ruta: mapa, perfil, fotos, Immich
-│   ├── editor.html         # editor de rutas
-│   └── plan_detalle.html   # detalle de ruta planificada
-├── static/             # logo e iconos
+│   ├── base.html           # cabecera, modal de Ajustes y CSS global
+│   ├── shell.html          # el documento único de la SPA
+│   └── sec/                # las 6 vistas: dashboard, rutas, planes, detalle, plan, editor
+├── static/
+│   ├── js/core/            # router, almacén local + sincronización, cargador, mapas offline
+│   ├── js/sec/             # un módulo por vista (mismo nombre que su plantilla)
+│   ├── css/                # un archivo por vista
+│   ├── vendor/             # MapLibre, Chart.js y pmtiles.js servidos en local (sin CDN)
+│   ├── fonts/ · icons/     # tipografías e iconos de la PWA
+│   └── sw.js               # Service Worker
+├── tests/              # pytest (lógica pura) + pruebas de humo en Node y e2e con Playwright
 ├── requirements.txt
 ├── Dockerfile
 ├── docker-compose.yml
-└── data/               # volumen: sendero.db, gpx/, photos/, thumbs/
+└── data/               # volumen: sendero.db, gpx/, photos/, thumbs/, tiles/
 ```
 
+No hay paso de compilación: el frontend son `<script>` clásicos, sin npm ni bundler.
+
 ## API (por si quieres automatizar)
+
+En las URLs, `{id}` es el **identificador público** de la ruta o el plan (una cadena corta y opaca, tipo `k3Qv9wTaZ1c`), no un número correlativo. Lo devuelve el listado en el campo `public_id` y es lo que aparece en la barra de direcciones.
 
 | Método | Ruta | Acción |
 |--------|------|--------|
 | `GET`  | `/api/routes` | lista de rutas |
 | `POST` | `/api/routes` | sube un GPX o FIT (campo `gpx`). Rechaza duplicados (`?force=1` fuerza; `?auto=1` importa marcando posibles duplicadas) |
-| `GET`  | `/api/routes/{id}` | detalle: stats, track, perfil, fotos |
+| `GET`  | `/api/routes/{id}` | detalle: stats, track, perfil, fotos. `?lite=1` devuelve una versión aligerada (~20 KB en vez de ~350 KB) |
 | `PATCH`| `/api/routes/{id}` | renombrar / guardar notas / actividad |
 | `DELETE`| `/api/routes/{id}` | borrar ruta |
+| `GET`  | `/api/routes/{id}/gpx` | descargar el archivo original |
+| `POST` | `/api/routes/{id}/rescan` | volver a leer el archivo y recalcular todo |
 | `POST` | `/api/routes/{id}/photos` | subir fotos locales (campo `photos`) |
+| `GET`  | `/api/stats` | estadísticas globales |
 | `GET`  | `/api/config` | indica si Immich está activo, la distancia de autoselección y la versión |
 | `GET`  | `/api/settings` | leer ajustes actuales |
 | `POST` | `/api/settings` | guardar ajustes (misma función que el modal Ajustes) |
@@ -233,6 +268,11 @@ sendero/
 | `GET`/`POST` | `/api/mifit/settings` | ajustes de Mi Fit/Zepp (token, región, intervalo, fecha) |
 | `POST` | `/api/mifit/sync` | lanza una sincronización con Mi Fit (`{reset:true}` para reimportar) |
 | `GET`  | `/api/mifit/status` | estado y fecha de la última sincronización |
+| `GET`  | `/api/sync/state` | ¿ha cambiado algo? Con `If-None-Match` responde `304` sin cuerpo |
+| `GET`  | `/api/sync/changes` | lo que ha cambiado desde `?since=<cursor>` (altas, cambios y bajas) |
+| `GET`  | `/api/maps` | estado de los mapas base offline disponibles |
+
+El editor tiene sus propios endpoints (`/points`, `/edit`, `/split`, `/merge`, `/versions/…`); están documentados en `CLAUDE.md`.
 
 El endpoint `POST /api/routes` permite automatizar la importación: un script que vigile la carpeta de Syncthing puede hacer `curl -F "gpx=@ruta.gpx"` por cada archivo nuevo.
 

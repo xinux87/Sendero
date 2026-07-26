@@ -1,4 +1,4 @@
-"""PWA: manifiesto, Service Worker y el shell sin datos (roadmap §5).
+"""PWA: manifiesto, Service Worker y el shell sin datos.
 
 Las tres rutas viven en la RAÍZ, no bajo /static, y eso es intencional:
 

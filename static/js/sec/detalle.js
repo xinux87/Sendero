@@ -1,5 +1,5 @@
 /* Sección `detalle`: detalle de una ruta.
-   Portado de templates/sendero.html (roadmap/spa-offline-sync.md §2-§3).
+   Portado de la app multipágina (`git show v0.7.1:templates/sendero.html`).
    Markup en templates/sec/detalle.html, CSS en static/css/detalle.css.
 
    Contrato (lo llama static/js/core/router.js):
@@ -716,7 +716,7 @@
 
   function openEditor() { go(`/Sendero/${encodeURIComponent(pid)}/editor`); }
 
-  /* Mapa sin conexión de ESTA ruta (roadmap §6.2): la franja de teselas que
+  /* Mapa sin conexión de ESTA ruta: la franja de teselas que
      cubre el track, no una región. Útil para repetir una ruta ya hecha. */
   function downloadMap() {
     Tiles.downloadForTrack({

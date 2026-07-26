@@ -1,6 +1,7 @@
 """Cliente mínimo de la API de Huami (Mi Fit / Zepp) para auto-importar rutas.
 
-Vendorizado desde roadmap/mifit exporter (solo el camino GPX-por-token):
+Vendorizado del exporter de Huami de https://github.com/mireq/MiFitDataExport
+(solo el camino GPX-por-token):
 - api.py    → cliente HTTP + modelos de historial/detalle de entrenamientos
 - points.py → decodifica lat/lon/alt/hr/cadencia de un detalle a puntos
 - gpx.py    → serializa esos puntos a un GPX 1.1 (con <time>/<ele>/<hr>)

@@ -1,5 +1,5 @@
 /* Sección `plan`: detalle de una ruta planificada.
-   Extraído de templates/plan_detalle.html (roadmap/spa-offline-sync.md §2-§3).
+   Extraído de la app multipágina (`git show v0.7.1:templates/plan_detalle.html`).
    Markup en templates/sec/plan.html, CSS en static/css/plan.css.
 
    Es la primera vista que se convierte en sección de la SPA, a propósito: era la
@@ -12,7 +12,7 @@
 
    Sin ese unmount, cada visita dejaría una instancia de MapLibre viva (con su
    contexto WebGL y sus listeners) y navegar arriba y abajo degradaría el
-   navegador poco a poco — la fuga nº 1 de esta conversión (roadmap §9.3).
+   navegador poco a poco — la fuga nº 1 de esta conversión.
 
    Los datos NO vienen inyectados por Jinja: los pide Store.plan(), que decide
    red o copia local. Así la vista funciona sin conexión si el plan ya se visitó. */
@@ -261,7 +261,7 @@
   /* ── acciones ──────────────────────────────────────────────────────────── */
   function downloadGpx() { window.location = `/api/planned/${pid}/gpx`; }
 
-  /* Mapa sin conexión de ESTA ruta (roadmap §6.2): descarga la franja de
+  /* Mapa sin conexión de ESTA ruta: descarga la franja de
      teselas por la que pasa el track, no una región. Es el caso de uso de esta
      vista: una ruta que vas a hacer, guardada antes de salir de casa. */
   function downloadMap() {

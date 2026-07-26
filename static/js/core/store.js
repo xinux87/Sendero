@@ -1,4 +1,4 @@
-/* Almacén local y sincronización delta (roadmap/spa-offline-sync.md §4.6).
+/* Almacén local y sincronización delta.
 
    Sustituye al caché de sessionStorage con TTL de 10 min (`sendero_routes_v4`)
    por IndexedDB:
@@ -183,7 +183,7 @@ const Store = (() => {
   }
 
   /* Corrobora la copia local contra el manifiesto del servidor y repara SOLO lo
-     que divergía (roadmap §4.5). Es la operación de "comprobar sincronización":
+     que divergía. Es la operación de "comprobar sincronización":
      detecta lo que un delta por cursor no puede ver (una tombstone perdida, un
      delta cortado a medias, un detalle obsoleto). */
   async function verify() {
@@ -365,7 +365,7 @@ const Store = (() => {
     emit({type: 'cleared'});
   }
 
-  /* ── cola de escrituras (roadmap §7) ──────────────────────────────────── */
+  /* ── cola de escrituras ───────────────────────────────────────────────── */
 
   /* Solo mutaciones pequeñas e idempotentes (PATCH de nombre/notas/actividad).
      Las subidas de GPX/fotos y los guardados del editor NO se encolan: la dedup

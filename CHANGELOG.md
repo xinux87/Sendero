@@ -15,6 +15,22 @@ panel de Ajustes y en `GET /api/config`.
   alguien editara el archivo equivocado. Siguen en git (`git show v0.7.1:templates/...`).
   En `templates/` quedan `base.html`, `shell.html` y `sec/` con las 6 secciones.
 - Eliminado el endpoint `GET /api/routes/by-name/<nombre>`, al que no llamaba nadie.
+- **Fuera la carpeta `roadmap/`** (4 planes, 1.925 líneas). Estaban todos cerrados: el
+  editor (fases 1-3, más una fase 4 implementada y revertida el mismo día), la SPA con
+  funcionamiento sin conexión, el responsive de móvil y la sincronización con Mi Fit
+  (queda pendiente solo capturar el token con un clic, que ya se dice en el README).
+  Describían un código que en varios puntos había dejado de ser el real. Lo que sí tenían
+  de útil se ha quedado en `CLAUDE.md`: el smoke test end-to-end del editor y cómo
+  funciona el mapa base en PMTiles. Siguen en git (`git show d762a4f:roadmap/...`).
+- **Fuera `FUNCIONALIDADES.md`**: iba por la versión 0.4.0, inventariaba plantillas
+  borradas y le faltaban enteros los endpoints de sincronización, mapas, PWA y Mi Fit.
+  Lo que hacía lo cubren ya el README (qué hace la app) y `CLAUDE.md` (la tabla completa
+  de rutas Flask).
+- El README se pone al día: la versión, la estructura real del proyecto, la tabla de API
+  con los identificadores públicos y los endpoints que faltaban, y una sección nueva
+  sobre el uso sin conexión y la instalación como app, que no estaba documentado.
+- Los comentarios del código ya no apuntan a `roadmap/…` (eran ~40 referencias que se
+  habrían quedado señalando a la nada).
 
 ## [0.7.1] — 2026-07-26
 

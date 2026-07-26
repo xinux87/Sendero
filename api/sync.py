@@ -1,4 +1,4 @@
-"""Sincronización delta (roadmap/spa-offline-sync.md §4).
+"""Sincronización delta.
 
 Tres endpoints, con tres preguntas distintas:
 

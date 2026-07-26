@@ -1,4 +1,4 @@
-"""Tests de la sincronización delta (roadmap/spa-offline-sync.md §4).
+"""Tests de la sincronización delta.
 
 Dos bloques:
   - core.sync: funciones puras (diff del manifiesto, decimado, remuestreo).

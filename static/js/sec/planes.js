@@ -1,4 +1,5 @@
-/* Sección `planes` ("Mis Planes"). Portado de templates/app.html (roadmap §2-§3).
+/* Sección `planes` ("Mis Planes"). Portado de la app multipágina
+   (`git show v0.7.1:templates/app.html`).
    Markup en templates/sec/planes.html, CSS en static/css/planes.css.
 
    El listado viene de `Store.planned()` (IndexedDB + sincronización delta), así

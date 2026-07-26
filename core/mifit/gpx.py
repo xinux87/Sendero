@@ -1,7 +1,7 @@
 """Serializa los puntos de un entrenamiento de Huami a un GPX 1.1 en memoria.
 
-Vendorizado y adaptado desde `roadmap/mifit exporter/src/exporters/gpx_exporter.py`
-(basado en https://github.com/mireq/MiFitDataExport). Cambios respecto al original:
+Vendorizado y adaptado de `src/exporters/gpx_exporter.py` del exporter de Huami
+(https://github.com/mireq/MiFitDataExport). Cambios respecto al original:
 - devuelve el GPX como str en vez de escribirlo a disco (build_gpx / workout_filename)
 - las tablas device_names.json / workout_types.json se leen de core/mifit/
 

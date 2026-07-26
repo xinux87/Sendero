@@ -1,4 +1,4 @@
-/* Carga a demanda de los módulos de sección (roadmap/spa-offline-sync.md §3.3).
+/* Carga a demanda de los módulos de sección.
 
    Sin build step y sin módulos ES: se inyecta un <script src> clásico y se espera
    su onload. El motivo de usar scripts clásicos en vez de import() está en §2 —

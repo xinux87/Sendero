@@ -7,7 +7,8 @@ base que funciona sin internet (las otras 4 son de terceros; ver
 static/shared.js) y por eso es también la única cacheable por el Service
 Worker sin incumplir la política de uso de nadie.
 
-Cómo se genera un .pmtiles está documentado en roadmap/spa-offline-sync.md §6.1.
+Cómo se genera un .pmtiles está documentado en CLAUDE.md, sección
+«Mapa base offline autoalojado (PMTiles)».
 """
 from pathlib import Path
 
