@@ -27,7 +27,16 @@
 #sec-rutas .pill:hover{filter:brightness(1.15)}
 #sec-rutas .filter-clear{padding:8px 14px;border-radius:999px;border:1px solid var(--line-strong);
   background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s}
-#sec-rutas .filter-clear:hover{border-color:var(--gr-red);color:var(--gr-red)}
+#sec-rutas .filter-clear:hover{border-color:rgba(236,229,216,.32);color:var(--ink)}
+/* Filtro de posibles duplicadas: vive en la fila de ORDEN, alineado a la derecha.
+   En rojo porque es un aviso, y solo aparece si hay alguna marcada (lo enseña y
+   lo esconde el JS). Activo = relleno sólido, como las píldoras de actividad. */
+#sec-rutas .filter-dup{padding:7px 16px;border-radius:999px;font-family:inherit;font-size:13px;
+  border:1px solid rgba(226,73,44,.55);background:rgba(226,73,44,.14);color:var(--gr-red);
+  cursor:pointer;transition:all .15s;white-space:nowrap}
+#sec-rutas .filter-dup:hover{border-color:var(--gr-red)}
+#sec-rutas .filter-dup.on{background:var(--gr-red);border-color:var(--gr-red);color:#fff5ec}
+#sec-rutas .sort-bar .filter-dup{margin-left:auto}
 /* Mismas medidas que .pill (padding 7/16, 13 px): el buscador es una píldora más
    de la fila, no un control de otro tamaño. */
 #sec-rutas .search-input{margin-left:auto;padding:7px 16px;width:230px;border-radius:999px;
@@ -40,10 +49,12 @@
    <input> del buscador con el mismo padding. */
 #sec-rutas .pill,
 #sec-rutas .filter-clear,
+#sec-rutas .filter-dup,
 #sec-rutas .dp-btn,
 #sec-rutas .search-input{min-height:36px}
 #sec-rutas .pill,
-#sec-rutas .filter-clear{display:inline-flex;align-items:center}
+#sec-rutas .filter-clear,
+#sec-rutas .filter-dup{display:inline-flex;align-items:center}
 #sec-rutas #overview-map{height:340px;border-radius:12px;border:1px solid var(--line);
   margin-bottom:18px;overflow:hidden}
 #sec-rutas .ov-marker{cursor:pointer;filter:drop-shadow(0 2px 4px #00000080)}

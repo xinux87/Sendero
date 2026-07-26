@@ -66,6 +66,9 @@ aplica a las tres pantallas con tokens en un solo sitio.
   "Mis Rutas" → ✎ Editar → Seleccionar todos → ↻ Re-escanear).
 
 ### Añadido
+- **Filtro de posibles duplicadas en Mis Rutas**: deja a la vista solo las rutas que la
+  importación automática marcó como parecidas a otra. Aparece únicamente si hay alguna
+  marcada, y se apaga solo cuando deja de haberlas (borradas o con el aviso descartado).
 - `GET /api/storage`: tamaño en disco de la base, los tracks, las fotos, las miniaturas y
   las teselas (más el número de fotos que son solo referencia a Immich). Lo consume el panel
   «Almacenamiento» del dashboard.

@@ -27,7 +27,7 @@
   const LINES_MINZOOM = 10, LINES_PREFETCH_ZOOM = LINES_MINZOOM - 2, POINTS_MAXZOOM = 12;
 
   let allRoutes = [], activeActs = null;
-  let sortOrder = 'desc', viewMode = 'a', searchQ = '';
+  let sortOrder = 'desc', viewMode = 'a', searchQ = '', dupOnly = false;
   let editMode = false, selectedIds = new Set(), visibleRoutes = [];
   let monthDomMap = new Map();
   let pendingRoutes = [], listObserver = null;
@@ -140,7 +140,7 @@
     try {
       sessionStorage.setItem(FILTER_CACHE, JSON.stringify({
         acts: [...activeActs], from: dpFrom && dpFrom.value, to: dpTo && dpTo.value,
-        sort: sortOrder, view: viewMode, q: searchQ,
+        sort: sortOrder, view: viewMode, q: searchQ, dup: dupOnly,
       }));
     } catch (e) {}
   }
@@ -176,8 +176,11 @@
     activeActs = new Set(ACTIVITIES.map(a => a.id));
     dpFrom.set(null); dpTo.set(null);
     searchQ = '';
+    dupOnly = false;
     const s = q('#route-search');
     if (s) s.value = '';
+    const d = q('#dup-filter');
+    if (d) d.classList.remove('on');
     buildPills(); saveFilterState(); renderList();
   }
 
@@ -213,6 +216,26 @@
     renderList();
   }
 
+  function toggleDupOnly() {
+    dupOnly = !dupOnly;
+    q('#dup-filter').classList.toggle('on', dupOnly);
+    saveFilterState();
+    renderList();
+  }
+
+  /* El filtro de duplicadas solo existe si hay algo que filtrar: si no queda
+     ninguna marcada (porque se borraron o se descartó el aviso), desaparece y se
+     apaga solo, o el listado se quedaría vacío sin explicación. */
+  function updateDupFilter() {
+    const n = allRoutes.filter(r => r.dup_suspect_of).length;
+    const btn = q('#dup-filter');
+    if (!btn) return;
+    q('#dup-filter-count').textContent = n;
+    btn.style.display = n ? '' : 'none';
+    if (!n && dupOnly) { dupOnly = false; saveFilterState(); }
+    btn.classList.toggle('on', dupOnly);
+  }
+
   function passesFilter(r) {
     const from = dpFrom && dpFrom.value, to = dpTo && dpTo.value;
     if (!allSelected() && !activeActs.has(r.activity_type)) return false;
@@ -222,6 +245,8 @@
       if (from && d < from) return false;
       if (to && d > to) return false;
     }
+    // Solo posibles duplicadas (las que marcó la ingesta automática).
+    if (dupOnly && !r.dup_suspect_of) return false;
     // Buscador: nombre y localidad, que es lo que el listado trae (el nombre del
     // archivo no está en ROUTE_LIST_COLS).
     if (searchQ) {
@@ -926,6 +951,7 @@
     allRoutes = rows;
     invalidateLines();                   // pueden haber cambiado rutas
     updateDedupBtn();
+    updateDupFilter();
     renderList();
   }
 
@@ -939,6 +965,7 @@
       if (savedF.sort) sortOrder = savedF.sort;
       if (savedF.view) viewMode = savedF.view;
       if (savedF.q) searchQ = savedF.q;
+      if (savedF.dup) dupOnly = true;
     }
     const buscador = q('#route-search');
     if (buscador) buscador.value = searchQ;
@@ -1029,7 +1056,7 @@
 
   window.SEC.rutas = {
     mount, unmount,
-    setSort, setView, setSearch, clearFilters, toggleEdit, selectMonth,
+    setSort, setView, setSearch, toggleDupOnly, clearFilters, toggleEdit, selectMonth,
     selectAllVisible, deselectAll, deleteDuplicates, deleteSelected, rescanSelected,
   };
 })();

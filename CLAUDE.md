@@ -528,8 +528,9 @@ lo revisa una persona (badge en `makeCard`, banner `#dup-banner` en la sección 
 con "descartar aviso"/ir a la parecida → borrar o `POST /api/routes/merge`; el enlace usa
 `dup_suspect_public`, así que navega por el router de un detalle a otro).
 
-**Borrado masivo de duplicadas (frontend):** el modo edición de "Mis Rutas" tiene un
-botón "⚠ Borrar duplicados (N)" (`deleteDuplicates()` en `sec/rutas.js`, visible solo si hay
+**Filtrarlas y borrarlas (frontend):** la fila de ORDEN de "Mis Rutas" tiene el filtro
+"⚠ Duplicadas (N)" (solo visible si hay marcadas, ver "Listado de rutas"), y el modo
+edición un botón "⚠ Borrar duplicados (N)" (`deleteDuplicates()` en `sec/rutas.js`, visible solo si hay
 `dup_suspect_of` en `allRoutes`). NO es un endpoint nuevo: selecciona las rutas marcadas
 y reusa `deleteSelected()` (mismo confirm con recuento + barra de progreso + `DELETE
 /api/routes/<id>`). Se borra la ruta MARCADA (la sospechosa), no la original a la que se
@@ -876,6 +877,14 @@ Cambiar de vista repinta la lista (`renderList()`), porque es otro markup.
 **Buscador** (`#route-search` → `setSearch`, debounce 180 ms): filtra en cliente por
 nombre y localidad, que es lo que hay en el listado (el nombre del archivo no está).
 Se guarda con el resto de filtros y `clearFilters()` lo vacía también.
+
+**Filtro de posibles duplicadas** (`#dup-filter` → `toggleDupOnly`): deja solo las
+rutas con `dup_suspect_of`. `updateDupFilter()` (lo llama `reload()`, junto a
+`updateDedupBtn()`) lo **muestra solo si hay alguna marcada**, y si deja de haberlas
+lo esconde y lo apaga — si no, la lista se quedaría vacía sin explicación. Vive en la
+fila de ORDEN y no en el panel de filtros a propósito: aparece y desaparece según los
+datos, y ahí empujaba el buscador a una segunda línea (el panel cambiaba de altura
+solo). Se guarda en el estado de filtros como el resto.
 
 `reload()` pide el listado completo a **`Store.routes()`** (IndexedDB; si está vacío
 espera la primera sincronización, y si no devuelve lo local al instante y sincroniza por
