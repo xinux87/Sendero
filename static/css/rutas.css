@@ -8,7 +8,10 @@
    Nada de hex sueltos: todo sale de las variables de base.html. */
 
 /* ── panel de filtros ──────────────────────────────────────────────────────── */
-#sec-rutas .filters{display:flex;flex-wrap:wrap;gap:34px;align-items:center;
+/* align-items:flex-end, no center: así la fila de píldoras, los selectores de
+   fecha y el buscador comparten línea de base (cada grupo lleva su etiqueta
+   encima, y centrándolos el buscador quedaba a media altura). */
+#sec-rutas .filters{display:flex;flex-wrap:wrap;gap:34px;align-items:flex-end;
   background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:14px 18px;margin-bottom:18px;position:relative;z-index:10}
 #sec-rutas .filter-group{display:flex;flex-direction:column;gap:9px}
@@ -25,11 +28,22 @@
 #sec-rutas .filter-clear{padding:8px 14px;border-radius:999px;border:1px solid var(--line-strong);
   background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s}
 #sec-rutas .filter-clear:hover{border-color:var(--gr-red);color:var(--gr-red)}
-#sec-rutas .search-input{margin-left:auto;padding:9px 16px;width:230px;border-radius:999px;
+/* Mismas medidas que .pill (padding 7/16, 13 px): el buscador es una píldora más
+   de la fila, no un control de otro tamaño. */
+#sec-rutas .search-input{margin-left:auto;padding:7px 16px;width:230px;border-radius:999px;
   background:var(--panel-2);color:var(--ink);border:1px solid var(--line-strong);
-  font-family:inherit;font-size:13px}
+  font-family:inherit;font-size:13px;line-height:1.5}
 #sec-rutas .search-input::placeholder{color:var(--muted-dim)}
 #sec-rutas .search-input:focus{outline:none;border-color:var(--pr-yellow)}
+/* Altura común de la fila de filtros. Hace falta decirla: un <button> no hereda
+   el line-height del body, así que las píldoras salían 3 px más bajas que el
+   <input> del buscador con el mismo padding. */
+#sec-rutas .pill,
+#sec-rutas .filter-clear,
+#sec-rutas .dp-btn,
+#sec-rutas .search-input{min-height:36px}
+#sec-rutas .pill,
+#sec-rutas .filter-clear{display:inline-flex;align-items:center}
 #sec-rutas #overview-map{height:340px;border-radius:12px;border:1px solid var(--line);
   margin-bottom:18px;overflow:hidden}
 #sec-rutas .ov-marker{cursor:pointer;filter:drop-shadow(0 2px 4px #00000080)}
@@ -81,18 +95,22 @@
 #sec-rutas .card-loc{color:var(--muted);display:inline-flex;align-items:center;gap:4px;
   min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #sec-rutas .card-loc svg{flex-shrink:0;opacity:.7}
-#sec-rutas .card-act{position:absolute;top:12px;right:14px;line-height:0}
-#sec-rutas .card-dup{display:inline-block;margin-top:8px;font-family:var(--mono);font-size:10.5px;
-  color:var(--gr-red);background:rgba(226,73,44,.14);border:1px solid rgba(226,73,44,.4);
-  border-radius:999px;padding:2px 9px;text-transform:uppercase;letter-spacing:.04em}
-/* Miniatura del track, anclada abajo a la derecha y al 22 % como el prototipo. */
-#sec-rutas .card-thumb{position:absolute;right:6px;bottom:0;width:130px;height:86px;
+#sec-rutas .card-act{position:absolute;top:12px;right:14px;line-height:0;z-index:1}
+#sec-rutas .card-dup{display:inline-block;margin-top:9px;font-family:var(--mono);font-size:10.5px;
+  color:var(--gr-red);background:rgba(226,73,44,.18);border:1px solid rgba(226,73,44,.55);
+  border-radius:999px;padding:3px 10px;text-transform:uppercase;letter-spacing:.04em}
+/* Miniatura del track: pegada al borde derecho y de arriba abajo de la tarjeta,
+   escalando con ella (object-fit:contain mantiene la proporción del PNG, que
+   depende del bounding box del track). Va DETRÁS de todo (z-index:0 contra el 1
+   de .card-body y de los adornos), así que nombre, fecha, distancia, localidad y
+   el aviso de duplicada se leen encima. Al 22 %, como el prototipo. */
+#sec-rutas .card-thumb{position:absolute;top:0;right:0;bottom:0;width:52%;z-index:0;
   pointer-events:none;overflow:hidden;opacity:.22}
-#sec-rutas .card-thumb img{width:100%;height:100%;object-fit:contain;object-position:bottom right;
-  display:block}
-#sec-rutas .card-body{position:relative}
+#sec-rutas .card-thumb img{width:100%;height:100%;object-fit:contain;
+  object-position:center right;display:block}
+#sec-rutas .card-body{position:relative;z-index:1}
 #sec-rutas .card-check{position:absolute;top:12px;right:14px;width:22px;height:22px;
-  border-radius:50%;border:2px solid var(--muted);background:var(--panel);
+  z-index:1;border-radius:50%;border:2px solid var(--muted);background:var(--panel);
   display:flex;align-items:center;justify-content:center;font-size:13px;
   color:var(--bg);transition:.15s;pointer-events:none}
 #sec-rutas .card.selected{border-color:var(--pr-yellow)!important;background:var(--panel-2)}
@@ -232,7 +250,7 @@
   #sec-rutas #overview-map{height:38vh;height:38dvh;min-height:240px;border-radius:12px}
   #sec-rutas .grid{grid-template-columns:1fr}
   #sec-rutas .card h3{font-size:18px}
-  #sec-rutas .card-thumb{width:96px;height:64px}
+  #sec-rutas .card-thumb{width:42%}
   #sec-rutas .month-label{font-size:17px}
   /* En móvil se caen tres columnas; con table-layout:fixed sus anchos de <col>
      seguirían reservados, así que aquí vuelve el reparto automático. */
@@ -242,7 +260,8 @@
     bottom:calc(66px + env(safe-area-inset-bottom));box-shadow:0 6px 24px #000000a0}
 }
 @media(hover:none) and (pointer:coarse){
-  #sec-rutas .pill,#sec-rutas .sort-btn,#sec-rutas .filter-clear,#sec-rutas .month-sel-btn{min-height:40px}
+  #sec-rutas .pill,#sec-rutas .sort-btn,#sec-rutas .filter-clear,#sec-rutas .month-sel-btn,
+  #sec-rutas .search-input,#sec-rutas .dp-btn{min-height:44px}
   #sec-rutas .dp-nav{width:36px;height:36px}
   #sec-rutas .dp-day{padding:9px 0;font-size:13px}
   #sec-rutas .dp-pop{width:266px}
