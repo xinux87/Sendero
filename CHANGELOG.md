@@ -28,6 +28,13 @@ mismos GPX, mismas fotos, misma base de datos.
   cuándo, **descargar todas las rutas** de golpe para llevarlas al monte sin haberlas
   abierto, **comprobar la sincronización** contra el servidor (y reparar solo lo que
   divergía), ver y reenviar los **cambios pendientes**, y vaciar la copia local.
+- **El mapa de una ruta, guardado en el móvil.** Botón «⬇ Mapa sin conexión» en el detalle
+  de una ruta y en el de un plan: descarga solo la franja de mapa por la que pasa el
+  track, no una región. Una ruta de 40 km son unas 380 teselas (~9 MB) y una caminata de
+  14 km unas 170. Es lo que permite salir al monte con el mapa de fondo aunque el servidor
+  se quede apagado en casa — la capa PMTiles, en cambio, necesita el servidor encendido.
+  Al volver a abrir la ruta te dice si ya lo tienes, y en Ajustes → Sin conexión se ve
+  cuánto ocupa y se puede borrar.
 
 ### Cambiado
 - **Ninguna pantalla recarga la página.** Dashboard, Mis Rutas, Mis Planes, el detalle de
@@ -68,10 +75,10 @@ mismos GPX, mismas fotos, misma base de datos.
   `node tests/sec_smoke.js`. Playwright NO entra en `requirements-dev.txt`.
 
 ### Pendiente
-- Descargar teselas de mapa por zona (§6.2 del plan) sigue sin hacerse, y con motivo
-  explicado en el roadmap: las capas de terceros no se pueden cachear en masa por su
-  política de uso, y para la capa offline propia haría falta un lector de PMTiles desde el
-  almacenamiento del navegador que no se puede probar sin un archivo de ejemplo.
+- Descargar **regiones** enteras de mapa (el §6.2 original del plan) sigue descartado: las
+  capas son de terceros y su política de uso no admite descargas masivas. El caso real
+  —tener el mapa de la ruta que vas a hacer— se resuelve con el botón por ruta descrito
+  arriba, que baja cientos de teselas en vez de cientos de miles.
 
 ## [0.6.0] — 2026-07-25
 

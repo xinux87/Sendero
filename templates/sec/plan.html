@@ -18,10 +18,15 @@
     <button class="btn sm" id="pl-download-btn" onclick="SEC.plan.downloadGpx()" style="display:none">
       ⬇ Descargar GPX
     </button>
+    <button class="btn ghost sm" id="pl-offline-btn" onclick="SEC.plan.downloadMap()"
+            title="Guarda en este dispositivo las teselas del mapa a lo largo de la ruta">
+      ⬇ Mapa sin conexión
+    </button>
     <button class="btn ghost sm" onclick="SEC.plan.renamePlan()">Renombrar</button>
     <button class="btn ghost sm" onclick="SEC.plan.removePlan()"
       style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
   </div>
+  <div id="pl-offline-info" class="offline-map-info hidden"></div>
 </div>
 
 <div id="pl-map"></div>

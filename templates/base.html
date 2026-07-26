@@ -534,7 +534,18 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
              style="display:none;margin-bottom:24px"><div class="upload-bar-fill" id="off-prefetch-bar"></div></div>
         <div style="margin-bottom:24px"></div>
 
-        <div class="cfg-subhead"><span class="n">3</span> Cambios pendientes de enviar</div>
+        <div class="cfg-subhead"><span class="n">3</span> Mapas descargados</div>
+        <div class="cfg-hint" style="margin-bottom:10px">
+          El botón «⬇ Mapa sin conexión» de cada ruta o plan guarda solo la franja de teselas
+          por la que pasa el track (unas 250 para 40 km, ~6 MB), no una región entera. Es lo
+          que hace que el mapa se vea en el monte con el servidor apagado.
+        </div>
+        <div id="off-tiles" class="cfg-hint" style="margin-bottom:10px">—</div>
+        <button class="btn ghost sm" onclick="offClearTiles()"
+                style="border-color:var(--gr-red);color:var(--gr-red);margin-bottom:24px">
+          Borrar los mapas descargados</button>
+
+        <div class="cfg-subhead"><span class="n">4</span> Cambios pendientes de enviar</div>
         <div class="cfg-hint" style="margin-bottom:10px">
           Lo que editaste sin conexión y aún no ha llegado al servidor. Se envía solo al
           recuperar la red; aquí puedes forzarlo o descartarlo.
@@ -547,7 +558,7 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
         </div>
 
         <hr class="cfg-actions-sep">
-        <div class="cfg-subhead"><span class="n">4</span> Vaciar la copia local</div>
+        <div class="cfg-subhead"><span class="n">5</span> Vaciar la copia local</div>
         <div class="cfg-hint" style="margin-bottom:10px">
           Borra lo guardado en <em>este dispositivo</em> (rutas, planes y detalles). No toca
           nada del servidor: se vuelve a descargar en la próxima visita. Útil si algo se ve

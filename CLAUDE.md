@@ -27,10 +27,11 @@ vieja y nueva — todo se toca en `static/js/sec/` (ver "Frontend").
   guardado en el servidor y cada guardado lleva `base_version`; encolar eso sería
   inventarse decisiones del servidor), subir rutas o fotos, Immich, reescanear y borrar.
   Todas avisan en vez de fallar en silencio.
-- **Único punto del plan sin hacer: §6.2** (teselas por zona). Decisión razonada, no
-  olvido: cachear en masa las 4 capas de terceros va contra su política de uso, y para el
-  escenario "ni servidor ni internet" haría falta guardar el `.pmtiles` entero en el
-  navegador con un `Source` propio de pmtiles.js. Está descrito en el roadmap §6.2.
+- **Mapa sin conexión por ruta** (§6.2, replanteada): el botón «⬇ Mapa sin conexión» del
+  detalle de una ruta o de un plan descarga solo el **corredor** de teselas del track
+  (40 km ≈ 380 teselas ≈ 9 MB), no una región. Es lo que hace que el mapa se vea con el
+  servidor apagado — la capa PMTiles de §6.1 necesita el servidor. Descargar regiones
+  enteras sigue descartado: las 4 capas son de terceros y su política de uso no lo admite.
 - **Al publicar**: `APP_VERSION` invalida el precache del Service Worker, así que este
   trabajo NO debe salir sin subir la versión (ver "Publicar una versión").
 
@@ -42,6 +43,7 @@ python app.py                      # http://localhost:8080, init_db() automátic
 python -m pytest                   # tests unitarios (tests/): editing, parsers, FIT, gps_analysis
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
 node tests/sec_smoke.js            # sec/detalle.js carga contra los ids reales del markup
+node tests/tiles_smoke.js          # geometría del corredor de teselas (§6.2)
 
 # end-to-end en un navegador real (Playwright; NO va en requirements-dev.txt)
 python -m venv /tmp/pw && /tmp/pw/bin/pip install playwright
@@ -229,6 +231,8 @@ static/js/core/    chrome.js  helpers globales ($, toast, fmtKm/fmtDur/fmtDate, 
                               de una sección una sola vez
                    router.js  Router de las 6 vistas + window.go()
                    store.js   IndexedDB + sincronización delta + outbox (§4/§7)
+                   tiles.js   mapa sin conexión de UNA ruta: corredor de teselas
+                              del track, caché `sendero-tiles-v1` y su UI (§6.2)
 static/js/sec/     un archivo por sección, en IIFE, publicando
                    window.SEC.<sec> = {mount(params,opts), unmount()}
 static/css/        el CSS de cada sección migrada, escopado bajo #sec-<sec>
@@ -529,6 +533,32 @@ desmonta cuando la sección no cambia.
 | `IMMICH` | booleano; activado tras `/api/config`, controla el botón Immich |
 | `hoverD` | distancia (km) resaltada ahora mismo en el hover sincronizado mapa↔gráficos, o `null` |
 | `trackCumKm` | distancia acumulada (km) por punto de `current.geojson`, recalculada en cada `renderMap()` |
+
+### Mapa sin conexión de una ruta (`static/js/core/tiles.js`)
+El botón «⬇ Mapa sin conexión» (detalle de ruta y de plan) guarda en el navegador la franja
+de teselas por la que pasa el track. Es lo único que hace visible el mapa **sin servidor**:
+la capa «Offline (local)» de §6.1 la sirve Sendero desde su `.pmtiles`, así que necesita el
+servidor encendido; esto no.
+
+- **Corredor, no bbox**: `forTrack(coords)` toma las teselas que pisa el track más un anillo
+  de vecinas, en los zooms 10-15. Para 40 km son ~380 teselas (~9 MB); el bbox completo de
+  esa misma ruta serían miles. Van **ordenadas por zoom ascendente**: si la descarga se
+  corta, queda al menos la vista general.
+- **Caché aparte y que sobrevive a las versiones**: `sendero-tiles-v1` no lleva
+  `APP_VERSION` en el nombre y `activate` no la borra (está en `KEEP` de `static/sw.js`).
+  Son megas que el usuario pidió a mano: tirarlas al publicar le quitaría el mapa que se
+  llevó al monte. Se gestionan en Ajustes → Sin conexión.
+- **El SW las sirve con red primero** (`tileFirstNetwork`): con conexión gana la tesela
+  real, porque la guardada puede ser de hace meses. Sin conexión y sin tesela, devuelve un
+  **504 vacío** a propósito: MapLibre lo trata como hueco y sigue pintando el track.
+  Solo se mira la caché para URLs con forma `/{z}/{x}/{y}` (`ES_TESELA`), para no meter un
+  `caches.match()` en cada petición externa.
+- **Se descarga con `mode:'cors'`**, no `no-cors`: una respuesta opaca no la puede
+  decodificar MapLibre después. Las 4 capas ya envían CORS (si no, no se verían hoy).
+- **Términos de uso**: las capas son de terceros y piden no descargar en masa. Por eso esto
+  es siempre una acción explícita sobre una ruta concreta, con tope duro (`MAX_TILES`),
+  3 descargas en paralelo y pausa entre teselas. Si añades una capa nueva a `BASEMAP_TILES`,
+  mira su licencia antes de dejar que se pre-descargue.
 
 ### Escrituras en el detalle (`static/js/sec/detalle.js`)
 Dos categorías, y la diferencia importa:
@@ -978,6 +1008,9 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   En el navegador: DevTools → Application → Service Workers → "Offline" y recargar.
 - Si añadiste un archivo a `static/js/sec/` o `static/css/`: añádelo a `PRECACHE_URLS`
   de `static/sw.js`, o esa sección no se podrá montar sin conexión.
+- Si tocaste el mapa sin conexión por ruta (`static/js/core/tiles.js`, `tileFirstNetwork`
+  en el SW): `node tests/tiles_smoke.js`, y recuerda que la caché `sendero-tiles-v1` debe
+  seguir en `KEEP` del Service Worker (si sale, se borrará al publicar cada versión).
 - Si tocaste `_build_route_dict()`: verifica que `/api/routes/<id>` y
   `/Sendero/<nombre>` devuelven los mismos campos.
 - Si añadiste columnas a `/api/routes` (lista): tócalas en `ROUTE_LIST_COLS`

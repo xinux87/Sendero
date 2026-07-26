@@ -19,7 +19,10 @@
      una caché HTTP no. Las peticiones a /api/ pasan de largo; si fallan, el
      Store responde con su copia local.
    - `/tiles/*.pmtiles` tampoco: se pide por rangos (206) y una respuesta
-     parcial cacheada rompería el mapa. Las teselas offline son §6.
+     parcial cacheada rompería el mapa.
+   - Las teselas del mapa de fondo SÍ, pero solo las que el usuario descarga a
+     mano para una ruta concreta (§6.2, ver static/js/core/tiles.js): viven en
+     `sendero-tiles-v1`, que no lleva versión y `activate` no borra.
    - Sí se cachean el documento, el código, las fuentes, y las imágenes que ya
      son inmutables o revalidables (miniaturas y fotos).
 */
@@ -29,7 +32,11 @@ const RUNTIME  = 'sendero-doc-' + VERSION;
 /* Las imágenes no dependen de la versión de la app: sobreviven a las
    actualizaciones a propósito (son cientos de fotos y miniaturas). */
 const MEDIA    = 'sendero-media-v1';
-const KEEP     = [PRECACHE, RUNTIME, MEDIA];
+/* Teselas del mapa descargadas por ruta (static/js/core/tiles.js). Tampoco
+   dependen de la versión: son datos que el usuario pidió a mano, no código, y
+   borrarlos al publicar sería tirar el mapa que se llevó al monte. */
+const TILES    = 'sendero-tiles-v1';
+const KEEP     = [PRECACHE, RUNTIME, MEDIA, TILES];
 
 /* El shell sin datos: es lo que se sirve al navegar sin conexión a una vista que
    la SPA aloja. El router lee location.pathname y monta la sección, y los datos
@@ -47,6 +54,7 @@ const PRECACHE_URLS = [
   '/static/js/core/chrome.js',
   '/static/js/core/loader.js',
   '/static/js/core/store.js',
+  '/static/js/core/tiles.js',
   '/static/js/core/router.js',
   '/static/js/sec/dashboard.js',
   '/static/js/sec/rutas.js',
@@ -208,6 +216,25 @@ async function staleWhileRevalidate(req, cacheName) {
   return res || new Response('', {status: 504, statusText: 'sin conexión'});
 }
 
+/* /{z}/{x}/{y} con o sin extensión: sirve para las 4 capas base y para el DEM. */
+const ES_TESELA = /\/\d{1,2}\/\d{1,7}\/\d{1,7}(\.\w+)?$/;
+
+/* Red primero y caché de teselas como respaldo. Al revés no: con conexión se
+   prefiere la tesela real (la descargada puede ser de hace meses), y sin
+   conexión la guardada es lo único que hay. */
+async function tileFirstNetwork(req) {
+  try {
+    return await fetch(req);
+  } catch (e) {
+    const c = await caches.open(TILES);
+    const hit = await c.match(req.url);
+    if (hit) return hit;
+    // Sin tesela: un 504 vacío. MapLibre lo trata como hueco y sigue pintando
+    // el resto del mapa (el track incluido), que es lo que importa.
+    return new Response('', {status: 504, statusText: 'tesela no descargada'});
+  }
+}
+
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -216,7 +243,14 @@ self.addEventListener('fetch', e => {
   if (req.headers.has('range')) return;
 
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;      // terrain, otros hosts
+  if (url.origin !== self.location.origin) {
+    // Teselas de otro host: si son de una ruta que el usuario descargó para
+    // usar sin conexión, se sirven de su caché. Solo se mira la caché para URLs
+    // con forma /{z}/{x}/{y}, para no meter un caches.match() en CADA petición
+    // externa. Con red, la red gana: así una tesela vieja no se queda pegada.
+    if (ES_TESELA.test(url.pathname)) { e.respondWith(tileFirstNetwork(req)); }
+    return;                                             // resto: red y nada más
+  }
 
   if (req.mode === 'navigate') { e.respondWith(handleDocument(req)); return; }
 

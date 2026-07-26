@@ -131,6 +131,9 @@ def esperar_mapa(page, sel="#d-map"):
         timeout=20000)
 
 
+Tiles_MAX = 3000     # el tope duro de static/js/core/tiles.js
+
+
 def api(page, path):
     return page.evaluate("""async p => { const r = await fetch(p); return r.ok ? r.json() : null; }""", path)
 
@@ -141,8 +144,13 @@ def main():
         ctx = navegador.new_context(viewport={"width": 1400, "height": 950})
         # Todo lo que no sea Sendero se responde con una tesela lisa (ver TESELA_PNG).
         # El patrón excluye BASE con un lookahead para no tocar NADA de la app.
-        ctx.route(re.compile(r"^(?!" + re.escape(BASE) + r")"),
-                  lambda route, req: route.fulfill(status=200, content_type="image/png", body=TESELA_PNG))
+        # Con nombre porque hay una comprobación que necesita quitarlo: mientras el
+        # stub esté puesto, responde él y no se puede saber si la tesela vino de la
+        # caché del Service Worker o del propio stub.
+        patron_externo = re.compile(r"^(?!" + re.escape(BASE) + r")")
+        def stub_tesela(route, req):
+            route.fulfill(status=200, content_type="image/png", body=TESELA_PNG)
+        ctx.route(patron_externo, stub_tesela)
         page = ctx.new_page()
         con = Consola(page)
 
@@ -738,7 +746,101 @@ def main():
         check(True, "«Enviar ahora» vacía la cola al volver la red")
         page.evaluate("closeSettings()")
 
-        # ── 14. errores de consola ────────────────────────────────────────────
+        # ── 14. mapa sin conexión de una ruta (roadmap §6.2) ──────────────────
+        seccion("Mapa sin conexión de UNA ruta (corredor de teselas)")
+        page.goto(f"{BASE}/Plan/{pid_plan}", wait_until="load")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=15000)
+        page.wait_for_function("() => document.querySelector('#pl-map canvas') !== null", timeout=20000)
+        # cuántas teselas necesita este track, con el mismo código que usa la app
+        page.evaluate("""async pid => {
+            const d = await (await fetch('/api/planned/' + pid)).json();
+            window.__track = d.geojson;
+        }""", pid_plan)
+        est = page.evaluate("""() => {
+            const t = Tiles.forTrack(window.__track);
+            return {n: t.length, mb: +Tiles.estimate(t).mb.toFixed(1),
+                    zooms: [...new Set(t.map(x => x.z))]};
+        }""")
+        check(0 < est["n"] < Tiles_MAX,
+              f"el corredor del plan son {est['n']} teselas (~{est['mb']} MB), zooms {est['zooms']}")
+        antes_cache = page.evaluate("""async () => {
+            const c = await caches.open('sendero-tiles-v1');
+            return (await c.keys()).length;
+        }""")
+
+        # se descarga sin el confirm (el diálogo se acepta) y se espera el aviso
+        page.evaluate("window.confirm = () => true;")
+        page.click("#pl-offline-btn")
+        page.wait_for_function(
+            "() => document.getElementById('pl-offline-info').textContent.includes('Mapa disponible')",
+            timeout=120000)
+        info = page.text_content("#pl-offline-info")
+        check("Mapa disponible" in info, f"la UI confirma la descarga: «{info.strip()[:70]}»")
+        despues_cache = page.evaluate("""async () => {
+            const c = await caches.open('sendero-tiles-v1');
+            return (await c.keys()).length;
+        }""")
+        check(despues_cache >= est["n"],
+              f"las teselas quedan en la caché sendero-tiles-v1 ({antes_cache} → {despues_cache})")
+
+        # al volver a entrar, lo dice sin que haya que pulsar
+        page.goto(f"{BASE}/Plan/{pid_plan}", wait_until="load")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=15000)
+        page.wait_for_function(
+            "() => document.getElementById('pl-offline-info').textContent.includes('Mapa disponible')",
+            timeout=20000)
+        check(True, "al reabrir el plan avisa de que su mapa ya está descargado")
+
+        # Y AHORA lo que importa: sin conexión, el Service Worker sirve esas teselas.
+        # Se quita el stub de teselas falsas: con él puesto responde él a todo y la
+        # comprobación no distinguiría la caché del SW de la propia interceptación.
+        ctx.unroute(patron_externo, stub_tesela)
+        ctx.set_offline(True)
+        page.goto(f"{BASE}/Plan/{pid_plan}", wait_until="load")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=20000)
+        page.wait_for_function("() => document.querySelector('#pl-map canvas') !== null", timeout=25000)
+        page.wait_for_timeout(3000)
+        # El track se relee del Store, no de window: el page.goto anterior creó un
+        # documento nuevo y cualquier variable de la página se perdió.
+        desde_sw = page.evaluate("""async pid => {
+            // ¿Puede el propio SW resolver una tesela del corredor sin red?
+            const d = await Store.plan(pid);
+            const t = Tiles.forTrack(d.geojson)[0];
+            const capa = document.querySelector('#pl-map select').value;
+            const u = Tiles.urlFor(capa, t);
+            try { const r = await fetch(u); return {ok: r.ok, status: r.status}; }
+            catch (e) { return {ok: false, error: String(e)}; }
+        }""", pid_plan)
+        check(desde_sw.get("ok"),
+              f"SIN CONEXIÓN una tesela del corredor se sirve desde la caché ({desde_sw})")
+        fuera = page.evaluate("""async () => {
+            // una tesela FUERA del corredor no está, y debe fallar de forma controlada
+            const r = await fetch('https://a.tile.opentopomap.org/12/1/1.png');
+            return r.status;
+        }""")
+        check(fuera == 504,
+              f"una tesela no descargada da 504 controlado, no una excepción ({fuera})")
+        ctx.set_offline(False)
+        ctx.route(patron_externo, stub_tesela)      # se devuelve para el resto
+
+        # y se puede vaciar desde Ajustes
+        page.click("#nav-ajustes")
+        page.wait_for_selector("#cfg-overlay:not(.hidden)", timeout=8000)
+        page.click("#cfg-nav-offline")
+        page.wait_for_function(
+            "() => document.getElementById('off-tiles').textContent.includes('teselas')",
+            timeout=10000)
+        check("teselas guardadas" in page.text_content("#off-tiles"),
+              f"Ajustes informa del espacio: «{page.text_content('#off-tiles').strip()}»")
+        page.evaluate("window.confirm = () => true;")
+        page.click("#cfg-sec-offline button:has-text('Borrar los mapas descargados')")
+        page.wait_for_function(
+            "() => document.getElementById('off-tiles').textContent.includes('Ningún mapa')",
+            timeout=10000)
+        check(True, "y permite borrarlos")
+        page.evaluate("closeSettings()")
+
+        # ── 15. errores de consola ────────────────────────────────────────────
         seccion("Errores de JavaScript")
         errs = con.limpias()
         check(not errs, "ningún error de JS ni excepción sin capturar"

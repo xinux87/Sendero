@@ -17,7 +17,7 @@ Objetivo triple, en este orden de dependencia:
 **Última versión publicada con avance de este plan: v0.6.0 (2026-07-25)** = fases 1, 4 y
 6.1 completas + la fase 2/3 arrancada (shell + sección `plan`).
 
-**Sin publicar (en `master`)**: el plan está **terminado** salvo §6.2. Las 6 vistas son
+**Sin publicar (en `master`)**: el plan está **terminado**. Las 6 vistas son
 secciones de un único shell (fases 2 y 3), la PWA funciona (5), el prefetch de detalles y
 el panel de gestión están en Ajustes → Sin conexión (6.3) y la cola de escrituras tiene su
 UI (7). Verificado con `tests/e2e_spa.py`: ~115 comprobaciones en un navegador real.
@@ -27,16 +27,10 @@ UI (7). Verificado con `tests/e2e_spa.py`: ~115 comprobaciones en un navegador r
 > Las 6 vistas son secciones de `templates/shell.html` y no queda ninguna recarga de
 > documento. Lo que hay pendiente es opcional y está acotado:
 >
-> 1. **§6.2, teselas por zona** — decidido que NO para las 4 capas de terceros (su
->    política de uso prohíbe la descarga masiva). Para el escenario "ni servidor ni
->    internet" haría falta guardar el `.pmtiles` completo en el navegador y leerlo con un
->    `Source` propio de pmtiles.js. No se ha implementado a ciegas porque no hay ningún
->    `.pmtiles` en `data/tiles/` con el que probarlo, y es la pieza más fácil de romper en
->    silencio. Diseño y criterios en §6.2.
-> 2. **Publicar** — `APP_VERSION` invalida el precache del Service Worker, así que este
+> 1. **Publicar** — `APP_VERSION` invalida el precache del Service Worker, así que este
 >    trabajo no debe salir sin subir la versión (los 4 puntos de "Publicar una versión" de
 >    CLAUDE.md).
-> 3. **Borrar las plantillas legacy** (`app.html`, `sendero.html`, `editor.html`,
+> 2. **Borrar las plantillas legacy** (`app.html`, `sendero.html`, `editor.html`,
 >    `rutas.html`, `overview.html`, `planificacion.html`, `plan_detalle.html`): están en
 >    git y ya nadie las sirve. Se conservaron para poder comparar durante la migración; el
 >    momento natural de borrarlas es el commit siguiente al de la versión.
@@ -50,11 +44,11 @@ UI (7). Verificado con `tests/e2e_spa.py`: ~115 comprobaciones en un navegador r
 | 6.1 PMTiles | **hecha** | `api/maps.py` (`/tiles/<name>` con Range/206, `/api/maps`), `TILES_DIR`, capa `OFFLINE_LAYER` + `buildStyle`/`applyBasemap`/`defaultBasemap` en `shared.js`, Ajustes → Mapas, y los 5 mapas de la app pasan ya por `buildStyle()` |
 | 5 PWA/SW | **hecha** | `api/pwa.py` (`/sw.js` con `APP_VERSION` inyectada, `/manifest.webmanifest`, `/app-shell`), `static/sw.js`, iconos 192/512/maskable en `static/icons/`, badge `#net-badge` en el header. Ver las 3 desviaciones respecto al plan más abajo (§5) |
 | 6.3 Datos offline | **hecha** | Ajustes → Sin conexión: estado de la copia local (rutas, planes, detalles, bytes, última sincronización), "Descargar todas las rutas" con progreso (`Store.prefetchAll`), "Comprobar sincronización" (`Store.verify`, por manifiesto) y "Vaciar copia local" |
-| 6.2 Teselas por zona | **descartada / pendiente** | Decisión, no olvido: ver §6.2 |
+| 6.2 Teselas offline | **hecha, replanteada** | Ya no se descargan zonas, sino el **corredor de una ruta**: `static/js/core/tiles.js` + botón «⬇ Mapa sin conexión» en detalle y plan + caché `sendero-tiles-v1` servida por el SW. 40 km = ~380 teselas (~9 MB). Descargar regiones enteras sigue descartado (política de uso de las capas). Ver §6.2 |
 | 7 Escrituras | **hecha** | `Store.patch()` + `outbox` + `flushOutbox()`, usados por `plan`, `detalle` y el editor; badge en el header (§5.4) y panel en Ajustes → Sin conexión con lista de pendientes, "Enviar ahora" y "Descartar todo" |
 
-No queda orden pendiente: lo único abierto es §6.2, que es una decisión de producto más
-que de implementación (ver ahí).
+No queda nada pendiente del plan. §6.2 se replanteó a mitad (mapa por ruta en vez de por
+zona) y eso resultó ser más pequeño Y más útil: ver ahí.
 
 Restricciones que se respetan (CLAUDE.md): **sin build step** (regla 1), UI en español
 (regla 8), paleta actual (regla 9), persistencia solo en `/data` (regla 7), migraciones
@@ -604,29 +598,58 @@ escenarios de "sin conexión" con soluciones distintas:
    que el usuario no puede inspeccionar.
 
 
-#### Estado: **no implementado, y por qué** (decisión, no olvido)
+#### Estado: **hecho, pero replanteado** — el mapa de UNA ruta, no de una zona
 
-Los tres puntos de arriba siguen siendo la referencia si algún día se hace, pero al llegar
-aquí la conclusión fue que ninguno se puede entregar bien hoy:
+Al llegar aquí, la conversación con el usuario cambió el planteamiento, y a mejor:
 
-- **El punto 1 (oportunista) no se puede aplicar a nada útil.** Solo sería legítimo con la
-  capa offline local, y esa capa **ya la sirve Sendero** desde `data/tiles/*.pmtiles`: si el
-  servidor está accesible (escenario A, el mayoritario), cachear en el navegador no añade
-  nada. Y se pide por `Range`: una respuesta 206 no se puede guardar en Cache Storage, así
-  que "cachear la tesela que se pinta" no tiene equivalente directo con PMTiles.
-- **El punto 2 (deliberada) exige un `Source` propio de pmtiles.js** que lea de Cache
-  Storage/OPFS en vez de por HTTP, más una estimación de tamaño fiable. Es una pieza
-  perfectamente factible, pero es también la más fácil de romper en silencio (un mapa que
-  se queda gris sin decir por qué), y **en este repositorio no hay ningún `.pmtiles` con el
-  que probarla**: `data/tiles/` está vacío. Escribirla a ciegas sería añadir código no
-  ejercitado al camino más frágil de todo el plan.
-- **El punto 3 (gestión del espacio) sí se hizo**, pero para los datos, no para las
-  teselas: Ajustes → Sin conexión dice cuánto ocupa la copia local y permite vaciarla.
+> «que los mapas offline solo sean de las rutas, no hace falta de todos los mapas de todas
+> las zonas, y el objetivo sería tener el mapa de una de las rutas a hacer en el futuro»
 
-Qué haría falta para retomarlo, en orden: (a) un `.pmtiles` regional de prueba en
-`data/tiles/`; (b) un `Source` de pmtiles.js respaldado por Cache Storage, con test de
-humo; (c) el botón "descargar esta zona" con estimación previa de MB y confirmación; (d) la
-gestión de espacio de esa caché junto a la de datos. Sin (a) no se debería empezar por (b).
+Eso convierte un problema grande en uno pequeño. Los números, medidos sobre la BD real:
+
+| Ruta | Teselas z10-15 | Tamaño |
+|---|---|---|
+| 39 km en bici | 254 | ~6 MB |
+| 34 km | 235 | ~6 MB |
+| 14 km andando | 120 | ~3 MB |
+
+Un **corredor** a lo largo del track (las teselas que pisa más un anillo de vecinas) son
+**cientos** de teselas, no cientos de miles. Y resuelve el escenario que de verdad
+importaba —el móvil en el monte con el servidor apagado en casa—, que la capa PMTiles de
+§6.1 **no** resuelve, porque esa la sirve Sendero y necesita el servidor encendido.
+
+**Implementación**
+- `static/js/core/tiles.js`: `forTrack(coords)` calcula el corredor (zoom 10-15, anillo de
+  1 tesela, ordenado de zoom bajo a alto para que una descarga cortada deje al menos la
+  vista general); `download()` las guarda en la caché `sendero-tiles-v1`;
+  `downloadForTrack()`/`statusForTrack()` son el flujo con su UI, compartidos por las dos
+  vistas que lo ofrecen.
+- Botón **«⬇ Mapa sin conexión»** en el detalle de ruta y en el de plan, con estimación y
+  confirmación antes de empezar, barra de progreso, y aviso al reabrir la ruta si ya está.
+- `static/sw.js`: las peticiones a otro host con forma `/{z}/{x}/{y}` van por
+  `tileFirstNetwork()` — **red primero** (con conexión, la tesela real; una guardada puede
+  ser de hace meses) y la caché como respaldo. Si no está, un 504 vacío: MapLibre lo trata
+  como hueco y sigue pintando el track, que es lo que importa.
+- La caché de teselas **no** lleva la versión en el nombre y `activate` no la borra: son
+  megas que el usuario pidió a mano, y tirarlas al publicar sería quitarle el mapa que se
+  llevó al monte. Se gestiona en Ajustes → Sin conexión (cuánto ocupa, borrar).
+
+**Sobre los términos de uso**, que es lo que bloqueaba el planteamiento original: las 4
+capas son de terceros y sus políticas piden no descargar en masa. La versión por ruta se
+mantiene del lado razonable por construcción: es una acción explícita del usuario sobre una
+ruta concreta, con tope duro (`MAX_TILES = 3000`), 3 descargas en paralelo y una pausa de
+60 ms entre teselas (~50/s como techo). Descargar **regiones** sigue descartado.
+
+**Lo que sigue sin hacerse, y ya como nota al pie**: guardar un `.pmtiles` completo en el
+navegador con un `Source` propio de pmtiles.js. Con el mapa por ruta funcionando, deja de
+ser necesario para el caso de uso real; y seguiría sin poderse probar, porque no hay ningún
+`.pmtiles` en `data/tiles/`.
+
+**Prueba**: `node tests/tiles_smoke.js` (geometría del corredor: tamaño, sin repetidos,
+orden por zoom, URLs) y el bloque «Mapa sin conexión de UNA ruta» de `tests/e2e_spa.py`,
+que descarga de verdad, corta la red y comprueba que la tesela del corredor se sirve (200)
+y que una que no se descargó da 504 controlado. Ese test **quita su propio stub de teselas**
+antes de comprobarlo: con el stub puesto respondería él y la prueba no demostraría nada.
 
 ### 6.3 Datos de ruta offline
 

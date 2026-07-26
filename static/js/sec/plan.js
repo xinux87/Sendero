@@ -20,6 +20,10 @@
   'use strict';
 
   let map = null, elevChart = null, current = null, pid = null;
+  /* Capa base que se está viendo. En el ámbito del módulo, no dentro de
+     initMap(), porque el botón "Mapa sin conexión" necesita saber de qué capa
+     descargar las teselas. */
+  let capa = null;
   // Token de montaje: si se navega a otro plan mientras el fetch está en vuelo,
   // la respuesta vieja no debe pintar nada.
   let _tok = 0;
@@ -69,7 +73,7 @@
     const b = trackBounds();
     const cx = b ? (b[0][0] + b[1][0]) / 2 : -1.6;
     const cy = b ? (b[0][1] + b[1][1]) / 2 : 42.5;
-    let capa = defaultBasemap();
+    if (!capa) capa = defaultBasemap();
     map = new maplibregl.Map({
       container: 'pl-map', style: buildStyle(capa),
       center: [cx, cy], zoom: b ? 12 : 6, attributionControl: false,
@@ -257,6 +261,19 @@
   /* ── acciones ──────────────────────────────────────────────────────────── */
   function downloadGpx() { window.location = `/api/planned/${pid}/gpx`; }
 
+  /* Mapa sin conexión de ESTA ruta (roadmap §6.2): descarga la franja de
+     teselas por la que pasa el track, no una región. Es el caso de uso de esta
+     vista: una ruta que vas a hacer, guardada antes de salir de casa. */
+  function downloadMap() {
+    Tiles.downloadForTrack({
+      coords: (current && current.geojson) || [],
+      capa: capaActual(), infoEl: $('#pl-offline-info'),
+      nombre: current && current.name,
+    });
+  }
+  /* La capa que se está viendo ahora mismo en el mapa de esta sección. */
+  const capaActual = () => capa || defaultBasemap();
+
   async function renamePlan() {
     const name = prompt('Nuevo nombre:', current.name);
     if (!name || name === current.name) return;
@@ -297,6 +314,9 @@
     $('#pl-notes').value      = current.notes || '';
     initMap();            // el track se dibuja en map.on('load')
     drawElevation();
+    // Si el mapa de esta ruta ya está descargado, decirlo sin que haya que pulsar.
+    Tiles.statusForTrack({coords: current.geojson, capa: capaActual(),
+                          infoEl: $('#pl-offline-info')});
   }
 
   async function mount(params, opts) {
@@ -338,6 +358,6 @@
   window.SEC.plan = {
     mount, unmount,
     openActivityPicker, closeActivityPicker, pickActivity,
-    saveNotes, downloadGpx, renamePlan, removePlan,
+    saveNotes, downloadGpx, renamePlan, removePlan, downloadMap,
   };
 })();

@@ -702,6 +702,16 @@
 
   function openEditor() { go(`/Sendero/${encodeURIComponent(pid)}/editor`); }
 
+  /* Mapa sin conexión de ESTA ruta (roadmap §6.2): la franja de teselas que
+     cubre el track, no una región. Útil para repetir una ruta ya hecha. */
+  function downloadMap() {
+    Tiles.downloadForTrack({
+      coords: (current && current.geojson) || [],
+      capa: curBasemap || defaultBasemap(), infoEl: q('#d-offline-info'),
+      nombre: current && current.name,
+    });
+  }
+
   function downloadGpx() {
     const a = document.createElement('a');
     a.href = `/api/routes/${encodeURIComponent(pid)}/gpx?download=1`;
@@ -900,6 +910,9 @@
     if (ibtn) ibtn.classList.toggle('hidden', !IMMICH);
     renderActivity(); renderDupBanner();
     renderStats(); renderMap(); renderElev(); renderSpeed(); renderHR(); renderGallery();
+    // Si el mapa de esta ruta ya está descargado, decirlo sin que haya que pulsar.
+    Tiles.statusForTrack({coords: current.geojson, capa: curBasemap || defaultBasemap(),
+                          infoEl: q('#d-offline-info')});
     window.scrollTo(0, 0);
   }
 
@@ -1015,7 +1028,7 @@
   window.SEC.detalle = {
     mount, unmount,
     openActivityPicker, closeActivityPicker, setActivity,
-    toggle3D, saveNotes, rescanRoute, renameRoute, removeRoute, downloadGpx,
+    toggle3D, saveNotes, rescanRoute, renameRoute, removeRoute, downloadGpx, downloadMap,
     openEditor, dismissDup, delPhoto,
     openImmich, closeImmich, renderImmich, confirmImmich, selectAllImmich,
     openLightbox, closeLightbox, lbNav, lbDelete,

@@ -68,3 +68,12 @@
 #sec-plan .modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:100%;
   max-width:500px;padding:18px;overflow:hidden}
 #sec-plan .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+
+/* Aviso/progreso de la descarga del mapa sin conexión (roadmap §6.2). */
+#sec-plan .offline-map-info{margin-top:10px;font-size:12px;color:var(--muted);
+  background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+#sec-plan .offline-map-info .bar{background:var(--line);border-radius:4px;height:5px;
+  margin:8px 0 0;overflow:hidden}
+#sec-plan .offline-map-info .bar i{display:block;height:100%;width:0;
+  background:var(--pr-yellow);border-radius:4px;transition:width .2s linear}
+#sec-plan .offline-map-info.ok{color:var(--pr-yellow);border-color:rgba(232,196,74,.4)}

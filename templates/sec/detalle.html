@@ -24,6 +24,8 @@
             onclick="$('#d-actions-more').classList.toggle('open')">⋯</button>
     <div id="d-actions-more" class="d-more">
       <button class="btn ghost sm" id="rescan-btn" onclick="SEC.detalle.rescanRoute(this)">↺ Reescanear</button>
+      <button class="btn ghost sm" onclick="SEC.detalle.downloadMap()"
+              title="Guarda en este dispositivo las teselas del mapa a lo largo de la ruta">⬇ Mapa sin conexión</button>
       <button class="btn ghost sm" onclick="SEC.detalle.downloadGpx()">↓ GPX</button>
       <button class="btn ghost sm" onclick="SEC.detalle.renameRoute()">Renombrar</button>
       <button class="btn ghost sm" onclick="SEC.detalle.removeRoute()" style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
@@ -32,6 +34,7 @@
 </div>
 
 <div id="dup-banner" class="dup-banner" style="display:none"></div>
+<div id="d-offline-info" class="offline-map-info hidden"></div>
 
 <div style="position:relative">
   <div id="d-map"></div>

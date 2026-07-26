@@ -43,9 +43,9 @@ function esc(s){return(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"
 /* ── PWA: Service Worker e indicador de estado (roadmap §5) ───────────────── */
 
 /* El SW se registra desde AQUÍ, no desde el shell, aunque el plan lo pusiera en
-   el shell: mientras la migración no termine, /dashboard, /rutas y
-   /planificacion los sirve templates/app.html, y registrándolo solo en el shell
-   esas tres vistas —las más usadas— se quedarían sin caché de código. */
+   el shell: chrome.js lo carga base.html, así que vale para cualquier documento
+   que la app llegue a servir en el futuro sin tener que acordarse de registrarlo
+   otra vez. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js', {scope: '/'})
@@ -55,8 +55,8 @@ if ('serviceWorker' in navigator) {
 
 /* Badge de estado: solo se muestra cuando hay algo que decir (sin conexión,
    sincronizando o con escrituras en cola). Vive en chrome.js porque el header es
-   de base.html y lo comparten la SPA nueva y la vieja; el Store puede no estar
-   cargado (app.html no lo usa todavía), así que todo lo suyo es opcional. */
+   de base.html; el Store se comprueba antes de usarlo porque base.html también
+   sirve documentos que no lo cargan. */
 function _netBadge(text, cls) {
   const b = $('#net-badge');
   if (!b) return;
@@ -132,6 +132,34 @@ async function loadOffline() {
     est.textContent = 'No se pudo leer el almacén local.';
   }
   renderOutbox();
+  renderTiles();
+}
+
+/* Teselas de mapa descargadas por ruta (static/js/core/tiles.js). Es una caché
+   aparte de la de datos: se borra por separado porque son megas y el usuario
+   querrá decidir cuándo. */
+async function renderTiles() {
+  const el = $('#off-tiles');
+  if (!el) return;
+  if (typeof Tiles === 'undefined') { el.textContent = '—'; return; }
+  try {
+    const u = await Tiles.usage();
+    el.textContent = u.tiles
+      ? `${u.tiles} teselas guardadas (~${(u.tiles * 25 / 1024).toFixed(1)} MB).`
+      : 'Ningún mapa descargado todavía.';
+  } catch (e) { el.textContent = '—'; }
+}
+
+async function offClearTiles() {
+  if (typeof Tiles === 'undefined') return;
+  const u = await Tiles.usage();
+  if (!u.tiles) { toast('No hay mapas descargados'); return; }
+  if (!confirm(`¿Borrar las ${u.tiles} teselas descargadas?\n\n`
+    + 'Las rutas y sus datos no se tocan: solo el mapa de fondo, que se puede volver '
+    + 'a descargar desde cada ruta.')) return;
+  await Tiles.clear();
+  toast('Mapas descargados borrados');
+  renderTiles();
 }
 
 async function renderOutbox() {
