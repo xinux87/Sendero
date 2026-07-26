@@ -1,147 +1,214 @@
-/* Sección `rutas` ("Mis Rutas"). Extraído de templates/app.html (roadmap §2-§3).
+/* Sección `rutas` ("Mis Rutas") — rediseño de redesign/ (2a).
+
    Escopado bajo #sec-rutas: .card, .grid, .filters y compañía chocarían con las
    otras secciones ahora que comparten documento. Lo común a varios mapas
    (overrides de MapLibre), los loaders flotantes, .view-btn (vive en la cabecera,
-   fuera de la sección), .tabbar y .fab están en base.html. */
-#sec-rutas .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
-#sec-rutas .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:11px;
-  padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px;overflow:hidden}
-#sec-rutas .card:hover{filter:brightness(1.06);transform:translateY(-2px)}
-#sec-rutas .card h3{font-size:22px;font-weight:600;padding-right:34px;line-height:1.2;
-  max-height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-#sec-rutas .card .date{color:var(--muted);font-size:12px;margin:1px 0 0;text-transform:uppercase;letter-spacing:.08em}
-#sec-rutas .card-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:14.5px}
-#sec-rutas .card-dist{color:var(--pr-yellow);font-weight:700;font-family:'Saira Condensed',sans-serif;letter-spacing:.02em}
-#sec-rutas .card-loc{color:var(--muted);display:inline-flex;align-items:center;gap:3px;min-width:0;
-  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#sec-rutas .card-loc svg{flex-shrink:0;opacity:.7}
-#sec-rutas .card-act{position:absolute;top:12px;right:12px;line-height:0}
-#sec-rutas .card-dup{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;
-  color:var(--gr-red);background:rgba(214,69,65,.14);border:1px solid rgba(214,69,65,.4);
-  border-radius:6px;padding:1px 7px;text-transform:uppercase;letter-spacing:.04em}
-#sec-rutas .card-thumb{position:absolute;right:0;top:0;bottom:0;width:42%;
-  pointer-events:none;overflow:hidden;border-radius:0 11px 11px 0}
-#sec-rutas .card-thumb::before{content:'';position:absolute;top:0;left:0;bottom:0;width:70%;
-  background:linear-gradient(90deg,var(--panel) 0%,transparent 100%);z-index:1}
-#sec-rutas .card-thumb img{width:100%;height:100%;object-fit:contain;object-position:center;opacity:0.55;display:block}
-#sec-rutas .card-body{position:relative}
-#sec-rutas .filters{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;
-  background:var(--panel);border:1px solid var(--line);border-radius:11px;
-  padding:14px 16px;margin-bottom:18px;position:relative;z-index:10}
-#sec-rutas .filter-group{display:flex;flex-direction:column;gap:6px}
-#sec-rutas .filter-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
-#sec-rutas .act-pills{display:flex;flex-wrap:wrap;gap:6px}
-#sec-rutas .pill{padding:5px 12px;border-radius:20px;border:1px solid var(--line);
-  background:transparent;color:var(--muted);font-size:12px;font-weight:600;
-  cursor:pointer;transition:all .15s;letter-spacing:.04em}
-#sec-rutas .pill:hover{border-color:var(--ink);color:var(--ink)}
-#sec-rutas .pill.on{color:#fff;border-color:transparent}
-#sec-rutas .filter-clear{padding:5px 12px;border-radius:20px;border:1px solid var(--line);
-  background:transparent;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s;align-self:flex-end}
+   fuera de la sección), .tabbar y .fab están en base.html.
+
+   Nada de hex sueltos: todo sale de las variables de base.html. */
+
+/* ── panel de filtros ──────────────────────────────────────────────────────── */
+#sec-rutas .filters{display:flex;flex-wrap:wrap;gap:34px;align-items:center;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:14px 18px;margin-bottom:18px;position:relative;z-index:10}
+#sec-rutas .filter-group{display:flex;flex-direction:column;gap:9px}
+#sec-rutas .filter-label{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;
+  letter-spacing:.16em;color:var(--muted-dim)}
+#sec-rutas .act-pills{display:flex;flex-wrap:wrap;gap:9px}
+/* Píldora de actividad: sin seleccionar va en su color sobre transparente; al
+   seleccionarla, relleno sólido con tinta oscura (el JS pone los colores, que
+   son los de cada actividad). */
+#sec-rutas .pill{padding:7px 16px;border-radius:999px;border:1px solid transparent;
+  background:transparent;font-size:13px;font-weight:500;cursor:pointer;
+  transition:filter .15s,background .15s,color .15s}
+#sec-rutas .pill:hover{filter:brightness(1.15)}
+#sec-rutas .filter-clear{padding:8px 14px;border-radius:999px;border:1px solid var(--line-strong);
+  background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s}
 #sec-rutas .filter-clear:hover{border-color:var(--gr-red);color:var(--gr-red)}
-#sec-rutas #overview-map{height:340px;border-radius:11px;border:1px solid var(--line);margin-bottom:18px;overflow:hidden}
+#sec-rutas .search-input{margin-left:auto;padding:9px 16px;width:230px;border-radius:999px;
+  background:var(--panel-2);color:var(--ink);border:1px solid var(--line-strong);
+  font-family:inherit;font-size:13px}
+#sec-rutas .search-input::placeholder{color:var(--muted-dim)}
+#sec-rutas .search-input:focus{outline:none;border-color:var(--pr-yellow)}
+#sec-rutas #overview-map{height:340px;border-radius:12px;border:1px solid var(--line);
+  margin-bottom:18px;overflow:hidden}
 #sec-rutas .ov-marker{cursor:pointer;filter:drop-shadow(0 2px 4px #00000080)}
-#sec-rutas .sort-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-#sec-rutas .sort-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
-#sec-rutas .sort-btn{padding:5px 14px;border-radius:20px;border:1px solid var(--line);background:transparent;
-  color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;letter-spacing:.04em}
-#sec-rutas .sort-btn:hover{border-color:var(--ink);color:var(--ink)}
-#sec-rutas .sort-btn.on{background:var(--panel-2);border-color:var(--pr-yellow);color:var(--pr-yellow)}
-#sec-rutas .sort-sep{width:1px;height:18px;background:var(--line);margin:0 4px}
+
+/* ── fila de orden ─────────────────────────────────────────────────────────── */
+#sec-rutas .sort-bar{display:flex;align-items:center;gap:14px;margin:20px 0 12px;flex-wrap:wrap}
+#sec-rutas .sort-label{font-family:var(--mono);font-size:12px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted-faint)}
+#sec-rutas .sort-btn{padding:7px 15px;border-radius:999px;border:1px solid var(--line-strong);
+  background:transparent;color:var(--ink);font-size:13px;cursor:pointer;transition:all .15s}
+#sec-rutas .sort-btn:hover{border-color:rgba(236,229,216,.32)}
+#sec-rutas .sort-btn.on{background:transparent;border-color:var(--pr-yellow);color:var(--pr-yellow)}
+#sec-rutas .sort-sep{width:1px;height:20px;background:rgba(236,229,216,.12)}
 #sec-rutas .edit-bar{display:none;align-items:center;gap:8px;flex-wrap:wrap;
-  margin-bottom:14px;padding:8px 12px;background:var(--panel-2);
-  border:1px solid var(--line);border-radius:8px}
+  margin-bottom:14px;padding:8px 12px;background:var(--panel);
+  border:1px solid var(--line-strong);border-radius:12px}
 #sec-rutas .edit-bar.on{display:flex}
-#sec-rutas .card-check{position:absolute;top:12px;right:12px;width:22px;height:22px;
+
+/* ── cabecera de mes ───────────────────────────────────────────────────────── */
+#sec-rutas .month-group{margin-bottom:26px}
+#sec-rutas .month-label{display:flex;align-items:center;gap:12px;margin:0 0 12px;
+  font-family:var(--display);font-size:20px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--sage)}
+#sec-rutas .month-label .month-count{font-family:var(--mono);font-size:11px;font-weight:400;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted-faint)}
+#sec-rutas .month-label::after{content:"";flex:1;height:1px;background:rgba(236,229,216,.1);
+  order:9}
+#sec-rutas .month-sel-btn{order:10;padding:4px 12px;border-radius:999px;
+  border:1px solid var(--pr-yellow);background:transparent;color:var(--pr-yellow);
+  font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .12s;
+  letter-spacing:.04em;flex-shrink:0}
+#sec-rutas .month-sel-btn:hover{background:rgba(227,178,60,.12)}
+#sec-rutas .month-sel-btn.all-sel{background:rgba(227,178,60,.18)}
+
+/* ── tarjeta de ruta ───────────────────────────────────────────────────────── */
+#sec-rutas .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+#sec-rutas .card{position:relative;background:var(--panel);border:1px solid var(--line);
+  border-left:4px solid var(--line-strong);border-radius:10px;padding:14px 16px;cursor:pointer;
+  transition:background .15s,transform .15s;overflow:hidden}
+#sec-rutas .card:hover{background:var(--panel-2);transform:translateY(-2px)}
+#sec-rutas .card h3{font-family:var(--display);font-size:19px;font-weight:500;line-height:1.2;
+  padding-right:34px;max-height:2.4em;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+#sec-rutas .card .date{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  color:var(--muted-faint);margin:5px 0 9px}
+#sec-rutas .card-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-family:var(--mono);font-size:13px}
+#sec-rutas .card-dist{color:var(--pr-yellow)}
+#sec-rutas .card-loc{color:var(--muted);display:inline-flex;align-items:center;gap:4px;
+  min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sec-rutas .card-loc svg{flex-shrink:0;opacity:.7}
+#sec-rutas .card-act{position:absolute;top:12px;right:14px;line-height:0}
+#sec-rutas .card-dup{display:inline-block;margin-top:8px;font-family:var(--mono);font-size:10.5px;
+  color:var(--gr-red);background:rgba(226,73,44,.14);border:1px solid rgba(226,73,44,.4);
+  border-radius:999px;padding:2px 9px;text-transform:uppercase;letter-spacing:.04em}
+/* Miniatura del track, anclada abajo a la derecha y al 22 % como el prototipo. */
+#sec-rutas .card-thumb{position:absolute;right:6px;bottom:0;width:130px;height:86px;
+  pointer-events:none;overflow:hidden;opacity:.22}
+#sec-rutas .card-thumb img{width:100%;height:100%;object-fit:contain;object-position:bottom right;
+  display:block}
+#sec-rutas .card-body{position:relative}
+#sec-rutas .card-check{position:absolute;top:12px;right:14px;width:22px;height:22px;
   border-radius:50%;border:2px solid var(--muted);background:var(--panel);
   display:flex;align-items:center;justify-content:center;font-size:13px;
   color:var(--bg);transition:.15s;pointer-events:none}
-#sec-rutas .card.selected{border-color:var(--pr-yellow)!important}
+#sec-rutas .card.selected{border-color:var(--pr-yellow)!important;background:var(--panel-2)}
 #sec-rutas .card.selected .card-check{background:var(--pr-yellow);border-color:var(--pr-yellow)}
 #sec-rutas .card.edit-mode{cursor:default}
 #sec-rutas .card.edit-mode:hover{transform:none}
-#sec-rutas .month-group{margin-bottom:24px}
-#sec-rutas .month-label{font-family:'Saira Condensed',sans-serif;font-size:20px;font-weight:600;
-  text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
-  padding-bottom:8px;margin-bottom:12px;border-bottom:1px solid var(--line);
-  display:flex;align-items:center;gap:10px}
-#sec-rutas .month-label .month-count{font-family:var(--mono);font-size:12px;color:var(--line)}
-#sec-rutas .month-sel-btn{margin-left:auto;padding:3px 11px;border-radius:14px;
-  border:1px solid var(--pr-yellow);background:transparent;color:var(--pr-yellow);
-  font-size:11px;font-weight:600;cursor:pointer;transition:all .12s;
-  letter-spacing:.04em;font-family:inherit;align-self:center;flex-shrink:0}
-#sec-rutas .month-sel-btn:hover{background:rgba(232,196,74,.12)}
-#sec-rutas .month-sel-btn.all-sel{background:rgba(232,196,74,.18)}
-#sec-rutas .date-range{display:flex;gap:8px;align-items:center}
-#sec-rutas .date-sep{color:var(--muted);font-size:12px}
+
+/* ── variante en tabla (vista ☰ Tabla) ─────────────────────────────────────── */
+/* table-layout:fixed + anchos por columna: cada mes es una tabla propia, y sin
+   esto las columnas de un mes no cuadran con las del siguiente. */
+#sec-rutas .rtable{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:fixed}
+#sec-rutas .rtable col.c-name{width:28%}
+#sec-rutas .rtable col.c-zone{width:16%}
+#sec-rutas .rtable col.c-date{width:12%}
+#sec-rutas .rtable col.c-dist{width:10%}
+#sec-rutas .rtable col.c-asc{width:9%}
+#sec-rutas .rtable col.c-time{width:8%}
+#sec-rutas .rtable col.c-act{width:11%}
+#sec-rutas .rtable col.c-state{width:6%}
+#sec-rutas .rtable th{text-align:left;padding:9px 10px;font-family:var(--mono);font-size:10.5px;
+  font-weight:400;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-faint)}
+#sec-rutas .rtable th.num,#sec-rutas .rtable td.num{text-align:right;font-family:var(--mono)}
+#sec-rutas .rtable td{padding:11px 10px;border-top:1px solid rgba(236,229,216,.08)}
+#sec-rutas .rtable tr{cursor:pointer;transition:background .12s}
+#sec-rutas .rtable tbody tr:hover{background:var(--panel-2)}
+#sec-rutas .rtable tr.selected{background:var(--panel-2);box-shadow:inset 3px 0 0 var(--pr-yellow)}
+#sec-rutas .rtable .t-zone,#sec-rutas .rtable .t-act{color:var(--muted)}
+#sec-rutas .rtable .t-date{color:var(--muted);font-family:var(--mono)}
+#sec-rutas .rtable .t-dist{color:var(--pr-yellow)}
+#sec-rutas .rtable .t-name{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sec-rutas .t-state{display:inline-block;padding:3px 10px;border-radius:999px;
+  font-family:var(--mono);font-size:10.5px;border:1px solid var(--line-strong);color:var(--muted)}
+#sec-rutas .t-state.warn{background:var(--pr-yellow);color:var(--bg);border-color:transparent;
+  font-weight:500}
+
+/* ── selector de fecha ─────────────────────────────────────────────────────── */
+#sec-rutas .date-range{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#sec-rutas .date-sep{color:var(--muted-faint);font-size:13px}
 #sec-rutas .dp-wrap{position:relative}
-#sec-rutas .dp-btn{background:var(--bg);border:1px solid var(--line);color:var(--muted);
-  border-radius:7px;padding:5px 28px 5px 10px;font-size:13px;font-family:var(--mono);
-  cursor:pointer;min-width:118px;text-align:left;position:relative;transition:border-color .15s}
+#sec-rutas .dp-btn{background:var(--panel-2);border:1px solid var(--line-strong);color:var(--muted);
+  border-radius:8px;padding:8px 28px 8px 12px;font-size:13px;font-family:var(--mono);
+  cursor:pointer;min-width:120px;text-align:left;position:relative;transition:border-color .15s}
 #sec-rutas .dp-btn.has-val{color:var(--ink)}
-#sec-rutas .dp-btn:hover{border-color:var(--muted)}
+#sec-rutas .dp-btn:hover{border-color:rgba(236,229,216,.32)}
 #sec-rutas .dp-btn:focus{outline:none;border-color:var(--pr-yellow)}
-#sec-rutas .dp-btn::after{content:"▾";position:absolute;right:9px;top:50%;transform:translateY(-50%);
+#sec-rutas .dp-btn::after{content:"▾";position:absolute;right:10px;top:50%;transform:translateY(-50%);
   color:var(--muted);font-size:11px;pointer-events:none}
-#sec-rutas .dp-pop{position:fixed;z-index:9999;background:var(--panel);border:1px solid var(--line);
-  border-radius:10px;padding:12px;width:230px;box-shadow:0 8px 28px #00000070}
+#sec-rutas .dp-pop{position:fixed;z-index:9999;background:var(--panel);border:1px solid var(--line-strong);
+  border-radius:12px;padding:12px;width:230px;box-shadow:0 8px 28px #00000070}
 #sec-rutas .dp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:4px}
-#sec-rutas .dp-nav{background:none;border:1px solid var(--line);color:var(--muted);border-radius:5px;
+#sec-rutas .dp-nav{background:none;border:1px solid var(--line-strong);color:var(--muted);border-radius:6px;
   width:26px;height:26px;cursor:pointer;font-size:15px;line-height:1;flex-shrink:0;transition:all .15s}
 #sec-rutas .dp-nav:hover{border-color:var(--pr-yellow);color:var(--pr-yellow)}
-#sec-rutas .dp-title{font-family:'Saira Condensed',sans-serif;font-size:15px;font-weight:600;
+#sec-rutas .dp-title{font-family:var(--display);font-size:16px;font-weight:500;
   text-transform:uppercase;letter-spacing:.06em;color:var(--ink);text-align:center;flex:1}
 #sec-rutas .dp-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
-#sec-rutas .dp-dow{font-size:9px;color:var(--muted);text-align:center;padding:2px 0;
-  text-transform:uppercase;letter-spacing:.06em;font-weight:600}
-#sec-rutas .dp-day{background:none;border:none;color:var(--ink);border-radius:5px;padding:4px 0;
+#sec-rutas .dp-dow{font-family:var(--mono);font-size:9px;color:var(--muted-dim);text-align:center;
+  padding:2px 0;text-transform:uppercase;letter-spacing:.06em}
+#sec-rutas .dp-day{background:none;border:none;color:var(--ink);border-radius:6px;padding:4px 0;
   font-size:12px;font-family:var(--mono);cursor:pointer;text-align:center;transition:background .1s}
 #sec-rutas .dp-day:hover:not(.empty){background:var(--panel-2)}
-#sec-rutas .dp-day.sel{background:var(--pr-yellow);color:#101a14;font-weight:700}
-#sec-rutas .dp-day.today{color:var(--gr-red);font-weight:700}
-#sec-rutas .dp-day.today.sel{color:#101a14}
+#sec-rutas .dp-day.sel{background:var(--pr-yellow);color:var(--bg);font-weight:500}
+#sec-rutas .dp-day.today{color:var(--gr-red);font-weight:500}
+#sec-rutas .dp-day.today.sel{color:var(--bg)}
 #sec-rutas .dp-day.empty{cursor:default;pointer-events:none}
-#sec-rutas .dp-clear-btn{margin-top:8px;width:100%;background:none;border:1px solid var(--line);
-  color:var(--muted);border-radius:6px;padding:4px 0;font-size:11px;cursor:pointer;
+#sec-rutas .dp-clear-btn{margin-top:8px;width:100%;background:none;border:1px solid var(--line-strong);
+  color:var(--muted);border-radius:8px;padding:5px 0;font-size:11px;cursor:pointer;
   font-family:inherit;transition:all .15s}
 #sec-rutas .dp-clear-btn:hover{border-color:var(--gr-red);color:var(--gr-red)}
+
+/* ── soltar archivos ───────────────────────────────────────────────────────── */
 #sec-rutas .drop-global{position:fixed;inset:0;z-index:9990;
-  background:rgba(8,14,11,.90);backdrop-filter:blur(3px);
+  background:rgba(7,12,9,.90);backdrop-filter:blur(3px);
   display:flex;align-items:center;justify-content:center;
   pointer-events:none;opacity:0;transition:opacity .15s}
 #sec-rutas .drop-global.visible{opacity:1;pointer-events:auto}
 #sec-rutas .drop-box{border:2px dashed var(--pr-yellow);border-radius:18px;
   padding:52px 80px;text-align:center;transition:background .15s}
-#sec-rutas .drop-global.over .drop-box{background:rgba(232,196,74,.07)}
+#sec-rutas .drop-global.over .drop-box{background:rgba(227,178,60,.07)}
 #sec-rutas .drop-arrow{font-size:52px;line-height:1;margin-bottom:14px;
-  font-family:'Saira Condensed',sans-serif;color:var(--pr-yellow)}
-#sec-rutas .drop-text{font-family:'Saira Condensed',sans-serif;font-size:32px;font-weight:700;
+  font-family:var(--display);color:var(--pr-yellow)}
+#sec-rutas .drop-text{font-family:var(--display);font-size:32px;font-weight:600;
   text-transform:uppercase;letter-spacing:.06em;color:var(--pr-yellow)}
 #sec-rutas .drop-hint{font-size:13px;color:var(--muted);margin-top:8px}
 #sec-rutas #filters-toggle{display:none;margin-bottom:12px}
-/* Vista B (panel): lista estrecha a la izquierda, mapa grande a la derecha */
-#sec-rutas #dash-wrap.view-b{display:grid;grid-template-columns:260px 1fr 230px;
+
+/* ── Vista B (panel): lista estrecha a la izquierda, mapa grande a la derecha ── */
+#sec-rutas #dash-wrap.view-b{display:grid;grid-template-columns:300px 1fr 250px;
   grid-template-rows:auto auto 1fr;
   grid-template-areas:"list map filters""list map sort""list map .";
-  gap:14px;height:calc(100vh - 160px);min-height:600px}
-#sec-rutas #dash-wrap.view-b .filters{grid-area:filters;flex-direction:column;align-items:stretch;margin-bottom:0;overflow-y:auto}
+  gap:14px;height:calc(100vh - 190px);min-height:600px}
+#sec-rutas #dash-wrap.view-b .filters{grid-area:filters;flex-direction:column;align-items:stretch;
+  gap:14px;margin-bottom:0;overflow-y:auto}
 #sec-rutas #dash-wrap.view-b .filter-group{width:100%}
 #sec-rutas #dash-wrap.view-b .date-range{flex-direction:column;align-items:stretch;gap:6px}
 #sec-rutas #dash-wrap.view-b .date-sep{display:none}
 #sec-rutas #dash-wrap.view-b .dp-btn{min-width:0;width:100%}
-#sec-rutas #dash-wrap.view-b .filter-clear{align-self:flex-start}
+#sec-rutas #dash-wrap.view-b .search-input{margin-left:0;width:100%}
 #sec-rutas #dash-wrap.view-b #overview-map{grid-area:map;height:auto;margin-bottom:0}
-#sec-rutas #dash-wrap.view-b .sort-bar{grid-area:sort;margin-bottom:0;flex-direction:column;align-items:stretch;gap:6px}
+#sec-rutas #dash-wrap.view-b .sort-bar{grid-area:sort;margin:0;flex-direction:column;
+  align-items:stretch;gap:6px}
 #sec-rutas #dash-wrap.view-b .sort-btn{text-align:left}
-#sec-rutas #dash-wrap.view-b #routes{grid-area:list;overflow-y:auto;padding-right:2px;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+#sec-rutas #dash-wrap.view-b .sort-sep{display:none}
+#sec-rutas #dash-wrap.view-b #routes{grid-area:list;overflow-y:auto;padding-right:2px;
+  scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
 #sec-rutas #dash-wrap.view-b #no-routes{grid-area:list}
-#sec-rutas #dash-wrap.view-b .card{padding:10px 12px}
-#sec-rutas #dash-wrap.view-b .card h3{font-size:15px;height:2.4em;padding-right:30px}
-#sec-rutas #dash-wrap.view-b .card .date{font-size:11px;margin-bottom:0}
-#sec-rutas #dash-wrap.view-b .card-act{top:10px;right:10px}
 #sec-rutas #dash-wrap.view-b .grid{grid-template-columns:1fr}
-#sec-rutas #dash-wrap.view-b .month-label{font-size:15px;padding-bottom:6px;margin-bottom:8px}
+#sec-rutas #dash-wrap.view-b .card{padding:12px 14px}
+#sec-rutas #dash-wrap.view-b .card h3{font-size:16px;padding-right:30px}
+#sec-rutas #dash-wrap.view-b .card-thumb{display:none}
+#sec-rutas #dash-wrap.view-b .month-label{font-size:16px;margin-bottom:8px}
 #sec-rutas #dash-wrap.view-b .month-group{margin-bottom:16px}
+
+@media(max-width:1199px){
+  #sec-rutas .grid{grid-template-columns:repeat(2,1fr)}
+}
 @media(max-width:900px){
   #sec-rutas #dash-wrap.view-b{grid-template-columns:1fr;grid-template-rows:auto auto auto auto;
     grid-template-areas:"filters""map""sort""list";height:auto;min-height:0}
@@ -154,15 +221,23 @@
   #sec-rutas #dash-wrap.view-b #routes{overflow-y:visible}
   #sec-rutas #dash-wrap.view-b .sort-bar{flex-direction:row;flex-wrap:wrap}
   #sec-rutas #dash-wrap.view-b .sort-btn{text-align:center}
+  #sec-rutas .filters{gap:18px}
+  #sec-rutas .search-input{margin-left:0;width:100%}
 }
 @media(max-width:600px){
   /* solo Vista A; añadir por FAB; filtros colapsados tras el botón ☰ */
   #sec-rutas #filters-toggle{display:inline-flex;align-items:center}
   #sec-rutas .filters{display:none}
   #sec-rutas .filters.open{display:flex}
-  #sec-rutas #overview-map{height:38vh;height:38dvh;min-height:240px}
-  #sec-rutas .card h3{font-size:17px}
-  #sec-rutas .card-thumb{width:30%}
+  #sec-rutas #overview-map{height:38vh;height:38dvh;min-height:240px;border-radius:12px}
+  #sec-rutas .grid{grid-template-columns:1fr}
+  #sec-rutas .card h3{font-size:18px}
+  #sec-rutas .card-thumb{width:96px;height:64px}
+  #sec-rutas .month-label{font-size:17px}
+  /* En móvil se caen tres columnas; con table-layout:fixed sus anchos de <col>
+     seguirían reservados, así que aquí vuelve el reparto automático. */
+  #sec-rutas .rtable{font-size:12.5px;table-layout:auto}
+  #sec-rutas .rtable .t-zone,#sec-rutas .rtable .t-act,#sec-rutas .rtable .t-asc{display:none}
   #sec-rutas .edit-bar.on{position:fixed;left:10px;right:10px;z-index:945;
     bottom:calc(66px + env(safe-area-inset-bottom));box-shadow:0 6px 24px #000000a0}
 }
@@ -172,4 +247,5 @@
   #sec-rutas .dp-day{padding:9px 0;font-size:13px}
   #sec-rutas .dp-pop{width:266px}
   #sec-rutas .card:hover{transform:none}
+  #sec-rutas .rtable td{padding:14px 10px}
 }

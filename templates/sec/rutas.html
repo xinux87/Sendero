@@ -1,5 +1,9 @@
-{# "Mis Rutas" (sección de la SPA). Markup extraído de templates/app.html; la
-   lógica vive en static/js/sec/rutas.js y el CSS en static/css/rutas.css.
+{# "Mis Rutas" (sección de la SPA), con el rediseño de redesign/ (2a): panel de
+   filtros con las píldoras de color por actividad, rango de fechas y buscador;
+   fila de ORDEN; y las rutas agrupadas por mes en tarjetas (⊞ Cuadrícula) o en
+   tabla densa (☰ Tabla).
+
+   La lógica vive en static/js/sec/rutas.js y el CSS en static/css/rutas.css.
    Los botones de la cabecera (vista, contador, "+ Añadir ruta") están en
    shell.html: van fuera de la sección, y el router los muestra según
    data-sec-actions. #}
@@ -18,9 +22,11 @@
           <div class="dp-wrap" id="dp-from"></div>
           <span class="date-sep">→</span>
           <div class="dp-wrap" id="dp-to"></div>
+          <button class="filter-clear" onclick="SEC.rutas.clearFilters()">✕ Limpiar</button>
         </div>
       </div>
-      <button class="filter-clear" onclick="SEC.rutas.clearFilters()">✕ Limpiar</button>
+      <input id="route-search" class="search-input" type="search"
+             placeholder="Buscar ruta o zona…" autocomplete="off">
     </div>
     <div id="overview-map"></div>
     <div class="sort-bar">
@@ -36,7 +42,7 @@
       <button class="btn ghost sm" onclick="SEC.rutas.deselectAll()">Deseleccionar</button>
       <button class="btn ghost sm" id="dedup-btn" onclick="SEC.rutas.deleteDuplicates()"
               title="Elimina las rutas marcadas como posibles duplicadas por la importación automática"
-              style="display:none;border-color:rgba(214,69,65,.5);color:var(--gr-red)">⚠ Borrar duplicados (<span id="dedup-count">0</span>)</button>
+              style="display:none;border-color:rgba(226,73,44,.5);color:var(--gr-red)">⚠ Borrar duplicados (<span id="dedup-count">0</span>)</button>
       <button class="btn ghost sm" id="rescan-sel-btn" onclick="SEC.rutas.rescanSelected()" style="margin-left:auto">↻ Re-escanear (<span id="rescan-count">0</span>)</button>
       <button class="btn sm" id="delete-sel-btn" onclick="SEC.rutas.deleteSelected()" style="background:var(--gr-red)">Eliminar (<span id="sel-count">0</span>)</button>
       <button class="btn ghost sm" onclick="SEC.rutas.toggleEdit()">Cancelar</button>

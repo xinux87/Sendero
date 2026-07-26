@@ -27,7 +27,7 @@
   const LINES_MINZOOM = 10, LINES_PREFETCH_ZOOM = LINES_MINZOOM - 2, POINTS_MAXZOOM = 12;
 
   let allRoutes = [], activeActs = null;
-  let sortOrder = 'desc', viewMode = 'a';
+  let sortOrder = 'desc', viewMode = 'a', searchQ = '';
   let editMode = false, selectedIds = new Set(), visibleRoutes = [];
   let monthDomMap = new Map();
   let pendingRoutes = [], listObserver = null;
@@ -140,7 +140,7 @@
     try {
       sessionStorage.setItem(FILTER_CACHE, JSON.stringify({
         acts: [...activeActs], from: dpFrom && dpFrom.value, to: dpTo && dpTo.value,
-        sort: sortOrder, view: viewMode,
+        sort: sortOrder, view: viewMode, q: searchQ,
       }));
     } catch (e) {}
   }
@@ -151,13 +151,18 @@
 
   const allSelected = () => activeActs.size === ACTIVITIES.length;
 
+  /* Píldoras de actividad del rediseño: seleccionada = relleno sólido de su color
+     con tinta oscura; sin seleccionar = su color sobre transparente con borde. */
   function buildPills() {
     const box = q('#act-pills');
     box.innerHTML = '';
     ACTIVITIES.forEach(a => {
+      const on = activeActs.has(a.id);
       const p = document.createElement('button');
-      p.className = 'pill' + (activeActs.has(a.id) ? ' on' : '');
-      if (activeActs.has(a.id)) p.style.cssText = `background:${a.color};border-color:${a.color}`;
+      p.className = 'pill' + (on ? ' on' : '');
+      p.style.cssText = on
+        ? `background:${a.color};border-color:${a.color};color:var(--bg)`
+        : `background:transparent;border-color:${a.color};color:${a.color}`;
       p.textContent = a.label;
       p.onclick = () => {
         if (activeActs.has(a.id)) activeActs.delete(a.id); else activeActs.add(a.id);
@@ -170,7 +175,10 @@
   function clearFilters() {
     activeActs = new Set(ACTIVITIES.map(a => a.id));
     dpFrom.set(null); dpTo.set(null);
-    buildPills(); renderList();
+    searchQ = '';
+    const s = q('#route-search');
+    if (s) s.value = '';
+    buildPills(); saveFilterState(); renderList();
   }
 
   function setSort(order) {
@@ -180,17 +188,29 @@
     saveFilterState(); renderList();
   }
 
+  /* Tres vistas: 'a' cuadrícula de tarjetas, 'b' panel (lista + mapa grande),
+     't' tabla densa (la variante del rediseño para los meses antiguos). */
   function setView(v) {
     // En móvil la Vista B "Panel" no aporta (todo acaba apilado): se fuerza la A
     // aunque venga 'b' guardada en el estado de filtros.
     if (v === 'b' && window.matchMedia('(max-width:600px)').matches) v = 'a';
+    const cambia = v !== viewMode;
     viewMode = v;
     q('#dash-wrap').className = 'view-' + v;
-    const a = document.getElementById('view-a'), b = document.getElementById('view-b');
-    if (a) a.classList.toggle('on', v === 'a');
-    if (b) b.classList.toggle('on', v === 'b');
+    ['a', 'b', 't'].forEach(k => {
+      const el = document.getElementById('view-' + k);
+      if (el) el.classList.toggle('on', v === k);
+    });
     if (map) setTimeout(() => { if (map) { map.resize(); fitMap(); } }, 60);
     saveFilterState();
+    // Tarjetas ↔ tabla es otro markup: hay que repintar la lista.
+    if (cambia && allRoutes.length) renderList();
+  }
+
+  function setSearch(texto) {
+    searchQ = (texto || '').trim().toLowerCase();
+    saveFilterState();
+    renderList();
   }
 
   function passesFilter(r) {
@@ -202,6 +222,12 @@
       if (from && d < from) return false;
       if (to && d > to) return false;
     }
+    // Buscador: nombre y localidad, que es lo que el listado trae (el nombre del
+    // archivo no está en ROUTE_LIST_COLS).
+    if (searchQ) {
+      const hay = `${r.name || ''} ${r.locality || ''}`.toLowerCase();
+      if (!hay.includes(searchQ)) return false;
+    }
     return true;
   }
 
@@ -210,21 +236,25 @@
     return '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
   }
 
+  /* Alterna la selección de una ruta en modo edición (lo comparten la tarjeta y
+     la fila de la tabla). */
+  function toggleSel(id, el, check) {
+    if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+    const on = selectedIds.has(id);
+    el.classList.toggle('selected', on);
+    if (check) check.textContent = on ? '✓' : '';
+    updateSelCount();
+  }
+
   function makeCard(r) {
     const act = activityOf(r.activity_type);
     const sel = selectedIds.has(r.public_id);
     const c = document.createElement('div');
     c.className = 'card' + (editMode ? ' edit-mode' : '') + (sel ? ' selected' : '');
     c.dataset.id = r.public_id;
-    c.style.borderLeftColor = act ? act.color : 'var(--line)';
+    c.style.borderLeftColor = act ? act.color : 'var(--line-strong)';
     if (editMode) {
-      c.onclick = () => {
-        if (selectedIds.has(r.public_id)) selectedIds.delete(r.public_id);
-        else selectedIds.add(r.public_id);
-        c.classList.toggle('selected', selectedIds.has(r.public_id));
-        c.querySelector('.card-check').textContent = selectedIds.has(r.public_id) ? '✓' : '';
-        updateSelCount();
-      };
+      c.onclick = () => toggleSel(r.public_id, c, c.querySelector('.card-check'));
     } else {
       c.onclick = () => openRoute(r.public_id);
     }
@@ -241,12 +271,53 @@
                  : (act ? `<div class="card-act">${iconSvg(act, 26)}</div>` : '')}
       <div class="card-body">
         <h3>${esc(r.name)}</h3>
-        <div class="date">${fmtDate(r.started_at)}</div>
+        <div class="date">${fmtDateLong(r.started_at)}</div>
         ${metaHtml}
         ${dupBadge}
       </div>`;
     return c;
   }
+
+  /* Fila de la vista ☰ Tabla. El "Estado" solo puede decir lo que trae el
+     listado: si la importación automática la marcó como posible duplicada. Los
+     avisos de GPS viven en el detalle (no están en ROUTE_LIST_COLS). */
+  function makeRow(r) {
+    const act = activityOf(r.activity_type);
+    const sel = selectedIds.has(r.public_id);
+    const tr = document.createElement('tr');
+    tr.className = sel ? 'selected' : '';
+    tr.dataset.id = r.public_id;
+    tr.onclick = editMode ? () => toggleSel(r.public_id, tr, null)
+                          : () => openRoute(r.public_id);
+    const estado = r.dup_suspect_of
+      ? '<span class="t-state warn" title="Importada automáticamente, se parece a otra ruta">⚠ DUPLICADA</span>'
+      : '<span class="t-state">OK</span>';
+    tr.innerHTML = `
+      <td class="t-name" title="${esc(r.name)}">${esc(r.name)}</td>
+      <td class="t-zone">${esc(r.locality || '—')}</td>
+      <td class="t-date">${_fechaCorta(r.started_at)}</td>
+      <td class="num t-dist">${r.distance_m ? fmtKm(r.distance_m) + ' km' : '—'}</td>
+      <td class="num t-asc">${r.ascent_m ? fmtNum(r.ascent_m) + ' m' : '—'}</td>
+      <td class="num">${fmtHM(r.moving_s || r.duration_s)}</td>
+      <td class="t-act">${act ? esc(act.label) : '—'}</td>
+      <td>${estado}</td>`;
+    return tr;
+  }
+
+  function _fechaCorta(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso), p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
+  }
+
+  const TABLA_HEAD = `<colgroup>
+      <col class="c-name"><col class="c-zone"><col class="c-date"><col class="c-dist">
+      <col class="c-asc"><col class="c-time"><col class="c-act"><col class="c-state">
+    </colgroup><thead><tr>
+      <th>Ruta</th><th class="t-zone">Zona</th><th>Fecha</th>
+      <th class="num">Dist.</th><th class="num t-asc">D+</th><th class="num">Tiempo</th>
+      <th class="t-act">Actividad</th><th>Estado</th>
+    </tr></thead><tbody></tbody>`;
 
   /* Abrir una ruta guarda el encuadre del mapa para restaurarlo al volver. */
   function openRoute(pid) {
@@ -272,7 +343,11 @@
       selBtn = `<button class="month-sel-btn${allSel ? ' all-sel' : ''}" onclick="SEC.rutas.selectMonth('${key}')">`
         + (allSel ? '✓ Mes seleccionado' : 'Selec. mes') + '</button>';
     }
-    s.innerHTML = `<div class="month-label">${monthLabel(key)}<span class="month-count"></span>${selBtn}</div><div class="grid"></div>`;
+    const cuerpo = viewMode === 't'
+      ? `<div class="table-scroll"><table class="rtable">${TABLA_HEAD}</table></div>`
+      : '<div class="grid"></div>';
+    s.innerHTML = `<div class="month-label">${monthLabel(key).toUpperCase()}`
+      + `<span class="month-count"></span>${selBtn}</div>${cuerpo}`;
     return s;
   }
 
@@ -311,10 +386,11 @@
       if (!monthDomMap.has(key)) {
         const section = createMonthSection(key);
         q('#routes').appendChild(section);
-        monthDomMap.set(key, {section, grid: section.querySelector('.grid'), count: 0});
+        monthDomMap.set(key, {section, count: 0,
+          grid: section.querySelector(viewMode === 't' ? '.rtable tbody' : '.grid')});
       }
       const grp = monthDomMap.get(key);
-      grp.grid.appendChild(makeCard(r));
+      grp.grid.appendChild(viewMode === 't' ? makeRow(r) : makeCard(r));
       grp.count++;
       grp.section.querySelector('.month-count').textContent =
         `${grp.count} ruta${grp.count !== 1 ? 's' : ''}`;
@@ -420,7 +496,7 @@
     };
     const removeCardNow = id => {
       allRoutes = allRoutes.filter(r => r.public_id !== id);
-      const card = q(`.card[data-id="${id}"]`);
+      const card = q(`.card[data-id="${id}"]`) || q(`.rtable tr[data-id="${id}"]`);
       if (card) {
         card.style.cssText += 'opacity:0;transform:scale(.95) translateY(-4px);transition:opacity .15s,transform .15s';
         setTimeout(() => card.remove(), 160);
@@ -862,7 +938,10 @@
       if (savedF.acts) activeActs = new Set(savedF.acts);
       if (savedF.sort) sortOrder = savedF.sort;
       if (savedF.view) viewMode = savedF.view;
+      if (savedF.q) searchQ = savedF.q;
     }
+    const buscador = q('#route-search');
+    if (buscador) buscador.value = searchQ;
     // Los DatePicker se crean una sola vez por documento: su constructor añade
     // un listener de `document` y recrearlos en cada visita los acumularía.
     if (!dpFrom) {
@@ -903,6 +982,17 @@
   }
 
   /* Listeners de documento y de la cabecera: una sola vez al cargar el archivo. */
+  /* Buscador: filtra en cliente sobre lo que ya está en memoria, con un pequeño
+     debounce para no repintar la lista en cada tecla. */
+  (() => {
+    const inp = q('#route-search');
+    if (!inp) return;
+    let t = null;
+    inp.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => setSearch(inp.value), 180);
+    });
+  })();
   const gpxInput = document.getElementById('gpx-input');
   if (gpxInput) {
     gpxInput.addEventListener('change', async e => {
@@ -939,7 +1029,7 @@
 
   window.SEC.rutas = {
     mount, unmount,
-    setSort, setView, clearFilters, toggleEdit, selectMonth,
+    setSort, setView, setSearch, clearFilters, toggleEdit, selectMonth,
     selectAllVisible, deselectAll, deleteDuplicates, deleteSelected, rescanSelected,
   };
 })();
