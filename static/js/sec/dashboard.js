@@ -117,7 +117,7 @@
     const sub = q('#ov-sub');
     if (sub) {
       sub.textContent = (year === 'todo' ? 'Todas las temporadas' : `Temporada ${year}`)
-        + ' · calculado en el contenedor · sin servicios externos';
+        + ' · sin servicios externos';
     }
   }
 
