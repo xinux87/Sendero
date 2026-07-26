@@ -55,9 +55,15 @@ aplica a las tres pantallas con tokens en un solo sitio.
   mano (Mis Planes, detalle de plan, editor) heredan la paleta nueva. Los colores de
   actividad también se actualizan, con el glifo del icono en oscuro sobre el color.
 - El logo, los iconos de la PWA, el `theme-color` y la página de «sin conexión» del Service
-  Worker adoptan la paleta nueva. Las miniaturas de track se generan con el fondo de la
-  tarjeta (`#101a14`) para que no se vean como un recuadro; las anteriores conservan el
-  fondo viejo hasta que se reescanee la ruta.
+  Worker adoptan la paleta nueva.
+- **Las miniaturas de track se generan sin fondo** (PNG con transparencia) y con la línea
+  algo más gruesa. Con fondo opaco se veían como un recuadro sobre la tarjeta, y al pasar
+  el ratón —cuando la tarjeta cambia de color— cantaba; y a 2 px la traza quedaba en
+  sub-píxel al verse a un tercio de tamaño. En la tarjeta, la miniatura ocupa ahora todo
+  el alto pegada al borde derecho, escala sola y va detrás del texto, con el desvanecido
+  hacia la izquierda hecho con `mask-image` en vez de un degradado de color. Las
+  miniaturas anteriores conservan su fondo hasta que se reescanee la ruta (en masa:
+  "Mis Rutas" → ✎ Editar → Seleccionar todos → ↻ Re-escanear).
 
 ### Añadido
 - `GET /api/storage`: tamaño en disco de la base, los tracks, las fotos, las miniaturas y

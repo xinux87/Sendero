@@ -545,16 +545,25 @@ hash leyendo el archivo; solo filas con `content_hash IS NULL`). Al añadir la c
 
 ### Thumbnails de track (`core/thumbs.py`)
 `generate_thumb(coords, gpx_file)` genera un PNG:
-- Fondo `#17241c` (= `--panel`), línea blanca, 400 px de alto, ancho proporcional
-  al bounding-box del track (ratio corregido por latitud, acotado 1:4 – 4:1), 40 px
-  de padding interior.
+- **Fondo TRANSPARENTE** (RGBA), línea blanca de 6 px con vértices redondeados,
+  400 px de alto, ancho proporcional al bounding-box del track (ratio corregido por
+  latitud, acotado 1:4 – 4:1), 40 px de padding interior. Sin fondo a propósito: el
+  PNG se pinta ENCIMA de la tarjeta de "Mis Rutas", así que un fondo opaco se ve
+  como un recuadro (y al pasar el ratón, cuando la tarjeta cambia de color, canta).
+  Los 6 px también son a propósito: en la tarjeta la miniatura se ve a ~1/3 de su
+  tamaño, y una línea de 2 px quedaba en sub-píxel e invisible al 22 % de opacidad.
+  Las miniaturas generadas antes de esto conservan su fondo hasta que se reescanee
+  la ruta (en masa: "Mis Rutas" → ✎ Editar → Seleccionar todos → ↻ Re-escanear).
 - Se llama automáticamente en `create_route` y `rescan_route`; también en el script
   de backfill manual.
 - El archivo se llama igual que el GPX con extensión .png (`<stem>.png`), se guarda
   en `data/thumbs/` y se referencia en `thumb_file`.
 - Al borrar una ruta, se borra también el thumb.
-- En `makeCard` de `sec/rutas.js`: se muestra como elemento absoluto en el lateral derecho
-  de la tarjeta con degradado izquierda→transparente para no tapar el texto.
+- En `makeCard` de `sec/rutas.js`: elemento absoluto pegado al borde derecho y de arriba
+  abajo de la tarjeta (52 % de ancho, `object-fit:contain`), al 22 % y con `z-index:0`
+  para que el texto se lea encima. El desvanecido hacia la izquierda va como
+  `mask-image`, no como un degradado de color: así funciona con la tarjeta normal, en
+  hover y seleccionada, que tienen fondos distintos.
 
 ### Auto-importación Mi Fit / Zepp (`core/mifit/` + `mifit_sync.py` + `api/mifit.py`)
 Descarga los entrenamientos del reloj Amazfit/Zepp/Mi Fit (API de Huami) y los

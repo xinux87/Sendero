@@ -3,11 +3,18 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 import core.config as cfg
 
-_BG = (16, 26, 20)    # --panel (#101a14): el mismo fondo que la tarjeta de
-                      # "Mis Rutas", para que la miniatura no se vea como un
-                      # recuadro más claro encima. Las miniaturas anteriores al
-                      # rediseño conservan el fondo viejo hasta reescanearlas.
-_LINE = (255, 255, 255)
+# PNG con TRANSPARENCIA, no con el color del panel: la miniatura se pinta encima
+# de la tarjeta de "Mis Rutas" (y de lo que venga después), así que cualquier
+# fondo opaco se vería como un recuadro más claro o más oscuro que la tarjeta —
+# y al pasar el ratón, cuando la tarjeta cambia de color, el recuadro cantaba.
+# Así solo se ve la traza. Las miniaturas generadas antes de esto conservan su
+# fondo hasta que se reescanee la ruta ("Mis Rutas" → ✎ Editar → ↻ Re-escanear).
+_BG = (0, 0, 0, 0)
+_LINE = (255, 255, 255, 255)
+# La miniatura se genera a 400 px de alto y en la tarjeta se ve a ~1/3, así que
+# una línea de 2 px acababa en sub-píxel: sobre la tarjeta, al 22 % de opacidad,
+# no se veía. A 6 px queda en ~2 px efectivos, que es el grosor del prototipo.
+_LINE_W = 6
 _HEIGHT = 400
 _PAD = 40
 _MAX_ASPECT = 4.0
@@ -61,9 +68,11 @@ def generate_thumb(coords, gpx_file):
 
     pixels = [to_px(c[0], c[1]) for c in pts]
 
-    img = Image.new("RGB", (width, _HEIGHT), color=_BG)
+    img = Image.new("RGBA", (width, _HEIGHT), color=_BG)
     draw = ImageDraw.Draw(img)
-    draw.line(pixels, fill=_LINE, width=2)
+    # joint="curve" redondea los vértices: con una línea gruesa, los cambios de
+    # dirección de un track dejaban muescas.
+    draw.line(pixels, fill=_LINE, width=_LINE_W, joint="curve")
 
     cfg.THUMB_DIR.mkdir(parents=True, exist_ok=True)
     fname = f"{Path(gpx_file).stem}.png"
