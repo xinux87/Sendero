@@ -214,17 +214,6 @@ def sendero_page(ref=None):
     return render_template("shell.html", bootstrap_json=bootstrap)
 
 
-@routes_bp.route("/api/routes/by-name/<path:name>")
-def get_route_by_name(name):
-    r = db().execute(
-        "SELECT id FROM routes WHERE name=? ORDER BY COALESCE(started_at,created_at) DESC LIMIT 1",
-        (name,),
-    ).fetchone()
-    if not r:
-        abort(404)
-    return jsonify(_build_route_dict(r["id"]))
-
-
 def _compute_gps_issues(raw, is_fit, activity_type):
     """Tramos GPS anómalos (velocidad/tasa vertical imposibles) como JSON, o None.
 

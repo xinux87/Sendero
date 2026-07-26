@@ -5,6 +5,17 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## Sin publicar
+
+### Interno
+- **Fuera las siete plantillas de la app multipágina** (`app.html`, `sendero.html`,
+  `editor.html`, `rutas.html`, `overview.html`, `planificacion.html`,
+  `plan_detalle.html`): 6.410 líneas que no servía ninguna ruta desde la 0.7.0. Se
+  conservaron durante la migración para poder comparar, y ya solo servían para que
+  alguien editara el archivo equivocado. Siguen en git (`git show v0.7.1:templates/...`).
+  En `templates/` quedan `base.html`, `shell.html` y `sec/` con las 6 secciones.
+- Eliminado el endpoint `GET /api/routes/by-name/<nombre>`, al que no llamaba nadie.
+
 ## [0.7.1] — 2026-07-26
 
 Arreglo de la vista 3D. **La 0.7.0 no llegó a publicarse como imagen**, así que si vienes

@@ -197,12 +197,13 @@ El router (`static/js/core/router.js`) monta la sección según `location.pathna
 así que **navegar entre vistas no pide ningún documento**: solo el JSON que haga
 falta, y a menudo ni eso (lo tiene el Store).
 
-> **TRAMPA CRÍTICA:** en `templates/` quedan **cinco plantillas legacy** que ya no
-> sirve ninguna ruta Flask y que editar no tiene NINGÚN efecto: `app.html`
-> (dashboard/rutas/planes), `sendero.html` (detalle), `editor.html`, `rutas.html`,
-> `overview.html`, `planificacion.html` y `plan_detalle.html`. Todas llevan un
-> comentario Jinja al principio avisándolo. **Lo que se toca es siempre
-> `templates/sec/<sec>.html` + `static/js/sec/<sec>.js` + `static/css/<sec>.css`.**
+> **En `templates/` solo hay tres cosas**: `base.html` (el chrome: cabecera, modal
+> de Ajustes, CSS global), `shell.html` (el shell de la SPA) y `sec/` con las 6
+> secciones. Nada más. Las siete plantillas legacy de la app multipágina
+> (`app.html`, `sendero.html`, `editor.html`, `rutas.html`, `overview.html`,
+> `planificacion.html`, `plan_detalle.html`) se borraron justo después de v0.7.1:
+> eran 6.410 líneas que no servía nadie y hacían que se editara el archivo
+> equivocado. Siguen en git: `git show v0.7.1:templates/app.html`.
 
 **Si añades una sección nueva** hacen falta cinco cosas, y olvidar cualquiera la
 rompe de una forma distinta: (1) el archivo en `templates/sec/`, incluido en
@@ -260,13 +261,6 @@ archivo, nunca en `mount()`.
 | `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros, mapa de visión general, modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
 | `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa y alta por GPX. Lógica en `static/js/sec/planes.js` |
 | `templates/sec/editor.html` | (sección `editor`) | Editor de rutas (F1-F3). Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` |
-| `templates/app.html` *(legacy)* | — | Sustituido por `sec/dashboard.*`, `sec/rutas.*` y `sec/planes.*`. Ya no se sirve. No editar. |
-| `templates/sendero.html` *(legacy)* | — | Sustituido por `sec/detalle.*`. Ya no se sirve. No editar. |
-| `templates/editor.html` *(legacy)* | — | Sustituido por `sec/editor.*`. Ya no se sirve. No editar. |
-| `templates/plan_detalle.html` *(legacy)* | — | Sustituido por `sec/plan.*`. Ya no se sirve. No editar. |
-| `templates/rutas.html` *(legacy)* | — | Ya no se sirve. No editar. |
-| `templates/overview.html` *(legacy)* | — | Ya no se sirve. No editar. |
-| `templates/planificacion.html` *(legacy)* | — | Ya no se sirve. No editar. |
 
 ### Navegación
 - **La URL canónica de todo es el `public_id`**, en rutas y en planes: `/Sendero/<pid>`,
@@ -352,7 +346,7 @@ auto_summary, thumb_file, `version`…). Lo usan `get_route()` (API JSON) y
 añádelos aquí.** El campo `version` se deriva de `MAX(version_n)` en
 `route_versions` (0 = nunca editada); no hay columna `version` en `routes` a propósito.
 
-### Editor de rutas (`api/editor.py` + `core/editing.py` + `templates/editor.html`)
+### Editor de rutas (`api/editor.py` + `core/editing.py` + `static/js/sec/editor.js`)
 Fase 1: recortar inicio/fin, eliminar tramo intermedio, invertir ruta, con
 versionado completo. Fase 2: dos modos de edición — "Seleccionar" (tramos A–B) y
 "Editar puntos" (arrastrar vértice = `move_point`, Alt+click = `delete_points`,
@@ -378,7 +372,7 @@ picos). El roadmap de la fase 4 está en `roadmap/editorplan.md`.
 (orden/supervivencia) + `posOverride`/`eleOverride` (valores editados por índice
 original; los insertados se añaden al final de los arrays de `P`). Cliente y
 servidor deben aplicar cada op EXACTAMENTE igual — si añades una op nueva,
-impleméntala en `doOp()` (editor.html) y en `apply_ops()` (core/editing.py) y
+impleméntala en `doOp()` (`sec/editor.js`) y en `apply_ops()` (`core/editing.py`) y
 verifica que la misma secuencia produce las mismas coordenadas en ambos.
 `delete_points` (puntos sueltos) NO parte el segmento; `delete_range` sí.
 
@@ -430,7 +424,7 @@ con "descartar aviso"/ir a la parecida → borrar o `POST /api/routes/merge`; el
 `dup_suspect_public`, así que navega por el router de un detalle a otro).
 
 **Borrado masivo de duplicadas (frontend):** el modo edición de "Mis Rutas" tiene un
-botón "⚠ Borrar duplicados (N)" (`deleteDuplicates()` en `app.html`, visible solo si hay
+botón "⚠ Borrar duplicados (N)" (`deleteDuplicates()` en `sec/rutas.js`, visible solo si hay
 `dup_suspect_of` en `allRoutes`). NO es un endpoint nuevo: selecciona las rutas marcadas
 y reusa `deleteSelected()` (mismo confirm con recuento + barra de progreso + `DELETE
 /api/routes/<id>`). Se borra la ruta MARCADA (la sospechosa), no la original a la que se
@@ -454,7 +448,7 @@ hash leyendo el archivo; solo filas con `content_hash IS NULL`). Al añadir la c
 - El archivo se llama igual que el GPX con extensión .png (`<stem>.png`), se guarda
   en `data/thumbs/` y se referencia en `thumb_file`.
 - Al borrar una ruta, se borra también el thumb.
-- En `makeCard` de `app.html`: se muestra como elemento absoluto en el lateral derecho
+- En `makeCard` de `sec/rutas.js`: se muestra como elemento absoluto en el lateral derecho
   de la tarjeta con degradado izquierda→transparente para no tapar el texto.
 
 ### Auto-importación Mi Fit / Zepp (`core/mifit/` + `mifit_sync.py` + `api/mifit.py`)
@@ -583,7 +577,7 @@ con altitud/velocidad/FC en ese punto. Punto de entrada único: `setHoverD(d)` (
   el punto más cercano por distancia (binary search, arrays ya vienen ordenados por `d`); no asumas
   mismo índice entre series.
 - **Mapa → gráficos**: capa `ruta-linea-hit` (línea ancha invisible sobre `ruta-linea`, mismo
-  patrón que `dash-lines-hit` en `app.html`) recibe `mousemove`/`mouseleave`; busca el vértice de
+  patrón que `dash-lines-hit` en `sec/dashboard.js`) recibe `mousemove`/`mouseleave`; busca el vértice de
   `current.geojson` más cercano al cursor (scan lineal, barato incluso con miles de puntos porque
   solo corre mientras el cursor está sobre la línea) y llama a `setHoverD(trackCumKm[idx])`.
 - **Gráficos → mapa**: cada chart usa `options.onHover(e,els,chart)` leyendo
@@ -712,7 +706,7 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
   `before_request` (app.py) — un SELECT de ~10 filas por request, despreciable.
 
 - **Estado de módulo inicializado a partir de `ACTIVITIES` fuera de orden** — en su día,
-  declarar `new Set(ACTIVITIES.map(...))` en los `let` de cabecera de `app.html` lanzaba
+  declarar `new Set(ACTIVITIES.map(...))` en los `let` de cabecera de la SPA vieja lanzaba
   `ReferenceError`, porque `ACTIVITIES` se definía más abajo en el mismo archivo. Hoy
   `ACTIVITIES` vive en `static/shared.js` (cargado antes), pero la lección vale igual para
   los módulos de sección: inicializa ese estado **dentro de `mount()`**, no en la
@@ -754,8 +748,10 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
   inmediatamente después de `#sec-detalle .overlay{display:flex}`. Sin ella el modal
   Immich aparece al cargar.
 
-- **SPA en `app.html`, no en archivos separados** — el antiguo CLAUDE.md decía
-  "app multi-página"; ya no es cierto. Editar `rutas.html` no tiene efecto.
+- **La app fue multipágina, luego fue `app.html` con 3 secciones, y hoy es un shell
+  con 6.** Cada etapa dejó documentación que hablaba de la anterior. Si algo aquí
+  menciona una plantilla que no existe en `templates/`, es un resto: lo que se sirve
+  es `shell.html` y solo eso.
 
 - **Columnas pequeñas añadidas con `ALTER TABLE` después de `geojson`/`elevation`/
   `heart_rate` hacen lentísima cualquier query que las lea**, aunque no pidas el geojson.
@@ -770,7 +766,8 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
   una query frecuente (listados, stats, filtros), añade también su índice de cobertura en
   `init_db()` — no asumas que basta con la columna.
 
-- **`fitMap()` sin `duration:0` en el primer encuadre del mapa de "Mis Rutas"** (`app.html`)
+- **`fitMap()` sin `duration:0` en el primer encuadre del mapa de "Mis Rutas"** (hoy
+  `sec/rutas.js`)
   animaba un "vuelo" visible desde el centro placeholder del constructor (`[-84,10]`, zona de
   Costa Rica) hasta la posición real de las rutas, cada vez que se creaba el mapa. Solución:
   `fitMap(true)` (parámetro `instant`) solo en ese primer encuadre; el resto de usos (botón
@@ -817,7 +814,8 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
    curvas de nivel en header). No metas framework de UI ni cambies la paleta sin pedirlo.
 
 10. **`{{ bootstrap_json | safe }}` en shell.html** (y `{{ route_json | safe }}` en
-    editor.html) — intencional. El JSON viene de `json.dumps()` sobre datos de la BD, no
+    el editor pide los suyos a `/api/routes/<id>/editor`) — intencional. El JSON viene de
+    `json.dumps()` sobre datos de la BD, no
     de input de usuario. No lo escapes dos veces. En el shell va dentro de un
     `<script type="application/json">`, que el navegador no ejecuta, y lo lee `JSON.parse`.
 
@@ -857,7 +855,7 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
     entre capas raster hace `setTiles()` (barato), pero al entrar o salir de
     `OFFLINE_LAYER` (`pmtiles://`, otro maxzoom) **reconstruye el estilo y eso borra todas
     tus fuentes y capas de datos** — repinta escuchando `map.on('sendero:basemap')` o
-    recreando el mapa (ver `plan.js` y `sec/detalle.js`/`app.html` respectivamente).
+    recreando el mapa (ver `plan.js` y `sec/detalle.js`/`sec/rutas.js` respectivamente).
 
 16. **El Service Worker NO cachea documentos que lleven datos inyectados dentro.**
     `/Sendero/<pid>` trae la ruta en `bootstrap_json`, así que su HTML es una copia de
@@ -989,12 +987,11 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - La validación de extensión en `create_route` acepta cualquier nombre que termine en
   `gpx` o `.fit`. No endurezcas sin revisar el watcher.
 - No hay autenticación. Intencional para LAN.
-- `rutas.html`, `overview.html`, `planificacion.html`, `plan_detalle.html`,
-  `sendero.html` — archivos legacy en `templates/`. No los borres (pueden servir de
-  referencia) pero no los edites; el app no los usa. `plan_detalle.html` es el original
-  del que salió `sec/plan.html` + `js/sec/plan.js`, y `sendero.html` el de
-  `sec/detalle.html` + `js/sec/detalle.js` + `css/detalle.css`: editarlos no tiene ningún
-  efecto. Los dos llevan un comentario Jinja al principio avisándolo.
+- Las plantillas de la app multipágina (`app.html`, `sendero.html`, `editor.html`,
+  `rutas.html`, `overview.html`, `planificacion.html`, `plan_detalle.html`) **ya no
+  existen**: se borraron justo después de v0.7.1, cuando llevaban una versión entera
+  sin que las sirviera nadie. Si necesitas ver cómo era algo antes de la SPA:
+  `git show v0.7.1:templates/<archivo>`.
 - **Docker Desktop sobre WSL2 (esta instalación) puede dejar procesos `gunicorn`/
   `watch.py` huérfanos** tras varios `docker compose down`/`up --build` seguidos: el
   proceso sigue vivo (visible en `ps aux` del host, propiedad de `root`) y sigue
@@ -1033,8 +1030,8 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   `/Sendero/<nombre>` devuelven los mismos campos.
 - Si añadiste columnas a `/api/routes` (lista): tócalas en `ROUTE_LIST_COLS`
   (`api/routes.py`, la comparten el listado y `/api/sync/changes`), añade su índice de
-  cobertura y actualiza la clave `ROUTE_CACHE` en `app.html` para invalidar el
-  sessionStorage de los clientes (regla 11).
+  cobertura y sube `DB_VERSION` en `static/js/core/store.js` para invalidar la copia
+  local de los clientes (regla 11).
 - Si tocaste la sincronización: `curl -si localhost:8090/api/sync/state` dos veces (la
   segunda con `If-None-Match` debe dar **304**), y comprueba que crear/editar/borrar una
   ruta mueve el `cursor` y aparece en `/api/sync/changes?since=<anterior>` (los triggers

@@ -30,10 +30,11 @@ UI (7). Verificado con `tests/e2e_spa.py`: ~115 comprobaciones en un navegador r
 > 1. **Publicar** — `APP_VERSION` invalida el precache del Service Worker, así que este
 >    trabajo no debe salir sin subir la versión (los 4 puntos de "Publicar una versión" de
 >    CLAUDE.md).
-> 2. **Borrar las plantillas legacy** (`app.html`, `sendero.html`, `editor.html`,
->    `rutas.html`, `overview.html`, `planificacion.html`, `plan_detalle.html`): están en
->    git y ya nadie las sirve. Se conservaron para poder comparar durante la migración; el
->    momento natural de borrarlas es el commit siguiente al de la versión.
+> 2. ~~**Borrar las plantillas legacy**~~ — **hecho** justo después de v0.7.1: fuera las
+>    siete (`app.html`, `sendero.html`, `editor.html`, `rutas.html`, `overview.html`,
+>    `planificacion.html`, `plan_detalle.html`), 6.410 líneas, más el endpoint muerto
+>    `/api/routes/by-name/<name>`. En `templates/` solo quedan `base.html`, `shell.html`
+>    y `sec/`. Recuperables con `git show v0.7.1:templates/<archivo>`.
 
 | Fase | Estado | Qué hay hecho |
 |---|---|---|
