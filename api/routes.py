@@ -3,7 +3,9 @@ import re
 import shutil
 import sqlite3
 import datetime as dt
-from flask import Blueprint, abort, request, jsonify, render_template, Response, send_file
+from flask import (
+    Blueprint, abort, request, jsonify, render_template, redirect, Response, send_file
+)
 
 import core.config as cfg
 from core.database import db, new_token, rid_from_public, entity_rev
@@ -77,18 +79,21 @@ def _build_route_dict(rid):
 
 @routes_bp.route("/")
 def index():
-    from flask import redirect
     return redirect("/dashboard")
 
 
+# Las tres vistas de listado son secciones de la SPA: el mismo shell para las
+# tres, y el router monta la que toque leyendo location.pathname. No se inyecta
+# ningún dato (los pide el Store), así que el Service Worker puede precachear
+# /app-shell y servirlas sin conexión.
 @routes_bp.route("/dashboard")
 def stats_page():
-    return render_template("app.html", initial_section="dashboard", planner_url=cfg.PLANNER_URL)
+    return render_template("shell.html")
 
 
 @routes_bp.route("/rutas")
 def dashboard():
-    return render_template("app.html", initial_section="rutas", planner_url=cfg.PLANNER_URL)
+    return render_template("shell.html")
 
 
 def _recompute_stats(con):
@@ -182,14 +187,31 @@ def refresh_stats():
     return jsonify({"ok": True})
 
 
-@routes_bp.route("/Sendero/<path:name>")
-def sendero_page(name=None):
-    r = db().execute(
-        "SELECT id FROM routes WHERE name=? ORDER BY COALESCE(started_at,created_at) DESC LIMIT 1",
-        (name,),
-    ).fetchone()
-    route_json = json.dumps(_build_route_dict(r["id"])) if r else "null"
-    return render_template("sendero.html", route_json=route_json)
+@routes_bp.route("/Sendero/<path:ref>")
+def sendero_page(ref=None):
+    """Detalle de una ruta por public_id.
+
+    Acepta también el nombre (enlaces guardados y marcadores de antes de que las
+    rutas tuvieran public_id) y en ese caso redirige al public_id, que es la URL
+    canónica: el nombre es ambiguo si hay dos rutas iguales y cambia al renombrar.
+
+    La vista es una sección de la SPA (templates/sec/detalle.html + static/js/sec/
+    detalle.js): aquí solo se sirve el shell. La ruta va como `bootstrap_json`
+    para que la primera carga no necesite un fetch extra, en su variante ligera
+    (?lite=1) — la misma que pide la sección, para que la copia guardada en
+    IndexedDB coincida con lo que serviría la red.
+    """
+    con = db()
+    r = con.execute("SELECT id FROM routes WHERE public_id=?", (ref,)).fetchone()
+    if not r:
+        byname = con.execute(
+            "SELECT public_id FROM routes WHERE name=? "
+            "ORDER BY COALESCE(started_at,created_at) DESC LIMIT 1", (ref,),
+        ).fetchone()
+        if byname and byname["public_id"]:
+            return redirect("/Sendero/" + byname["public_id"], code=302)
+    bootstrap = json.dumps(_route_payload(con, r["id"], lite=True)) if r else ""
+    return render_template("shell.html", bootstrap_json=bootstrap)
 
 
 @routes_bp.route("/api/routes/by-name/<path:name>")
@@ -428,6 +450,24 @@ def create_route():
     return jsonify(resp), 201
 
 
+def _route_payload(con, iid, lite=False):
+    """El objeto ruta tal y como lo consume el cliente, con su `rev`.
+
+    Lo comparten `GET /api/routes/<id>` y la página del detalle (que inyecta el
+    mismo objeto como `bootstrap_json`). Si los dos no produjeran exactamente lo
+    mismo, el Store guardaría en IndexedDB una copia distinta de la que serviría
+    la red y la siguiente visita volvería a pedir el detalle.
+    """
+    d = _build_route_dict(iid)
+    d["rev"] = entity_rev(con, "route", iid)
+    if lite:
+        d["lite"] = True
+        d["geojson"] = decimate(d["geojson"])
+        for key in ("elevation", "heart_rate", "speed"):
+            d[key] = resample(d[key])
+    return d
+
+
 @routes_bp.route("/api/routes/<rid>", methods=["GET"])
 def get_route(rid):
     """Dict completo de la ruta, con ETag = rev de la sincronización.
@@ -448,14 +488,7 @@ def get_route(rid):
     etag = f"{rev}{'-lite' if lite else ''}"
     if rev and etag in (request.headers.get("If-None-Match") or ""):
         return "", 304
-    d = _build_route_dict(iid)
-    d["rev"] = rev
-    if lite:
-        d["lite"] = True
-        d["geojson"] = decimate(d["geojson"])
-        for key in ("elevation", "heart_rate", "speed"):
-            d[key] = resample(d[key])
-    resp = jsonify(d)
+    resp = jsonify(_route_payload(con, iid, lite))
     if rev:
         resp.set_etag(etag)
         resp.headers["Cache-Control"] = "no-cache"

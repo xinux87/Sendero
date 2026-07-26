@@ -26,6 +26,8 @@ watch/
 # Excepción: los assets estáticos de la app y las capturas del README sí se versionan
 !static/**
 !readme_images/**
+# Y los fixtures de los tests, que son sintéticos (no hay nada personal en ellos)
+!tests/fixtures/**
 
 # Python
 __pycache__/

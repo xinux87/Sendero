@@ -1,3 +1,10 @@
+{# LEGACY — ya no se sirve. Sus tres secciones son ahora secciones de la SPA:
+     dashboard → templates/sec/dashboard.html + static/js/sec/dashboard.js
+     rutas     → templates/sec/rutas.html     + static/js/sec/rutas.js
+     planes    → templates/sec/planes.html    + static/js/sec/planes.js
+   (más su CSS en static/css/<seccion>.css), alojadas en templates/shell.html.
+   `GET /dashboard`, `/rutas` y `/planificacion` sirven el shell. Editar este
+   archivo NO tiene ningún efecto; se conserva como referencia del original. #}
 {% extends "base.html" %}
 {% block title %}Sendero{% endblock %}
 
@@ -636,12 +643,14 @@ function initDashMap(){
     });
     dashMap.on('mouseenter','dash-clusters',()=>{dashMap.getCanvas().style.cursor='pointer';});
     dashMap.on('mouseleave','dash-clusters',()=>{dashMap.getCanvas().style.cursor='';});
-    // Punto individual o línea de una ruta concreta → ficha de detalle
-    const _goToRoute=name=>{location.href='/Sendero/'+encodeURIComponent(name);};
-    dashMap.on('click','dash-unclustered',e=>{_goToRoute(e.features[0].properties.name);});
+    // Punto individual o línea de una ruta concreta → ficha de detalle.
+    // La URL canónica es el public_id (properties.id lo trae tanto la fuente de
+    // puntos como /api/routes/geojson); por nombre el servidor redirige 302.
+    const _goToRoute=pid=>{location.href='/Sendero/'+encodeURIComponent(pid);};
+    dashMap.on('click','dash-unclustered',e=>{_goToRoute(e.features[0].properties.id);});
     dashMap.on('mouseenter','dash-unclustered',()=>{dashMap.getCanvas().style.cursor='pointer';});
     dashMap.on('mouseleave','dash-unclustered',()=>{dashMap.getCanvas().style.cursor='';});
-    dashMap.on('click','dash-lines-hit',e=>{_goToRoute(e.features[0].properties.name);});
+    dashMap.on('click','dash-lines-hit',e=>{_goToRoute(e.features[0].properties.id);});
     dashMap.on('mouseenter','dash-lines-hit',()=>{dashMap.getCanvas().style.cursor='pointer';});
     dashMap.on('mouseleave','dash-lines-hit',()=>{dashMap.getCanvas().style.cursor='';});
     // Las líneas solo se piden para la zona visible (+ colchón de zoom/paneo);
@@ -839,6 +848,8 @@ async function loadStats(){
   function makeRecordCard(label,value,unit,name){
     if(!name)return;
     const card=document.createElement('div');card.className='record-card';
+    // Los récords van por NOMBRE a propósito: el caché de stats en settings solo
+    // guarda el nombre, y el servidor redirige 302 al public_id.
     card.onclick=()=>location.href='/Sendero/'+encodeURIComponent(name);
     card.innerHTML=`<div class="rl">${label}</div>
       <div class="rv">${value}<small> ${unit}</small></div>
@@ -1054,7 +1065,7 @@ function _ovReadSavedCamera(){
     return JSON.parse(s);
   }catch(_){return null;}
 }
-function _ovGoToRoute(name){_ovSaveCamera();location.href='/Sendero/'+encodeURIComponent(name);}
+function _ovGoToRoute(pid){_ovSaveCamera();location.href='/Sendero/'+encodeURIComponent(pid);}
 function renderOverviewMap(routes,append=false){
   const pts=routes.filter(r=>r.start_lat!=null&&r.start_lon!=null);
   if(!append)ovRoutes=pts; else ovRoutes.push(...pts);
@@ -1171,7 +1182,7 @@ function renderOverviewMap(routes,append=false){
       });
       ovMap.on('mouseleave','unclustered',()=>{ovMap.getCanvas().style.cursor='';pop.remove();});
       ovMap.on('click','unclustered',e=>{
-        _ovGoToRoute(e.features[0].properties.name);
+        _ovGoToRoute(e.features[0].properties.id);
       });
       ovMap.on('click','clusters',async e=>{
         const src=ovMap.getSource('routes');
@@ -1187,7 +1198,7 @@ function renderOverviewMap(routes,append=false){
       ovMap.on('mouseenter','clusters',()=>{ovMap.getCanvas().style.cursor='pointer';});
       ovMap.on('mouseleave','clusters',()=>{ovMap.getCanvas().style.cursor='';});
       // Punto o línea de una ruta concreta → ficha de detalle
-      ovMap.on('click','ov-lines-hit',e=>{_ovGoToRoute(e.features[0].properties.name);});
+      ovMap.on('click','ov-lines-hit',e=>{_ovGoToRoute(e.features[0].properties.id);});
       ovMap.on('mouseenter','ov-lines-hit',()=>{ovMap.getCanvas().style.cursor='pointer';});
       ovMap.on('mouseleave','ov-lines-hit',()=>{ovMap.getCanvas().style.cursor='';});
       // Detectar movimiento manual para no re-encuadrar una vez el usuario explora
@@ -1276,7 +1287,7 @@ function makeCard(r){
       c.querySelector(".card-check").textContent=selectedIds.has(r.public_id)?"✓":"";
       updateSelCount();
     };
-  }else{c.onclick=()=>_ovGoToRoute(r.name);}
+  }else{c.onclick=()=>_ovGoToRoute(r.public_id);}
   const thumbHtml=!editMode&&r.thumb_file
     ?`<div class="card-thumb"><img src="/api/routes/${r.public_id}/thumb" alt="" loading="lazy"></div>`:'';
   const dupBadge=r.dup_suspect_of

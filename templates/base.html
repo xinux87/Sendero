@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Sendero{% endblock %}</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+<!-- PWA (roadmap §5). El manifiesto y el Service Worker se sirven desde la raíz
+     (api/pwa.py), no desde /static: el ámbito de un SW es su carpeta. -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#17241c">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <!-- Librerías vendorizadas en static/vendor/ (antes unpkg.com y cdnjs.com). Van
      aquí, no en el head_libs de cada plantilla, porque la SPA sirve todas las
      vistas desde un único documento y así comparten una sola entrada de caché.
@@ -48,6 +53,13 @@ header .brand{display:flex;align-items:center;gap:14px}
 header .brand-logo{height:48px;width:48px;flex-shrink:0}
 header h1{font-size:40px;font-weight:700;text-transform:uppercase;line-height:1}
 header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transform:uppercase}
+/* Indicador de conexión / cola de escrituras (roadmap §5.4). En móvil el .tag se
+   oculta, pero este no: es justo donde más falta hace saber si hay red. */
+.net-badge{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:20px;
+  font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  border:1px solid var(--line);background:var(--bg);color:var(--muted);vertical-align:middle}
+.net-badge.off{border-color:var(--gr-red);color:var(--gr-red)}
+.net-badge.pend{border-color:var(--pr-yellow);color:var(--pr-yellow)}
 .header-nav{display:flex;gap:4px;flex-shrink:0}
 .nav-link{padding:5px 12px;border-radius:20px;border:1px solid transparent;
   background:transparent;color:var(--muted);font-size:12px;font-weight:600;
@@ -139,6 +151,63 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 .btn.sm{padding:6px 11px;font-size:13px}
 .empty{color:var(--muted);text-align:center;padding:48px 0}
 .hidden{display:none}
+/* ── MapLibre GL: lo común a los 5 mapas de la app ─────────────────────────
+   Antes estaba repetido en cada plantilla; con la SPA todas las secciones
+   comparten documento, así que va una sola vez aquí. Lo que cambia por sección
+   (el filtro de los iconos del detalle) sigue en su CSS, que gana por
+   especificidad al llevar el #sec-<nombre> delante. */
+.maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;
+  padding:8px 12px;font-family:inherit;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.maplibregl-popup-tip{border-top-color:var(--panel);border-bottom-color:var(--panel)}
+.maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
+.maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important;
+  border-color:var(--line)!important}
+.maplibregl-ctrl button:hover{background:var(--panel-2,var(--panel))!important}
+/* Los iconos (+/− zoom, pantalla completa) son SVG oscuros de serie: sobre el
+   panel oscuro no se verían. brightness(0) los aplana a negro e invert(1) los
+   pone en blanco. */
+.maplibregl-ctrl button .maplibregl-ctrl-icon{filter:brightness(0) invert(1)}
+.maplibregl-ctrl button:disabled .maplibregl-ctrl-icon{filter:brightness(0) invert(1);opacity:.35}
+/* ── Loaders flotantes (subidas, borrados, re-escaneos) ────────────────────
+   Globales porque el JS los cuelga de document.body, no de la sección. */
+.upload-loader{position:fixed;bottom:24px;right:24px;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:11px;padding:16px 20px;min-width:300px;
+  z-index:9999;box-shadow:0 6px 28px #00000070}
+.upload-loader-title{font-family:'Saira Condensed',sans-serif;font-size:18px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;
+  display:flex;justify-content:space-between;align-items:baseline}
+.upload-loader-count{font-family:var(--mono);font-size:13px;color:var(--pr-yellow)}
+.upload-bar-bg{background:var(--line);border-radius:4px;height:5px;margin-bottom:8px;overflow:hidden}
+.upload-bar-fill{background:var(--pr-yellow);height:100%;border-radius:4px;transition:width .25s ease;width:0%}
+.upload-bar-fill.del{background:var(--gr-red)}
+.upload-filename{color:var(--muted);font-size:11px;font-family:var(--mono);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+/* ── Acciones del header por sección ──────────────────────────────────────
+   Van fuera de #sec-<nombre> (están en la cabecera), así que su CSS es global.
+   El router muestra el bloque de la sección activa: data-sec-actions. */
+.view-btn{padding:5px 12px;border-radius:20px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
+.view-btn:hover{border-color:var(--ink);color:var(--ink)}
+.view-btn.on{background:var(--panel-2);border-color:var(--ink);color:var(--ink)}
+/* ── Tab bar inferior + FAB (solo móvil) ──────────────────────────────────── */
+.tabbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:950;
+  background:var(--panel);border-top:1px solid var(--line);
+  padding:2px 0 calc(2px + env(safe-area-inset-bottom))}
+.tabbar .tab-link{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  justify-content:center;padding:6px 0;min-height:50px;background:none;border:0;border-radius:0;
+  color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;text-decoration:none}
+.tabbar .tab-link .ico{font-size:20px;line-height:1}
+.tabbar .tab-link.on{background:none;border:0;color:var(--pr-yellow)}
+.fab{display:none;position:fixed;right:16px;bottom:calc(72px + env(safe-area-inset-bottom));
+  width:56px;height:56px;border-radius:50%;background:var(--gr-red);color:#fff;border:0;
+  font-size:30px;line-height:1;z-index:940;box-shadow:0 6px 20px #00000080;
+  align-items:center;justify-content:center;padding:0}
+/* ── Transición entre secciones (la aplica static/js/core/router.js) ─────── */
+@keyframes _sec-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+.sec{transition:opacity .15s ease,transform .15s ease}
+.sec._sec-leaving{opacity:0;transform:translateY(8px);pointer-events:none}
+.sec._sec-entering{animation:_sec-in .22s ease both}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel-2);
   border:1px solid var(--line);padding:11px 18px;border-radius:8px;font-size:14px;opacity:0;
   transition:.2s;pointer-events:none;z-index:9999}
@@ -155,7 +224,15 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
   header .brand-logo{height:34px;width:34px}
   header h1{font-size:24px}
   header .tag{display:none}
+  .net-badge{margin-left:0}   /* el .tag de al lado desaparece, este no */
   .header-nav{display:none}   /* la SPA la sustituye por la tab bar inferior */
+  body{padding-bottom:calc(60px + env(safe-area-inset-bottom))}
+  .toast{bottom:calc(72px + env(safe-area-inset-bottom))}
+  .tabbar{display:flex}
+  .fab{display:flex}
+  #nav-ajustes{display:none}          /* la tab bar ya lleva Ajustes */
+  .upload-loader{left:12px;right:12px;min-width:0;
+    bottom:calc(66px + env(safe-area-inset-bottom))}
   .wrap{padding:14px}
   /* inputs a 16px: por debajo iOS Safari hace zoom automático al enfocar */
   input,select,textarea,.cfg-input,.cfg-textarea{font-size:16px}
@@ -179,6 +256,7 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
   .btn.sm{min-height:40px}
   .nav-link{min-height:40px;display:inline-flex;align-items:center}
   .cfg-nav-item{min-height:44px}
+  .view-btn{min-height:40px}
 }
 .mifit-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
   padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
@@ -199,7 +277,7 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
      sobrescribirlo con la misma especificidad (roadmap §2). -->
 {% block head_css %}{% endblock %}
 </head>
-<body data-map-cfg='{{ map_cfg_json }}'>
+<body data-map-cfg='{{ map_cfg_json }}' data-planner-url='{{ planner_url }}'>
 <header>
   <svg viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true">
     <g fill="none" stroke="#2c4435" stroke-width="1.2">
@@ -215,6 +293,9 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
       <div>
         <h1>Sendero</h1>
         <span class="tag">Bitácora de montaña</span>
+        <!-- Estado de conexión y de la cola de escrituras (roadmap §5.4).
+             Oculto mientras todo va bien: solo aparece si hay algo que contar. -->
+        <span id="net-badge" class="net-badge hidden"></span>
       </div>
     </div>
     <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
@@ -253,6 +334,8 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
                 onclick="cfgSection('mapas',this)">Mapas</button>
         <button id="cfg-nav-mifit" class="cfg-nav-item"
                 onclick="cfgSection('mifit',this)">Mi Fit / Zepp</button>
+        <button id="cfg-nav-offline" class="cfg-nav-item"
+                onclick="cfgSection('offline',this)">Sin conexión</button>
       </nav>
       <div class="cfg-sidebar-ver mono">Sendero v{{ app_version }}</div>
     </div>
@@ -416,6 +499,62 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
         </div>
 
         <button class="btn" onclick="saveMapSettings()">Guardar ajustes</button>
+      </div>
+
+      <!-- ── SIN CONEXIÓN (roadmap §6.3 y §7) ────────────────────────────── -->
+      <div id="cfg-sec-offline" class="cfg-sec-content hidden">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 20px;line-height:1.6">
+          Sendero guarda en este dispositivo la lista de rutas y planes, y el detalle de las
+          que abres. Con eso funciona sin conexión: puedes consultar, y editar nombre, notas
+          y actividad (se envían al volver la red). Para ver también el <strong
+          style="color:var(--ink)">mapa</strong> hace falta un archivo PMTiles
+          (Ajustes → Mapas).
+        </p>
+
+        <div class="cfg-subhead"><span class="n">1</span> Estado de la copia local</div>
+        <div id="off-estado" class="cfg-hint" style="margin-bottom:10px">Cargando…</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px">
+          <button class="btn ghost sm" id="off-verify-btn" onclick="offVerify()">
+            ✓ Comprobar sincronización</button>
+          <button class="btn ghost sm" onclick="offRefresh()">↻ Actualizar datos</button>
+        </div>
+
+        <div class="cfg-subhead"><span class="n">2</span> Descargar para sin conexión</div>
+        <div class="cfg-hint" style="margin-bottom:10px">
+          Por defecto el detalle de una ruta se guarda la primera vez que la abres. Esto
+          descarga el de <strong style="color:var(--ink)">todas</strong> de golpe, en su
+          versión ligera, para llevarlas al monte sin haberlas visitado.
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+          <button class="btn ghost sm" id="off-prefetch-btn" onclick="offPrefetch()">
+            ↓ Descargar todas las rutas</button>
+          <span id="off-prefetch-info" class="mono" style="font-size:12px;color:var(--muted)"></span>
+        </div>
+        <div class="upload-bar-bg" id="off-prefetch-bar-bg"
+             style="display:none;margin-bottom:24px"><div class="upload-bar-fill" id="off-prefetch-bar"></div></div>
+        <div style="margin-bottom:24px"></div>
+
+        <div class="cfg-subhead"><span class="n">3</span> Cambios pendientes de enviar</div>
+        <div class="cfg-hint" style="margin-bottom:10px">
+          Lo que editaste sin conexión y aún no ha llegado al servidor. Se envía solo al
+          recuperar la red; aquí puedes forzarlo o descartarlo.
+        </div>
+        <div id="off-cola" style="margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px">
+          <button class="btn ghost sm" id="off-flush-btn" onclick="offFlush()">↑ Enviar ahora</button>
+          <button class="btn ghost sm" onclick="offDiscard()"
+                  style="border-color:var(--gr-red);color:var(--gr-red)">Descartar todo</button>
+        </div>
+
+        <hr class="cfg-actions-sep">
+        <div class="cfg-subhead"><span class="n">4</span> Vaciar la copia local</div>
+        <div class="cfg-hint" style="margin-bottom:10px">
+          Borra lo guardado en <em>este dispositivo</em> (rutas, planes y detalles). No toca
+          nada del servidor: se vuelve a descargar en la próxima visita. Útil si algo se ve
+          raro o desincronizado.
+        </div>
+        <button class="btn ghost sm" onclick="offClear()"
+                style="border-color:var(--gr-red);color:var(--gr-red)">Vaciar copia local</button>
       </div>
 
       <!-- sección Mi Fit / Zepp -->

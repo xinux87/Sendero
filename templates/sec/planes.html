@@ -1,0 +1,37 @@
+{# "Mis Planes" (sección de la SPA). Markup extraído de templates/app.html; la
+   lógica vive en static/js/sec/planes.js y el CSS en static/css/planes.css.
+   El botón "+ Planificar ruta" de la cabecera está en shell.html. #}
+<section id="sec-planes" class="sec hidden">
+  <div id="add-modal" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 style="font-family:'Saira Condensed';font-size:26px">Planificar ruta</h2>
+        <button class="btn ghost sm" onclick="SEC.planes.closeAddModal()">Cerrar</button>
+      </div>
+      <div id="drop-plan" class="drop-plan" onclick="$('#plan-file').click()">
+        Arrastra un archivo GPX aquí o pulsa para elegir
+        <div id="drop-chosen" class="chosen hidden"></div>
+        <input id="plan-file" type="file" accept=".gpx" class="hidden">
+      </div>
+      <button class="btn" style="width:100%" onclick="SEC.planes.uploadPlanGpx()">Añadir ruta planificada</button>
+      <button class="btn ghost" style="width:100%;margin-top:8px" onclick="SEC.planes.openPlanner()">✏ Dibujar ruta nueva ↗</button>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4">
+        Abre el planificador externo en otra ventana. Dibuja la ruta, expórtala como GPX
+        y arrástrala aquí arriba para importarla.
+      </div>
+    </div>
+  </div>
+  <div id="plan-loader" class="upload-loader hidden">
+    <div class="upload-loader-title">
+      <span id="loader-title">Procesando…</span>
+      <span id="loader-pct" class="upload-loader-count"></span>
+    </div>
+    <div class="upload-bar-bg"><div id="loader-bar" class="upload-bar-fill"></div></div>
+    <div id="loader-msg" class="upload-filename"></div>
+  </div>
+  <div id="plan-map"></div>
+  <div id="plan-grid" class="plan-grid"></div>
+  <div id="no-plans" class="empty hidden">No hay rutas planificadas todavía.</div>
+  <button class="fab" title="Planificar ruta" aria-label="Planificar ruta"
+          onclick="SEC.planes.openAddModal()">＋</button>
+</section>

@@ -3,7 +3,8 @@
 Objetivo triple, en este orden de dependencia:
 
 1. **SPA completa** — un único documento HTML sirve todas las vistas (dashboard, rutas,
-   planes, detalle de ruta, detalle de plan, editor). Hoy solo 3 de 6 vistas son SPA.
+   planes, detalle de ruta, detalle de plan, editor). *(Al escribir el plan solo 3 de 6
+   lo eran; hoy, las 6.)*
 2. **Sin conexión** — la app arranca y se usa sin internet, **mapas incluidos**. Requiere
    dos cosas independientes: (a) que el servidor no dependa de ningún host externo,
    (b) que el navegador sobreviva sin el servidor (PWA + Service Worker).
@@ -16,47 +17,44 @@ Objetivo triple, en este orden de dependencia:
 **Última versión publicada con avance de este plan: v0.6.0 (2026-07-25)** = fases 1, 4 y
 6.1 completas + la fase 2/3 arrancada (shell + sección `plan`).
 
-> ### ▶ POR DÓNDE VAMOS — siguiente paso concreto
+**Sin publicar (en `master`)**: el plan está **terminado** salvo §6.2. Las 6 vistas son
+secciones de un único shell (fases 2 y 3), la PWA funciona (5), el prefetch de detalles y
+el panel de gestión están en Ajustes → Sin conexión (6.3) y la cola de escrituras tiene su
+UI (7). Verificado con `tests/e2e_spa.py`: ~115 comprobaciones en un navegador real.
+
+> ### ▶ POR DÓNDE VAMOS — nada urgente: el plan está cerrado
 >
-> **Migrar el detalle de ruta a sección: `templates/sec/detalle.html` +
-> `static/js/sec/detalle.js` + `static/css/detalle.css`**, portando lo que hoy vive en
-> `templates/sendero.html` (~1000 líneas), y que `GET /Sendero/<public_id>` sirva
-> `shell.html` con el detalle como `bootstrap_json` (igual que ya hace `/Plan/<public_id>`).
+> Las 6 vistas son secciones de `templates/shell.html` y no queda ninguna recarga de
+> documento. Lo que hay pendiente es opcional y está acotado:
 >
-> Se hace ahora porque es la vista que **valida el contrato con lo difícil**: un mapa
-> MapLibre + 3 `Chart` + el hover sincronizado en 4 direcciones + marcadores de fotos +
-> modal Immich + lightbox. Si `mount()`/`unmount()` aguanta esto, aguanta el resto.
-> Checklist propia de esa vista:
-> - `unmount()` destruye el mapa **y** los 3 charts, y quita los marcadores de fotos.
-> - El hover sincronizado sigue funcionando en las 4 direcciones, y los `ctx.onmouseleave`
->   siguen siendo **asignación directa** (no `addEventListener`) para no acumular
->   listeners en cada re-render (ya documentado en CLAUDE.md).
-> - Los ids que choquen con la sección `plan` o con el editor llevan prefijo (`d-`/`ed-`),
->   y el CSS va escopado bajo `#sec-detalle`.
-> - `.overlay.hidden` debe seguir ocultando el modal Immich al cargar (bug conocido).
-> - El botón "✎ Editar" pasa a `data-nav="/Sendero/<id>/editor"`: hasta que exista
->   `sec/editor.js`, el router cae solo a `location.href` (`hosted()`).
->
-> Después de esa: `dashboard` + `rutas` + `planes` (los tres salen de `app.html`, y es ahí
-> donde el listado deja `sessionStorage['sendero_routes_v4']` y pasa a leer de
-> `Store.routes()`), luego `editor` (el más delicado: paridad `doOp()`↔`apply_ops()`),
-> y con las 6 vistas dentro del shell ya se puede hacer la fase 5 (PWA) → 6.2/6.3 → 7.
+> 1. **§6.2, teselas por zona** — decidido que NO para las 4 capas de terceros (su
+>    política de uso prohíbe la descarga masiva). Para el escenario "ni servidor ni
+>    internet" haría falta guardar el `.pmtiles` completo en el navegador y leerlo con un
+>    `Source` propio de pmtiles.js. No se ha implementado a ciegas porque no hay ningún
+>    `.pmtiles` en `data/tiles/` con el que probarlo, y es la pieza más fácil de romper en
+>    silencio. Diseño y criterios en §6.2.
+> 2. **Publicar** — `APP_VERSION` invalida el precache del Service Worker, así que este
+>    trabajo no debe salir sin subir la versión (los 4 puntos de "Publicar una versión" de
+>    CLAUDE.md).
+> 3. **Borrar las plantillas legacy** (`app.html`, `sendero.html`, `editor.html`,
+>    `rutas.html`, `overview.html`, `planificacion.html`, `plan_detalle.html`): están en
+>    git y ya nadie las sirve. Se conservaron para poder comparar durante la migración; el
+>    momento natural de borrarlas es el commit siguiente al de la versión.
 
 | Fase | Estado | Qué hay hecho |
 |---|---|---|
 | 1 Vendorizar | **hecha** | `static/vendor/` (maplibre 4.7.1, chart 4.4.1, pmtiles 3.0.6), `static/fonts/` con `fonts.css`, Leaflet fuera (`plan_detalle.html` pasó a MapLibre), `<script>`/`<link>` externos eliminados de las plantillas |
-| 4 Sync delta | **hecha (servidor + store)** | `sync_seq`/`sync_log`/9 triggers + epoch + backfill en `core/database.py`; `api/sync.py` (`/state` con ETag→304, `/changes`, `/manifest`); ETag por `rev` y `?lite=1` en `GET /api/routes/<id>`; `core/sync.py` puro + `tests/test_sync.py`; cliente `static/js/core/store.js` (IndexedDB, delta, verify, outbox). **Falta**: que dashboard/rutas/planes lean del store en vez de `sessionStorage` (llega con la fase 2 de esas secciones) |
-| 2 Extraer JS | **en curso** | `static/js/core/`: `chrome.js` (helpers + Ajustes, extraído de `base.html`), `loader.js`, `router.js`, `store.js`. Pendiente: `sec/detalle.js`, `sec/dashboard.js`, `sec/rutas.js`, `sec/planes.js`, `sec/editor.js` |
-| 3 SPA completa | **en curso** | `templates/shell.html` + `Router` de 6 vistas. Sección `plan` migrada (`templates/sec/plan.html` + `static/js/sec/plan.js` + `static/css/plan.css`); `/Plan/<public_id>` sirve el shell y los planes tienen `public_id`. Las 5 vistas restantes siguen como documento propio y el router cae a `location.href` al navegar hacia ellas (`hosted()`) |
+| 4 Sync delta | **hecha** | `sync_seq`/`sync_log`/9 triggers + epoch + backfill en `core/database.py`; `api/sync.py` (`/state` con ETag→304, `/changes`, `/manifest`); ETag por `rev` y `?lite=1` en `GET /api/routes/<id>`; `core/sync.py` puro + `tests/test_sync.py`; cliente `static/js/core/store.js` (IndexedDB, delta, verify, outbox). Las 6 secciones leen del Store: ya no queda ningún `fetch('/api/routes')` suelto ni caché en `sessionStorage` |
+| 2 Extraer JS | **hecha** | `static/js/core/`: `chrome.js` (helpers + Ajustes + SW + badge + panel Sin conexión), `loader.js`, `router.js`, `store.js`. `static/js/sec/`: las 6 secciones. Ni una línea de lógica de vista queda en las plantillas |
+| 3 SPA completa | **hecha (6 de 6)** | `templates/shell.html` aloja dashboard, rutas, planes, detalle, plan y editor. Todas las URLs de vista sirven el mismo shell; `hosted()` siempre acierta y no queda ninguna recarga de documento. Acciones de cabecera por sección con `data-sec-actions` (las conmuta el router) |
 | 6.1 PMTiles | **hecha** | `api/maps.py` (`/tiles/<name>` con Range/206, `/api/maps`), `TILES_DIR`, capa `OFFLINE_LAYER` + `buildStyle`/`applyBasemap`/`defaultBasemap` en `shared.js`, Ajustes → Mapas, y los 5 mapas de la app pasan ya por `buildStyle()` |
-| 5 PWA/SW | pendiente | — |
-| 6.2/6.3 Offline real | pendiente | `Store.prefetchAll()` (detalle ligero) ya existe; falta caché de teselas y UI de gestión |
-| 7 Escrituras | **parcial** | `Store.patch()` + `outbox` + `flushOutbox()` hechos y usados por la sección `plan`; falta el badge de estado del header y el panel de la cola en Ajustes |
+| 5 PWA/SW | **hecha** | `api/pwa.py` (`/sw.js` con `APP_VERSION` inyectada, `/manifest.webmanifest`, `/app-shell`), `static/sw.js`, iconos 192/512/maskable en `static/icons/`, badge `#net-badge` en el header. Ver las 3 desviaciones respecto al plan más abajo (§5) |
+| 6.3 Datos offline | **hecha** | Ajustes → Sin conexión: estado de la copia local (rutas, planes, detalles, bytes, última sincronización), "Descargar todas las rutas" con progreso (`Store.prefetchAll`), "Comprobar sincronización" (`Store.verify`, por manifiesto) y "Vaciar copia local" |
+| 6.2 Teselas por zona | **descartada / pendiente** | Decisión, no olvido: ver §6.2 |
+| 7 Escrituras | **hecha** | `Store.patch()` + `outbox` + `flushOutbox()`, usados por `plan`, `detalle` y el editor; badge en el header (§5.4) y panel en Ajustes → Sin conexión con lista de pendientes, "Enviar ahora" y "Descartar todo" |
 
-Orden recomendado para seguir: `sec/detalle.js` (valida el contrato con la vista
-compleja: mapa + 3 charts + hover sincronizado + fotos) → `sec/dashboard.js` +
-`sec/rutas.js` + `sec/planes.js` (aquí es donde el listado pasa a leer del Store y
-muere `sendero_routes_v4`) → `sec/editor.js` → fase 5 (PWA) → 6.2/6.3 → 7.
+No queda orden pendiente: lo único abierto es §6.2, que es una decisión de producto más
+que de implementación (ver ahí).
 
 Restricciones que se respetan (CLAUDE.md): **sin build step** (regla 1), UI en español
 (regla 8), paleta actual (regla 9), persistencia solo en `/data` (regla 7), migraciones
@@ -77,7 +75,12 @@ para columnas nuevas leídas en listados (regla 12).
 
 ---
 
-## 0. Diagnóstico (estado actual, verificado)
+## 0. Diagnóstico (HISTÓRICO: estado de partida, antes de la migración)
+
+> Esta sección describe cómo estaba el código **antes** de empezar, con números de línea
+> de entonces. Se conserva porque explica de dónde salen las decisiones de las fases
+> siguientes, pero NO es el estado actual: hoy las 6 vistas son secciones de un shell
+> único y las plantillas que se citan aquí son legacy.
 
 ### Lo que ya es SPA
 
@@ -254,6 +257,15 @@ crecer en memoria (DevTools → Memory, heap estable) y sin duplicar marcadores 
 5. **`{{ route_json | safe }}` desaparece** de `sendero.html` cuando la vista se migre.
    Cuando ya no quede ninguna inyección, la regla 10 de CLAUDE.md queda obsoleta y hay
    que borrarla.
+   → **Al implementarlo se decidió lo contrario, y a propósito**: la inyección se conserva
+   como `bootstrap_json` (punto 4) para no pagar un fetch extra en la carga directa, en
+   `detalle` igual que en `plan`. Va en su variante **ligera** (`?lite=1`), la misma que
+   pide la sección, porque si el servidor inyectara la completa y la sección pidiera la
+   ligera el Store guardaría una copia con la etiqueta equivocada y volvería a pedir el
+   detalle en la siguiente visita. Lo garantiza `_route_payload()` en `api/routes.py`,
+   compartida por `GET /api/routes/<id>` y `sendero_page()`. La regla 10 de CLAUDE.md sigue
+   viva, reescrita para `bootstrap_json`. El precio está en §5.6, punto 3: por eso el
+   Service Worker **no** cachea esos documentos.
 6. **Legacy**: `rutas.html`, `overview.html`, `planificacion.html` ya no se sirven;
    `sendero.html`, `plan_detalle.html` y `editor.html` se les unen al migrarse. Propuesta:
    **borrarlos todos en el mismo commit** que completa la fase (están en git, recuperables)
@@ -486,6 +498,49 @@ store y pulsar "Comprobar sincronización" la restaura.
 **Criterio de aceptación**: con el servidor **parado**, abrir la PWA muestra dashboard,
 listado, mapa (§6) y el detalle de las rutas visitadas, con el badge en "sin conexión".
 
+### 5.6 Implementado — y las tres desviaciones respecto a lo de arriba
+
+Hecho: `api/pwa.py` (`/sw.js`, `/manifest.webmanifest`, `/app-shell`), `static/sw.js`,
+`static/icons/` (192, 512 y maskable al 80%, generados de `static/icon.svg` con cairosvg),
+`<link rel="manifest">` + `theme-color` en `base.html`, registro del SW y badge
+`#net-badge` en `static/js/core/chrome.js`. Prueba de humo: `node tests/sw_smoke.js`
+(ejecuta el SW con `caches`/`fetch` simulados: install, install con un 404, activate
+borrando cachés viejas, y qué estrategia le toca a cada URL).
+
+Tres cosas salieron distintas de lo planeado, y el motivo es el mismo en las tres — la
+migración está a medias:
+
+1. **El SW se registra desde `chrome.js`, no desde el shell.** Registrándolo solo en el
+   shell, `/dashboard`, `/rutas` y `/planificacion` (que sirve `app.html`, las vistas más
+   usadas) se quedarían sin caché de código. `chrome.js` lo carga `base.html`, así que
+   cubre los dos mundos.
+2. **No hay *navigation fallback* general al shell.** Solo caen al shell las rutas que el
+   shell aloja hoy (`SHELL_PATHS` = `/Sendero/<id>` y `/Plan/<id>`); las demás reciben su
+   documento cacheado y, si no lo tienen, una página de aviso. Servir el shell para
+   `/rutas` daría una página en blanco, porque el shell no sabe montar esa sección
+   todavía. Al migrar las tres vistas, `SHELL_PATHS` pasa a ser "cualquier vista".
+3. **Los documentos de las vistas del shell NO se cachean** (el plan decía
+   *stale-while-revalidate* del shell HTML). `/Sendero/<id>` lleva la ruta dentro como
+   `bootstrap_json`: su HTML es una copia de los **datos**, y `Store.route()` confía en el
+   bootstrap sin preguntar. Cachearlo haría que al recargar sin conexión ese bootstrap
+   viejo pisara en IndexedDB una edición hecha sin conexión. Se precachea `/app-shell`
+   (sin datos) y de los datos se encarga el Store, que es el único que sabe qué está
+   obsoleto. Está como regla 16 en CLAUDE.md.
+
+4. **Nuestro propio código no va *cache-first*, va *stale-while-revalidate*.** La tabla de
+   arriba metía `static/js/` en cache-first "porque los nombres van versionados", y eso es
+   verdad de `static/vendor/**` (`maplibre-gl-4.7.1.js`) pero **falso** de
+   `static/js/**`, `static/css/**` y `shared.js`. Con caché primero, editar `detalle.js`
+   sin subir `APP_VERSION` dejaría al navegador con el archivo viejo indefinidamente — el
+   mismo fallo que §5.3 quiere evitar, pero por la puerta de atrás y sin publicar nada.
+   Con revalidación por detrás el cambio llega en la siguiente carga aunque nadie toque la
+   versión, y sin conexión se sigue sirviendo la copia guardada. Cache-first se queda para
+   vendor, fuentes, iconos y manifiesto.
+
+Consecuencia honesta del punto 2 mientras dure: **sin conexión funcionan los detalles de
+rutas y planes ya sincronizados, pero no los listados.** El listado sigue leyendo de
+`sessionStorage`/red, no del Store; eso se arregla en el paso siguiente, no aquí.
+
 ---
 
 ## 6. Fase 6 — Mapas sin conexión
@@ -547,6 +602,31 @@ escenarios de "sin conexión" con soluciones distintas:
 3. **Gestión del espacio** en Ajustes → Mapas: cuánto ocupa la caché, qué zonas hay
    descargadas, botón de vaciar. Sin esto la PWA se convierte en un agujero negro de disco
    que el usuario no puede inspeccionar.
+
+
+#### Estado: **no implementado, y por qué** (decisión, no olvido)
+
+Los tres puntos de arriba siguen siendo la referencia si algún día se hace, pero al llegar
+aquí la conclusión fue que ninguno se puede entregar bien hoy:
+
+- **El punto 1 (oportunista) no se puede aplicar a nada útil.** Solo sería legítimo con la
+  capa offline local, y esa capa **ya la sirve Sendero** desde `data/tiles/*.pmtiles`: si el
+  servidor está accesible (escenario A, el mayoritario), cachear en el navegador no añade
+  nada. Y se pide por `Range`: una respuesta 206 no se puede guardar en Cache Storage, así
+  que "cachear la tesela que se pinta" no tiene equivalente directo con PMTiles.
+- **El punto 2 (deliberada) exige un `Source` propio de pmtiles.js** que lea de Cache
+  Storage/OPFS en vez de por HTTP, más una estimación de tamaño fiable. Es una pieza
+  perfectamente factible, pero es también la más fácil de romper en silencio (un mapa que
+  se queda gris sin decir por qué), y **en este repositorio no hay ningún `.pmtiles` con el
+  que probarla**: `data/tiles/` está vacío. Escribirla a ciegas sería añadir código no
+  ejercitado al camino más frágil de todo el plan.
+- **El punto 3 (gestión del espacio) sí se hizo**, pero para los datos, no para las
+  teselas: Ajustes → Sin conexión dice cuánto ocupa la copia local y permite vaciarla.
+
+Qué haría falta para retomarlo, en orden: (a) un `.pmtiles` regional de prueba en
+`data/tiles/`; (b) un `Source` de pmtiles.js respaldado por Cache Storage, con test de
+humo; (c) el botón "descargar esta zona" con estimación previa de MB y confirmación; (d) la
+gestión de espacio de esa caché junto a la de datos. Sin (a) no se debería empezar por (b).
 
 ### 6.3 Datos de ruta offline
 
@@ -657,6 +737,18 @@ versión" de CLAUDE.md.
   dejan la fila correcta en `sync_log`. Es el único test nuevo que toca SQLite y merece la
   excepción a la regla de "sin BD" (o un `conftest` que construya la BD en `tmp_path`).
 
+Además, dos pruebas de humo de JS que se lanzan con **Node a pelo** (sin npm, sin
+dependencias: regla 1; pytest ignora los `.js`):
+
+```bash
+node tests/sw_smoke.js    # SW con caches/fetch simulados: install (y con un 404),
+                          # activate borrando cachés viejas, estrategia por URL,
+                          # y el comportamiento sin conexión de cada tipo de vista
+node tests/sec_smoke.js   # carga sec/detalle.js contra los ids REALES del markup:
+                          # pilla un selector que ya no existe y comprueba que
+                          # unmount() es seguro antes del primer mount()
+```
+
 Smoke test manual, tras cada fase:
 
 ```bash
@@ -671,9 +763,18 @@ curl -si -H 'If-None-Match: "<epoch>:<cursor>"' localhost:8090/api/sync/state   
 curl -s localhost:8090/api/sync/manifest | head -c 300      # [public_id, rev]
 curl -X DELETE localhost:8090/api/routes/<public_id>
 curl -s "localhost:8090/api/sync/changes?since=N"           # ahora en deleted
-# Fase 5-6
-#   DevTools → Application → Service Workers → "Offline"; recargar: shell + listado + mapa.
+# Fase 5 (hecha)
+curl -si localhost:8090/sw.js | head -3            # 1ª línea: self.APP_VERSION = "X.Y.Z"
+curl -sI localhost:8090/manifest.webmanifest       # application/manifest+json
+curl -s localhost:8090/app-shell | grep -c bootstrap   # 0: el shell precacheado va sin datos
+#   Y que TODAS las URLs de PRECACHE_URLS devuelvan 200 (un 404 no rompe la instalación,
+#   pero deja esa pieza sin cachear y la app no arranca sin conexión).
+#   DevTools → Application → Service Workers → "Offline"; recargar un /Sendero/<id> ya
+#   visitado: debe pintarse entero (shell precacheado + detalle de IndexedDB), y el badge
+#   del header decir "sin conexión". Editar las notas ahí: se guardan y el badge pasa a
+#   "1 sin enviar"; volver a poner red → se envía solo y el badge desaparece.
 #   Parar el contenedor y repetir: mismo resultado.
+#   Lo que AÚN NO funciona sin conexión: /rutas y /dashboard (listado por red, §5.6).
 ```
 
 Y las comprobaciones que ya exige CLAUDE.md y que este plan pone en riesgo:
@@ -683,7 +784,8 @@ Y las comprobaciones que ya exige CLAUDE.md y que este plan pone en riesgo:
 - ¿Los dos caminos de fotos (local y `immich_id`) siguen funcionando?
 - ¿La paridad `doOp()` ↔ `apply_ops()` sigue intacta tras mover `editor.js`?
 - ¿`_build_route_dict()` y `/api/routes/<id>` devuelven los mismos campos?
-- ¿El hover sincronizado de `sendero.html` sigue funcionando en las 4 direcciones?
+- ¿El hover sincronizado del detalle (`static/js/sec/detalle.js`) sigue funcionando en las
+  4 direcciones?
 
 ---
 
@@ -693,8 +795,15 @@ No dejar esto para el final: CLAUDE.md es la fuente de verdad del proyecto y var
 afirmaciones dejarán de ser ciertas.
 
 - La tabla de plantillas y la lista de rutas Flask: 6 vistas en un shell, no 6 archivos.
+  → **hecho** para `plan` y `detalle`; queda actualizarla al migrar las otras 4.
 - La regla 10 (`{{ route_json | safe }}`) desaparece cuando se quite la inyección.
+  → **no se quita** (ver §3, punto 5): reescrita para `bootstrap_json`. Y regla **16**
+  nueva: el SW no cachea documentos con datos inyectados dentro.
 - La regla 11 (clave de caché en `sessionStorage`) pasa a ser la versión de IndexedDB.
+  → pendiente: hoy sigue habiendo las dos (`sendero_routes_v4` en `app.html` y
+  `DB_VERSION` en `store.js`), y muere la primera al migrar `rutas`/`dashboard`.
+- La checklist de publicar versión: `APP_VERSION` también invalida el precache del SW.
+  → **hecho**.
 - Sección nueva de `sync_log`/`sync_seq`/triggers en "Modelo de datos", con la nota de que
   **toda tabla nueva sincronizable necesita sus 3 triggers**.
 - Sección nueva del Service Worker, y **`APP_VERSION` como versión del precache** añadido a

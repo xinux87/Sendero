@@ -35,7 +35,7 @@ def _build_plan_dict(pid):
 
 @planned_bp.route("/planificacion")
 def planificacion_page():
-    return render_template("app.html", initial_section="planes", planner_url=cfg.PLANNER_URL)
+    return render_template("shell.html")
 
 
 @planned_bp.route("/Plan/<path:ref>")

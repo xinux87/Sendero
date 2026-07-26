@@ -1,0 +1,161 @@
+{# Editor de rutas (sección de la SPA). Markup extraído de
+   templates/editor.html; la lógica vive en static/js/sec/editor.js y el CSS
+   en static/css/editor.css. Los botones de la cabecera están en shell.html. #}
+<section id="sec-editor" class="sec hidden">
+<div class="ed-head">
+  <div class="ed-title">
+    <button class="btn ghost sm" onclick="SEC.editor.goBack()">← Volver</button>
+    <h1 id="ed-name"></h1>
+    <span class="ver-badge" id="ed-version">v0</span>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn ghost sm" id="undo-btn" onclick="SEC.editor.undo()" disabled title="Ctrl+Z">↶ Deshacer</button>
+    <button class="btn ghost sm" id="redo-btn" onclick="SEC.editor.redo()" disabled title="Ctrl+Y">↷ Rehacer</button>
+    <button class="btn sm" id="save-btn" onclick="SEC.editor.openSaveModal()" disabled>💾 Guardar cambios</button>
+  </div>
+</div>
+
+<div id="ed-loading">Cargando puntos de la ruta…</div>
+
+<div id="ed-body" class="hidden">
+  <div class="ed-grid">
+    <div>
+      <div id="edmap"></div>
+      <div class="ed-profile" id="profile-panel">
+        <h3>Perfil de elevación — arrastra para seleccionar · rueda: zoom · Shift+arrastre: panear · doble click: todo</h3>
+        <div class="chart-zoom">
+          <button class="btn ghost sm" onclick="SEC.editor.edZoomStep(0.75)">＋ Acercar</button>
+          <button class="btn ghost sm" onclick="SEC.editor.edZoomStep(1.33)">− Alejar</button>
+          <button class="btn ghost sm" onclick="viewMin=null;viewMax=null;applyZoom()">⤢ Todo</button>
+        </div>
+        <div class="ed-chart-box"><canvas id="edelev"></canvas></div>
+      </div>
+      <div class="ed-profile" id="speed-panel">
+        <h3>Velocidad <span style="text-transform:none" title="Derivada de los tiempos del track con ventana móvil de 15 s (aprox.)">(aprox.)</span></h3>
+        <div class="ed-chart-box"><canvas id="edspeed"></canvas></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="ed-panel">
+        <h3>Detalles</h3>
+        <div class="det-fld">
+          <label for="det-name">Nombre</label>
+          <input type="text" id="det-name" maxlength="200" placeholder="Nombre de la ruta">
+        </div>
+        <div class="det-fld">
+          <label for="det-device">Dispositivo que la grabó</label>
+          <input type="text" id="det-device" maxlength="200" placeholder="Sin dispositivo">
+        </div>
+        <button class="btn sm" id="det-save" style="width:100%" onclick="SEC.editor.saveDetails()" disabled>Guardar detalles</button>
+      </div>
+      <div class="ed-panel">
+        <h3>Estadísticas <span style="text-transform:none" title="Distancia aproximada (2D); el valor exacto se recalcula al guardar">(aprox.)</span></h3>
+        <div class="ed-stats" id="ed-stats"></div>
+      </div>
+      <div class="ed-panel hidden" id="issues-panel">
+        <h3>⚠ Avisos GPS</h3>
+        <button class="btn sm" id="fix-all-btn" style="width:100%;margin-bottom:8px" onclick="SEC.editor.fixAllIssues()">✔ Corregir todo</button>
+        <div id="issues-status" class="issues-status hidden"></div>
+        <div id="issues-list" style="max-height:320px;overflow-y:auto"></div>
+        <div class="sel-hint">Tramos con velocidad, desnivel o altitud imposibles según los
+          umbrales de Ajustes → GPS incorrecto. Se ocultan mientras haya cambios sin guardar.</div>
+      </div>
+      <div class="ed-panel">
+        <h3>Operaciones</h3>
+        <div class="mode-tabs">
+          <button id="mtab-select" class="mtab on" onclick="SEC.editor.setMode('select')">Seleccionar</button>
+          <button id="mtab-verts" class="mtab" onclick="SEC.editor.setMode('verts')">Editar puntos</button>
+        </div>
+        <div class="ed-ops" id="ops-select">
+          <button class="btn ghost sm" id="op-trim-start" onclick="SEC.editor.opTrimStart()" disabled>✂ Recortar antes de A</button>
+          <button class="btn ghost sm" id="op-trim-end" onclick="SEC.editor.opTrimEnd()" disabled>✂ Recortar después de B</button>
+          <button class="btn ghost sm" id="op-del-range" onclick="SEC.editor.opDeleteRange()" disabled>␡ Eliminar tramo A–B</button>
+          <button class="btn ghost sm" id="op-reverse" onclick="SEC.editor.opReverse()">⇆ Invertir ruta</button>
+          <button class="btn ghost sm" id="op-split" onclick="SEC.editor.doSplit()" disabled>✄ Dividir ruta en A…</button>
+          <button class="btn ghost sm" id="op-clear-sel" onclick="SEC.editor.clearSel()" disabled>✕ Quitar selección</button>
+        </div>
+        <div class="sel-hint" id="mode-hint">Haz click en la línea del mapa para colocar los manejadores
+          <b style="color:#e8c44a">A</b> y <b style="color:#d24a3a">B</b>, o arrastra sobre el
+          perfil de elevación. Los manejadores se pueden arrastrar por el track.</div>
+        <div style="border-top:1px solid var(--line);margin:12px 0 0;padding-top:10px;display:flex;flex-direction:column;gap:7px">
+          <button class="btn ghost sm" style="width:100%;text-align:left" onclick="SEC.editor.toggleSimplify()">⌇ Simplificar track…</button>
+          <div id="simp-panel" class="tool-panel hidden">
+            <input type="range" id="simp-tol" min="0" max="100" value="40" oninput="SEC.editor.simpPreview()">
+            <div class="tool-info" id="simp-info">—</div>
+            <div style="display:flex;gap:6px">
+              <button class="btn sm" id="simp-apply" onclick="SEC.editor.applySimplify()">Aplicar</button>
+              <button class="btn ghost sm" onclick="SEC.editor.closeSimplify()">Cancelar</button>
+            </div>
+          </div>
+          <button class="btn ghost sm" style="width:100%;text-align:left" id="spike-btn" onclick="SEC.editor.toggleSpikes()">⛰ Corregir picos de elevación…</button>
+          <div id="spike-panel" class="tool-panel hidden">
+            <input type="range" id="spike-thr" min="5" max="100" value="20" oninput="SEC.editor.spikePreview()">
+            <div class="tool-info" id="spike-info">—</div>
+            <div style="display:flex;gap:6px">
+              <button class="btn sm" id="spike-apply" onclick="SEC.editor.applySpikes()">Aplicar</button>
+              <button class="btn ghost sm" onclick="SEC.editor.closeSpikes()">Cancelar</button>
+            </div>
+          </div>
+          <button class="btn ghost sm" style="width:100%;text-align:left" onclick="SEC.editor.toggleSpeedFix()">⚡ Corregir velocidad excesiva…</button>
+          <div id="speedfix-panel" class="tool-panel hidden">
+            <input type="range" id="speedfix-thr" min="5" max="200" value="40" oninput="SEC.editor.speedFixPreview()">
+            <div class="tool-info" id="speedfix-info">—</div>
+            <div class="sel-hint" style="margin-top:0">Elimina los puntos que exigirían ir más rápido
+              que el umbral (saltos de GPS). Marcados en rojo en el mapa.</div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn sm" id="speedfix-apply" onclick="SEC.editor.applySpeedFix()">Aplicar</button>
+              <button class="btn ghost sm" onclick="SEC.editor.closeSpeedFix()">Cancelar</button>
+            </div>
+          </div>
+          <button class="btn ghost sm" style="width:100%;text-align:left" onclick="SEC.editor.toggleShift()">🕐 Desplazar tiempos…</button>
+          <div id="shift-panel" class="tool-panel hidden">
+            <div class="tool-info">Inicio actual: <span id="shift-cur">—</span></div>
+            <input type="datetime-local" id="shift-dt" step="1"
+              style="width:100%;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px;font-family:inherit">
+            <div class="sel-hint" style="margin-top:6px">Toda la ruta se desplaza para empezar a la
+              hora indicada (útil con relojes mal configurados; reactiva el cruce con Immich).</div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn sm" onclick="SEC.editor.applyShift()">Aplicar</button>
+              <button class="btn ghost sm" onclick="SEC.editor.closeShift()">Cancelar</button>
+            </div>
+          </div>
+          <button class="btn ghost sm" style="width:100%;text-align:left" onclick="SEC.editor.toggleMerge()">⛓ Unir con otra ruta…</button>
+          <div id="merge-panel" class="tool-panel hidden">
+            <select id="merge-sel" onchange="SEC.editor._mergeNameSync()"
+              style="width:100%;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px;font-family:inherit;margin-bottom:6px"></select>
+            <input type="text" id="merge-name" placeholder="Nombre de la ruta unida"
+              style="width:100%;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px;font-family:inherit">
+            <div class="sel-hint" style="margin-top:6px">Crea una RUTA NUEVA con ambas; las originales
+              no se tocan. Se ordenan por hora; si los tiempos se solapan, se eliminan.</div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn sm" onclick="SEC.editor.doMerge()">Unir</button>
+              <button class="btn ghost sm" onclick="SEC.editor.closeMerge()">Cancelar</button>
+            </div>
+          </div>
+          <button class="btn ghost sm" style="width:100%;text-align:left;display:none" id="dem-btn" onclick="SEC.editor.doDem()">🏔 Recalcular elevación (DEM)</button>
+        </div>
+      </div>
+      <div class="ed-panel">
+        <h3>Historial de versiones</h3>
+        <div id="ver-list" style="max-height:300px;overflow-y:auto">
+          <div style="color:var(--muted);font-size:12px">Sin ediciones todavía.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="save-modal">
+  <div class="modal">
+    <h2>Guardar cambios</h2>
+    <div style="color:var(--muted);font-size:13px;margin-bottom:10px">
+      Se creará una versión nueva. La versión anterior queda en el historial y se puede restaurar.
+    </div>
+    <input type="text" id="save-summary" placeholder="Resumen de los cambios">
+    <div class="modal-foot">
+      <button class="btn ghost sm" onclick="SEC.editor.closeSaveModal()">Cancelar</button>
+      <button class="btn sm" id="save-confirm" onclick="SEC.editor.doSave()">Guardar</button>
+    </div>
+  </div>
+</div>
+</section>

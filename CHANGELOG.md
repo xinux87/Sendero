@@ -5,6 +5,74 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.7.0] — 2026-07-26
+
+Segundo y último tramo del plan de **SPA completa + funcionamiento sin conexión**
+(`roadmap/spa-offline-sync.md`). Toda la aplicación es ya una sola página: cambiar de
+pantalla no recarga nada, y lo esencial funciona sin conexión. El almacenamiento no cambia:
+mismos GPX, mismas fotos, misma base de datos.
+
+### Añadido
+- **Sendero se puede instalar como aplicación (PWA) y arranca sin conexión.** Hay
+  manifiesto, iconos y un Service Worker que guarda el código de la app en el dispositivo.
+  Con el servidor apagado o sin red se abren **todas** las pantallas: el listado de rutas,
+  el dashboard, los planes y el detalle de lo que ya se había sincronizado — con su mapa
+  (si hay un `.pmtiles` configurado), su perfil de elevación y sus fotos.
+- **Indicador de conexión en la cabecera**: aparece solo cuando hay algo que contar —
+  «sin conexión», «sincronizando» o «N sin enviar».
+- **Editar sin conexión**: nombre, notas y tipo de actividad se guardan sin red y se envían
+  solos al recuperarla. Las acciones que decide el servidor (subir rutas o fotos,
+  reescanear, Immich, borrar, y todo el editor) avisan de que necesitan conexión en vez de
+  fallar en silencio.
+- **Ajustes → Sin conexión**, nueva sección: cuánto hay guardado en este dispositivo y de
+  cuándo, **descargar todas las rutas** de golpe para llevarlas al monte sin haberlas
+  abierto, **comprobar la sincronización** contra el servidor (y reparar solo lo que
+  divergía), ver y reenviar los **cambios pendientes**, y vaciar la copia local.
+
+### Cambiado
+- **Ninguna pantalla recarga la página.** Dashboard, Mis Rutas, Mis Planes, el detalle de
+  una ruta, el de un plan y el editor son secciones de un único documento. Antes eran
+  cuatro páginas distintas y cada salto costaba una carga completa (mapa incluido).
+- **El listado ya no caduca a los 10 minutos.** Se guarda en el dispositivo y se actualiza
+  por diferencias: lo que cambie en otro dispositivo, en el importador de carpeta o en la
+  sincronización con el reloj aparece en el siguiente sondeo, sin esperar a que expire nada.
+- **Las URLs de una ruta van por identificador opaco**, como ya iban los planes:
+  `/Sendero/<id>` y `/Sendero/<id>/editor`. Los enlaces y marcadores por nombre siguen
+  funcionando (redirección). Renombrar una ruta ya no cambia su URL.
+- El detalle de ruta carga su **variante ligera** (track y series remuestreados), así que
+  gasta bastante menos datos sin que se note en el mapa ni en las gráficas.
+- El mapa de **Mis Planes** ya respeta Ajustes → Mapas y tiene selector de capas: era el
+  único que llevaba las teselas escritas a mano, y por eso ignoraba la capa offline.
+
+### Corregido
+- El botón ✕ de borrar una foto en el detalle no funcionaba desde 0.5.2: el manejador se
+  generaba con el identificador opaco sin comillas y el navegador lo leía como una variable
+  inexistente.
+- Cada click en la navegación de la cabecera provocaba una recarga completa **además** del
+  cambio de sección: la comprobación que debía evitarlo miraba `window.Router`, y las
+  constantes de un script clásico no son propiedades de `window`. El mismo fallo dejaba sin
+  funcionar el contador de cambios pendientes del indicador de conexión.
+
+### Interno
+- `templates/shell.html` aloja las 6 secciones (`templates/sec/*.html` +
+  `static/js/sec/*.js` + `static/css/*.css`); `templates/app.html`, `sendero.html` y
+  `editor.html` quedan como legacy, ya no los sirve ninguna ruta.
+- `GET /api/routes/<id>/editor`: metadatos de arranque del editor, que antes inyectaba la
+  plantilla.
+- El Service Worker no cachea documentos con datos inyectados dentro, y sirve
+  `static/js/**` y `static/css/**` con revalidación por detrás (su nombre no lleva versión):
+  reglas 16 y siguientes de CLAUDE.md.
+- Pruebas nuevas: `python tests/e2e_spa.py` (~115 comprobaciones en un navegador real con
+  Playwright: mapas, gráficas, fugas de `unmount()`, Service Worker, modo sin conexión, cola
+  de escrituras y un guardado real del editor), más `node tests/sw_smoke.js` y
+  `node tests/sec_smoke.js`. Playwright NO entra en `requirements-dev.txt`.
+
+### Pendiente
+- Descargar teselas de mapa por zona (§6.2 del plan) sigue sin hacerse, y con motivo
+  explicado en el roadmap: las capas de terceros no se pueden cachear en masa por su
+  política de uso, y para la capa offline propia haría falta un lector de PMTiles desde el
+  almacenamiento del navegador que no se puede probar sin un archivo de ejemplo.
+
 ## [0.6.0] — 2026-07-25
 
 Primer tramo del plan de **SPA completa + funcionamiento sin conexión + sincronización

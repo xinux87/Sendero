@@ -1,0 +1,57 @@
+/* Sección `dashboard`. Extraído de templates/app.html (roadmap §2-§3).
+   Escopado bajo #sec-dashboard: en la SPA las 5 secciones comparten documento y
+   nombres como .act-row o .record-card chocarían. Lo común a varios mapas
+   (overrides de MapLibre) y los loaders flotantes viven en base.html. */
+#sec-dashboard .ov-section{background:var(--panel);border:1px solid var(--line);
+  border-radius:11px;padding:22px 24px;margin-bottom:18px}
+#sec-dashboard .ov-section-title{font-family:'Saira Condensed',sans-serif;font-size:13px;
+  font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:16px}
+#sec-dashboard .hero-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+#sec-dashboard .hero-card{background:var(--panel-2);border:1px solid var(--line);
+  border-radius:9px;padding:16px 18px}
+#sec-dashboard .hero-card .v{font-family:var(--mono);font-size:28px;font-weight:700;
+  color:var(--ink);line-height:1.1}
+#sec-dashboard .hero-card .v small{font-size:14px;font-weight:400;color:var(--muted)}
+#sec-dashboard .hero-card .l{font-size:10px;text-transform:uppercase;letter-spacing:.12em;
+  color:var(--muted);margin-top:4px;font-weight:600}
+#sec-dashboard .act-rows{display:flex;flex-direction:column;gap:10px}
+#sec-dashboard .act-row{display:grid;grid-template-columns:110px 1fr 80px 80px;align-items:center;gap:12px}
+#sec-dashboard .act-label{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink)}
+#sec-dashboard .act-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+#sec-dashboard .act-bar-bg{background:var(--line);border-radius:4px;height:8px;overflow:hidden}
+#sec-dashboard .act-bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
+#sec-dashboard .act-meta{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+#sec-dashboard .act-count{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+#sec-dashboard .year-chart{display:flex;align-items:flex-end;gap:6px;height:120px;border-bottom:1px solid var(--line)}
+#sec-dashboard .year-col{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:0}
+#sec-dashboard .year-bar{background:var(--pr-yellow);border-radius:3px 3px 0 0;width:100%;max-width:48px;min-height:2px}
+#sec-dashboard .year-num{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;margin-top:6px}
+#sec-dashboard .year-count{font-family:var(--mono);font-size:10px;color:var(--ink);font-weight:700}
+#sec-dashboard .records-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+#sec-dashboard .record-card{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
+  padding:14px 16px;cursor:pointer;transition:filter .15s,transform .15s}
+#sec-dashboard .record-card:hover{filter:brightness(1.06);transform:translateY(-2px)}
+#sec-dashboard .record-card .rv{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--pr-yellow)}
+#sec-dashboard .record-card .rv small{font-size:12px;color:var(--muted);font-weight:400}
+#sec-dashboard .record-card .rl{font-size:10px;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--muted);margin-bottom:6px;font-weight:600}
+#sec-dashboard .record-card .rn{font-size:13px;color:var(--ink);margin-top:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sec-dashboard .ov-loading{color:var(--muted);font-size:14px;padding:32px 0;text-align:center}
+#sec-dashboard #dash-map{height:320px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+/* Aviso de estadísticas servidas desde la copia local (sin conexión). */
+#sec-dashboard .stats-stale{font-size:12px;color:var(--pr-yellow);margin-bottom:12px;
+  background:rgba(232,196,74,.1);border:1px solid rgba(232,196,74,.35);
+  border-radius:8px;padding:8px 12px}
+@media(max-width:600px){
+  #sec-dashboard .ov-section{padding:16px 14px}
+  #sec-dashboard .hero-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  #sec-dashboard .hero-card{padding:12px 14px}
+  #sec-dashboard .hero-card .v{font-size:22px}
+  #sec-dashboard .act-row{grid-template-columns:92px 1fr 64px 50px;gap:8px}
+  #sec-dashboard .act-label{font-size:12px}
+  #sec-dashboard #dash-map{height:40vh;height:40dvh;min-height:260px}
+}
+@media(hover:none) and (pointer:coarse){
+  #sec-dashboard .record-card:hover{transform:none}
+}

@@ -1,0 +1,40 @@
+/* Sección `planes` ("Mis Planes"). Extraído de templates/app.html (roadmap §2-§3).
+   Escopado bajo #sec-planes: .overlay, .modal y .modal-head existen también en la
+   sección `detalle` (modal de Immich), así que sin escopar se pisarían.
+   Lo común a varios mapas, los loaders flotantes, .tabbar y .fab: base.html. */
+#sec-planes .plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+#sec-planes .plan-card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px}
+#sec-planes .plan-card:hover{filter:brightness(1.06);transform:translateY(-2px)}
+#sec-planes .plan-card h3{font-size:20px;font-weight:600;padding-right:34px;line-height:1.2;
+  height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#sec-planes .plan-card .date{color:var(--muted);font-size:12px;margin:2px 0 4px;text-transform:uppercase;letter-spacing:.08em}
+#sec-planes .plan-act{position:absolute;top:12px;right:12px;line-height:0}
+#sec-planes .plan-metrics{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
+#sec-planes .pm{display:flex;flex-direction:column}
+#sec-planes .pm .v{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--ink)}
+#sec-planes .pm .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+#sec-planes .source-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
+  letter-spacing:.06em;padding:2px 8px;border-radius:10px;text-transform:uppercase;margin-top:4px}
+#sec-planes .source-gpx{background:#1e3a2a;color:#5ab87a;border:1px solid #2e5a3a}
+/* La regla .overlay.hidden va inmediatamente después de .overlay a propósito
+   (misma trampa que el modal de Immich): sin ella el modal aparece al cargar. */
+#sec-planes .overlay{position:fixed;inset:0;background:rgba(8,14,11,.82);display:flex;align-items:center;
+  justify-content:center;padding:16px;z-index:1000}
+#sec-planes .overlay.hidden{display:none}
+#sec-planes .modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  width:100%;max-width:520px;padding:22px;overflow:hidden}
+#sec-planes .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+#sec-planes .drop-plan{border:1.5px dashed var(--line);border-radius:9px;padding:22px;text-align:center;
+  color:var(--muted);cursor:pointer;margin-bottom:12px;transition:border-color .15s}
+#sec-planes .drop-plan.over{border-color:var(--pr-yellow)}
+#sec-planes .drop-plan .chosen{color:var(--ink);font-size:13px}
+#sec-planes #plan-map{height:320px;border-radius:11px;border:1px solid var(--line);margin-bottom:18px;overflow:hidden}
+@media(max-width:600px){
+  #sec-planes #plan-map{height:38vh;height:38dvh;min-height:240px}
+  #sec-planes .plan-card h3{font-size:17px}
+  #sec-planes .modal{padding:16px}
+}
+@media(hover:none) and (pointer:coarse){
+  #sec-planes .plan-card:hover{transform:none}
+}

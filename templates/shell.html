@@ -7,17 +7,16 @@
    el código por separado de los datos (§5), que es lo que hace posible arrancar
    sin servidor.
 
-   Secciones ya alojadas aquí: plan.
-   Pendientes de migrar (siguen sirviéndose como documento propio, con recarga
-   completa de página): dashboard, rutas, planes → templates/app.html;
-   detalle → templates/sendero.html; editor → templates/editor.html.
-   Mientras alguna falte, el router cae a location.href al navegar hacia ella
-   (ver `hosted()` en static/js/core/router.js), así que la navegación funciona
-   igual durante toda la migración.
+   Aquí viven las SEIS vistas: dashboard, rutas, planes, detalle, plan y editor.
+   Antes eran 4 documentos distintos (app.html con tres secciones, sendero.html,
+   plan_detalle.html y editor.html). Ya no queda ninguna vista fuera, así que
+   `hosted()` (static/js/core/router.js) siempre acierta y no hay recargas de
+   documento al navegar.
 
    `bootstrap_json` es opcional: el detalle que el servidor ya tenía a mano en
    la primera carga, para no pagar un fetch extra por encima del documento
-   (§3.4). El Store lo consume y a partir de ahí trabaja con su copia local. #}
+   (§3.4). El Store lo consume y a partir de ahí trabaja con su copia local.
+   `/app-shell` lo sirve SIN él: es la versión que precachea el SW. #}
 {% extends "base.html" %}
 {% block title %}Sendero{% endblock %}
 
@@ -29,8 +28,47 @@
 </nav>
 {% endblock %}
 
+{% block header_actions %}
+{# Acciones de cabecera por sección: van fuera de #sec-<nombre>, y el router
+   muestra solo el bloque de la sección activa (data-sec-actions). #}
+<div data-sec-actions="dashboard" class="hidden">
+  <button class="btn ghost sm" id="refresh-btn" onclick="SEC.dashboard.refreshStats()">↻ Actualizar</button>
+</div>
+<div data-sec-actions="rutas" class="hidden">
+  <div style="display:flex;align-items:center;gap:12px">
+    <div style="display:flex;gap:6px">
+      <button class="view-btn" id="view-a" onclick="SEC.rutas.setView('a')">⊞ Cuadrícula</button>
+      <button class="view-btn" id="view-b" onclick="SEC.rutas.setView('b')">▤ Panel</button>
+    </div>
+    <span id="count" class="mono" style="color:var(--muted);font-size:13px"></span>
+    <label class="btn" style="margin:0;cursor:pointer" title="Arrastra GPX/FIT o pulsa para elegir">+ Añadir ruta
+      <input id="gpx-input" type="file" accept=".gpx,.fit" multiple class="hidden">
+    </label>
+  </div>
+</div>
+<div data-sec-actions="planes" class="hidden">
+  <button class="btn" onclick="SEC.planes.openAddModal()">+ Planificar ruta</button>
+</div>
+{% endblock %}
+
 {% block content %}
+{% include "sec/dashboard.html" %}
+{% include "sec/rutas.html" %}
+{% include "sec/planes.html" %}
+{% include "sec/detalle.html" %}
 {% include "sec/plan.html" %}
+{% include "sec/editor.html" %}
+{% endblock %}
+
+{% block bottombar %}
+{# Tab bar inferior (solo móvil). Los <a> llevan .nav-link para que el router
+   les marque el estado activo, y su href lo captura la delegación de clicks. #}
+<nav class="tabbar">
+  <a href="/dashboard"     class="nav-link tab-link"><span class="ico">▦</span>Dashboard</a>
+  <a href="/rutas"         class="nav-link tab-link"><span class="ico">⛰</span>Rutas</a>
+  <a href="/planificacion" class="nav-link tab-link"><span class="ico">◎</span>Planes</a>
+  <button class="tab-link" onclick="openSettings()"><span class="ico">⚙</span>Ajustes</button>
+</nav>
 {% endblock %}
 
 {% block body_scripts %}

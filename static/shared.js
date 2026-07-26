@@ -1,8 +1,8 @@
 /* Código compartido entre plantillas (sin build step: se carga con <script src>
    desde base.html, ANTES del script inline de cada página).
-   Aquí solo vive JS puro sin Jinja: los datos por página (current, R, …) se
-   siguen inyectando en cada plantilla. Si tocas ACTIVITIES o BASEMAP_TILES,
-   recuerda que lo usan app.html, sendero.html, editor.html y plan_detalle.html. */
+   Aquí solo vive JS puro sin Jinja. Si tocas ACTIVITIES o BASEMAP_TILES, recuerda
+   que lo usan app.html y editor.html (que siguen con su JS inline) y las secciones
+   de la SPA static/js/sec/*.js (detalle, plan). */
 
 /* ── actividades ── */
 const ACTIVITIES=[
@@ -119,6 +119,21 @@ const MAP_CFG=(()=>{
 })();
 function offlineMapUrl(){ return MAP_CFG.offline_url||''; }
 function hasOfflineMap(){ return !!offlineMapUrl(); }
+
+/* Planificador externo (Ajustes → Editor), inyectado igual que MAP_CFG. Lo usa
+   "Dibujar ruta nueva" en Mis Planes. */
+const PLANNER_URL=(document.body.dataset.plannerUrl||'').trim()||'https://brouter.de/brouter-web';
+
+/* Expresión de color de línea por actividad para MapLibre. La comparten los dos
+   mapas que dibujan tracks de varias rutas a la vez (dashboard y Mis Rutas): si
+   cada uno la construyera por su cuenta, una actividad nueva en ACTIVITIES se
+   pintaría de gris en uno de ellos. */
+function activityLineColor(){
+  const expr=['match',['get','activity']];
+  ACTIVITIES.forEach(a=>{expr.push(a.id,a.color);});
+  expr.push('#888888');
+  return expr;
+}
 
 /* Registra el protocolo pmtiles:// en MapLibre una sola vez (idempotente: lo
    llaman todas las vistas). Si pmtiles.js no cargó, no rompe nada. */

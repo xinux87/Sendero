@@ -1,0 +1,121 @@
+{# Detalle de una ruta (sección de la SPA). Markup extraído de
+   templates/sendero.html; el JS vive en static/js/sec/detalle.js y el CSS en
+   static/css/detalle.css. Los ids genéricos que chocarían con otras secciones
+   del shell llevan prefijo d- (#d-map, #d-stats, #d-elev, #d-notes…). #}
+<section id="sec-detalle" class="sec hidden">
+<div class="bar">
+  <button class="btn ghost sm" data-nav="/rutas">← Volver</button>
+</div>
+
+<div class="detail-head">
+  <div>
+    <h1 id="d-name"></h1>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div id="d-date" class="mono" style="color:var(--muted);font-size:13px"></div>
+      <div id="d-loc" style="display:none;color:var(--muted);font-size:13px;align-items:center;gap:3px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="opacity:.7"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+        <span id="d-loc-text"></span></div>
+      <div id="d-device" class="mono" style="color:var(--muted);font-size:12px;opacity:.7"></div>
+    </div>
+  </div>
+  <div class="detail-actions">
+    <button class="btn ghost sm" onclick="SEC.detalle.openEditor()">✎ Editar</button>
+    <button class="btn ghost sm" id="d-more-btn" aria-label="Más acciones"
+            onclick="$('#d-actions-more').classList.toggle('open')">⋯</button>
+    <div id="d-actions-more" class="d-more">
+      <button class="btn ghost sm" id="rescan-btn" onclick="SEC.detalle.rescanRoute(this)">↺ Reescanear</button>
+      <button class="btn ghost sm" onclick="SEC.detalle.downloadGpx()">↓ GPX</button>
+      <button class="btn ghost sm" onclick="SEC.detalle.renameRoute()">Renombrar</button>
+      <button class="btn ghost sm" onclick="SEC.detalle.removeRoute()" style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div id="dup-banner" class="dup-banner" style="display:none"></div>
+
+<div style="position:relative">
+  <div id="d-map"></div>
+  <button id="d-btn3d" onclick="SEC.detalle.toggle3D()">Vista 3D</button>
+</div>
+<div class="stats-row" id="d-stats"></div>
+
+<div class="section">
+  <h2>Perfil de elevación</h2>
+  <div class="chart-box"><canvas id="d-elev"></canvas></div>
+</div>
+
+<div class="section" id="speed-section" style="display:none">
+  <h2>Velocidad</h2>
+  <div class="chart-box"><canvas id="speed-chart"></canvas></div>
+</div>
+
+<div class="section" id="hr-section" style="display:none">
+  <h2>Frecuencia cardíaca</h2>
+  <div class="chart-box"><canvas id="hr-chart"></canvas></div>
+</div>
+
+<div class="section">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <h2>Resumen</h2>
+    <div id="d-activity-badge-sm"></div>
+  </div>
+  <div id="d-auto" class="auto"></div>
+  <textarea id="d-notes" placeholder="Escribe aquí tus notas de la salida: compañía, tiempo, sensaciones, cumbre alcanzada…"></textarea>
+  <div style="margin-top:10px"><button class="btn sm" onclick="SEC.detalle.saveNotes()">Guardar resumen</button></div>
+</div>
+
+<div class="section">
+  <h2>Fotos</h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <button id="immich-btn" class="btn sm hidden" onclick="SEC.detalle.openImmich()">⛰ Buscar en Immich</button>
+  </div>
+  <div id="d-drop" class="drop">Arrastra fotos aquí o pulsa para elegir
+    <input id="d-photo-input" type="file" accept="image/*" multiple class="hidden">
+  </div>
+  <div id="d-gallery" class="gallery" style="margin-top:14px"></div>
+</div>
+
+<!-- MODAL: selector de actividad -->
+<div id="d-activity-modal" class="overlay hidden">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-head">
+      <h2 style="font-family:'Saira Condensed';font-size:24px">Tipo de actividad</h2>
+      <button class="btn ghost sm" onclick="SEC.detalle.closeActivityPicker()">Cerrar</button>
+    </div>
+    <div id="d-act-picker-grid" class="act-picker-grid"></div>
+  </div>
+</div>
+
+<!-- MODAL: candidatos de Immich -->
+<div id="immich-modal" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 style="font-family:'Saira Condensed';font-size:24px">Fotos en Immich durante esta ruta</h2>
+      <button class="btn ghost sm" onclick="SEC.detalle.closeImmich()">Cerrar</button>
+    </div>
+    <div id="immich-status" style="color:var(--muted);font-size:13px;margin-bottom:10px"></div>
+    <label id="near-wrap" class="hidden" style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin-bottom:10px;cursor:pointer">
+      <input type="checkbox" id="near-only" onchange="SEC.detalle.renderImmich()"> Solo fotos cerca de la ruta (las sin GPS se mantienen)
+    </label>
+    <div id="immich-grid" class="imgrid"></div>
+    <div class="modal-foot">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn ghost sm" onclick="SEC.detalle.selectAllImmich()">Seleccionar todas</button>
+        <span id="immich-count" class="mono" style="color:var(--muted)"></span>
+      </div>
+      <button class="btn" onclick="SEC.detalle.confirmImmich()">Añadir seleccionadas</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div id="lb-overlay" class="lb-overlay hidden">
+  <img id="lb-img" class="lb-img" src="" alt="">
+  <button class="lb-close" onclick="SEC.detalle.closeLightbox()">✕</button>
+  <button class="lb-nav lb-prev" onclick="SEC.detalle.lbNav(-1)">‹</button>
+  <button class="lb-nav lb-next" onclick="SEC.detalle.lbNav(1)">›</button>
+  <span id="lb-counter" class="lb-counter"></span>
+  <button id="lb-del" class="btn sm" onclick="SEC.detalle.lbDelete()"
+    style="position:fixed;bottom:18px;right:18px;background:var(--gr-red);border:none;z-index:2001">Eliminar foto</button>
+</div>
+</section>

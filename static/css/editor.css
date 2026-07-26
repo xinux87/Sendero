@@ -1,0 +1,117 @@
+/* Sección `editor`. Extraído de templates/editor.html (roadmap §2-§3).
+   Escopado bajo #sec-editor: .panel, .tool, .chart-box y compañía chocarían con
+   las otras secciones ahora que comparten documento. Lo común a todos los mapas
+   (overrides de MapLibre) y los loaders flotantes viven en base.html. */
+#sec-editor .ed-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+#sec-editor .ed-title{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+#sec-editor .ed-title h1{font-size:28px}
+#sec-editor .ver-badge{font-family:var(--mono);font-size:13px;color:var(--pr-yellow);
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px 10px}
+#sec-editor .ed-grid{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
+@media(max-width:900px){.ed-grid{grid-template-columns:1fr}}
+#sec-editor #edmap{height:55vh;min-height:340px;border-radius:11px;border:1px solid var(--line);overflow:hidden}
+#sec-editor .ed-panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px}
+#sec-editor .ed-panel h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;
+  color:var(--muted);margin-bottom:10px}
+#sec-editor .ed-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#sec-editor .ed-stat .v{font-family:var(--mono);font-size:18px;font-weight:700}
+#sec-editor .ed-stat .v small{font-size:11px;color:var(--muted)}
+#sec-editor .ed-stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+#sec-editor .ed-stat .delta{font-family:var(--mono);font-size:11px;color:var(--pr-yellow)}
+#sec-editor .ed-ops{display:flex;flex-direction:column;gap:7px}
+#sec-editor .ed-ops .btn{width:100%;text-align:left;justify-content:flex-start}
+#sec-editor .btn[disabled]{opacity:.35;cursor:not-allowed}
+#sec-editor .mode-tabs{display:flex;gap:0;margin-bottom:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+#sec-editor .mtab{flex:1;background:transparent;border:0;color:var(--muted);padding:7px 4px;font-size:12px;
+  font-weight:700;cursor:pointer;font-family:inherit;text-transform:uppercase;letter-spacing:.04em}
+#sec-editor .mtab.on{background:var(--pr-yellow);color:#101a14}
+#sec-editor .tool-panel{margin-top:8px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+#sec-editor .tool-panel input[type=range]{width:100%}
+#sec-editor .tool-info{font-size:12px;color:var(--ink);font-family:var(--mono);margin:6px 0}
+#sec-editor .ed-profile{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:14px;margin-top:14px}
+#sec-editor #edelev{cursor:crosshair;touch-action:none}
+#sec-editor .ver-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}
+#sec-editor .ver-row:last-child{border-bottom:0}
+#sec-editor .ver-row .vn{font-family:var(--mono);font-weight:700;color:var(--pr-yellow);white-space:nowrap}
+#sec-editor .ver-row .meta{flex:1;min-width:0}
+#sec-editor .ver-row .meta .sum{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sec-editor .ver-row .meta .st{color:var(--muted);font-family:var(--mono);font-size:11px}
+#sec-editor .ver-row .acts{display:flex;gap:4px}
+#sec-editor .ver-row .acts .btn{padding:3px 8px;font-size:11px}
+/* scrollbar del historial con la paleta (como .imgrid en sendero.html) */
+#sec-editor #ver-list::-webkit-scrollbar{width:6px}
+#sec-editor #ver-list::-webkit-scrollbar-track{background:var(--bg);border-radius:3px}
+#sec-editor #ver-list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+#sec-editor #ver-list::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+#sec-editor #ver-list{scrollbar-width:thin;scrollbar-color:var(--line) var(--bg)}
+#sec-editor #issues-list::-webkit-scrollbar{width:6px}
+#sec-editor #issues-list::-webkit-scrollbar-track{background:var(--bg);border-radius:3px}
+#sec-editor #issues-list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+#sec-editor #issues-list::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+#sec-editor #issues-list{scrollbar-width:thin;scrollbar-color:var(--line) var(--bg)}
+#sec-editor .sel-hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
+#sec-editor .handle-a, #sec-editor .handle-b{width:20px;height:20px;border-radius:50%;border:3px solid #101a14;
+  box-shadow:0 2px 6px rgba(0,0,0,.7);cursor:grab}
+#sec-editor .handle-a{background:#e8c44a}
+#sec-editor .handle-b{background:#d24a3a}
+#sec-editor .wpt-marker{font-size:22px;line-height:1;cursor:pointer;
+  text-shadow:0 1px 3px rgba(0,0,0,.8);user-select:none}
+#sec-editor .issue-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px}
+#sec-editor .issue-row:last-child{border-bottom:0}
+#sec-editor .issue-row .ico{font-size:15px}
+#sec-editor .issue-row .meta{flex:1;min-width:0}
+#sec-editor .issue-row .meta .rng{font-family:var(--mono)}
+#sec-editor .issue-row .meta .det{color:var(--muted);font-size:11px}
+#sec-editor .issue-row.high .ico{filter:drop-shadow(0 0 3px #d24a3a)}
+#sec-editor .issue-row .btn{padding:3px 8px;font-size:11px}
+#sec-editor .issue-row.active{background:rgba(232,196,74,.10);box-shadow:inset 3px 0 0 var(--pr-yellow)}
+#sec-editor .issue-row.active .btn{opacity:.6}
+#sec-editor .issue-row.active .meta .rng{color:var(--pr-yellow)}
+#sec-editor .issue-row.done{opacity:.5}
+#sec-editor .issue-row.done .meta .rng, #sec-editor .issue-row.done .meta .det{text-decoration:line-through}
+#sec-editor .issue-row.done .btn{display:none}
+#sec-editor .issue-row .fixed-tag{display:none;font-size:11px;color:#5fb87a;font-weight:600}
+#sec-editor .issue-row.done .fixed-tag{display:inline}
+#sec-editor .issues-status{font-size:12px;color:#5fb87a;background:rgba(95,184,122,.10);
+  border:1px solid rgba(95,184,122,.3);border-radius:8px;padding:7px 9px;margin-bottom:8px}
+#sec-editor .overlay{position:fixed;inset:0;background:rgba(8,14,11,.78);display:flex;align-items:center;
+  justify-content:center;padding:16px;z-index:1000}
+#sec-editor .overlay.hidden{display:none}
+#sec-editor .modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:100%;
+  max-width:480px;padding:18px}
+#sec-editor .modal h2{font-size:20px;margin-bottom:12px}
+#sec-editor .modal input[type=text]{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:10px 12px;font-family:inherit;font-size:14px;margin-bottom:14px}
+#sec-editor .modal-foot{display:flex;justify-content:flex-end;gap:10px}
+#sec-editor .det-fld{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+#sec-editor .det-fld label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+#sec-editor .det-fld input{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13px;box-sizing:border-box}
+#sec-editor .det-fld input:focus{outline:none;border-color:var(--pr-yellow)}
+#sec-editor #ed-loading{padding:40px;text-align:center;color:var(--muted)}
+#sec-editor .maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
+#sec-editor .maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
+
+/* ── responsive móvil ──────────────────────────────────────────────────── */
+/* contenedores de gráfica con altura explícita (los charts usan
+   maintainAspectRatio:false; sin esto en móvil quedarían enanas) */
+#sec-editor .ed-chart-box{position:relative;height:250px}
+#sec-editor #speed-panel .ed-chart-box{height:200px}
+/* zoom por botones: sustituto táctil de la rueda (solo se muestra sin ratón) */
+#sec-editor .chart-zoom{display:none;gap:6px;margin-bottom:8px}
+@media(max-width:600px){
+  #sec-editor .ed-title h1{font-size:20px}
+  #sec-editor #edmap{height:50vh;height:50dvh;min-height:300px}
+  #sec-editor .ed-chart-box{height:170px}
+  #sec-editor #speed-panel .ed-chart-box{height:150px}
+  #sec-editor .ed-profile{padding:10px}
+}
+@media(hover:none) and (pointer:coarse){
+  #sec-editor .chart-zoom{display:flex}
+  /* la edición de vértices necesita ratón (arrastre fino, Alt+click, Shift+click) */
+  #sec-editor #mtab-verts{display:none}
+  #sec-editor .mtab{min-height:44px}
+  #sec-editor .handle-a, #sec-editor .handle-b{width:28px;height:28px}
+  #sec-editor .ver-row .acts .btn, #sec-editor .issue-row .btn{min-height:36px}
+}

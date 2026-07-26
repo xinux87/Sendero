@@ -1,0 +1,58 @@
+{# "Mis Rutas" (sección de la SPA). Markup extraído de templates/app.html; la
+   lógica vive en static/js/sec/rutas.js y el CSS en static/css/rutas.css.
+   Los botones de la cabecera (vista, contador, "+ Añadir ruta") están en
+   shell.html: van fuera de la sección, y el router los muestra según
+   data-sec-actions. #}
+<section id="sec-rutas" class="sec hidden">
+  <div id="dash-wrap" class="view-a">
+    <button class="btn ghost sm" id="filters-toggle"
+            onclick="$('#filters-panel').classList.toggle('open')">☰ Filtros</button>
+    <div class="filters" id="filters-panel">
+      <div class="filter-group">
+        <span class="filter-label">Actividad</span>
+        <div class="act-pills" id="act-pills"></div>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Fecha</span>
+        <div class="date-range">
+          <div class="dp-wrap" id="dp-from"></div>
+          <span class="date-sep">→</span>
+          <div class="dp-wrap" id="dp-to"></div>
+        </div>
+      </div>
+      <button class="filter-clear" onclick="SEC.rutas.clearFilters()">✕ Limpiar</button>
+    </div>
+    <div id="overview-map"></div>
+    <div class="sort-bar">
+      <span class="sort-label">Orden</span>
+      <button class="sort-btn" id="sort-desc" onclick="SEC.rutas.setSort('desc')">↓ Más reciente</button>
+      <button class="sort-btn" id="sort-asc"  onclick="SEC.rutas.setSort('asc')">↑ Más antiguo</button>
+      <div class="sort-sep"></div>
+      <button class="sort-btn" id="edit-toggle-btn" onclick="SEC.rutas.toggleEdit()">✎ Editar</button>
+    </div>
+    <div class="edit-bar" id="edit-bar">
+      <span class="sort-label" style="color:var(--pr-yellow)">EDITAR</span>
+      <button class="btn ghost sm" onclick="SEC.rutas.selectAllVisible()">Seleccionar todos</button>
+      <button class="btn ghost sm" onclick="SEC.rutas.deselectAll()">Deseleccionar</button>
+      <button class="btn ghost sm" id="dedup-btn" onclick="SEC.rutas.deleteDuplicates()"
+              title="Elimina las rutas marcadas como posibles duplicadas por la importación automática"
+              style="display:none;border-color:rgba(214,69,65,.5);color:var(--gr-red)">⚠ Borrar duplicados (<span id="dedup-count">0</span>)</button>
+      <button class="btn ghost sm" id="rescan-sel-btn" onclick="SEC.rutas.rescanSelected()" style="margin-left:auto">↻ Re-escanear (<span id="rescan-count">0</span>)</button>
+      <button class="btn sm" id="delete-sel-btn" onclick="SEC.rutas.deleteSelected()" style="background:var(--gr-red)">Eliminar (<span id="sel-count">0</span>)</button>
+      <button class="btn ghost sm" onclick="SEC.rutas.toggleEdit()">Cancelar</button>
+    </div>
+    <div id="routes"></div>
+    <div id="no-routes" class="empty hidden">No hay rutas que coincidan con los filtros.</div>
+  </div>
+  <button class="fab" title="Añadir ruta" aria-label="Añadir ruta"
+          onclick="$('#gpx-input').click()">＋</button>
+
+  <!-- Drop overlay a pantalla completa (solo mientras esta sección está activa) -->
+  <div id="drop-global" class="drop-global">
+    <div class="drop-box">
+      <div class="drop-arrow">↓</div>
+      <div class="drop-text">Suelta los archivos aquí</div>
+      <div class="drop-hint">GPX y FIT · varios archivos a la vez</div>
+    </div>
+  </div>
+</section>

@@ -98,18 +98,14 @@ def _archive_v1_if_needed(con, rid, row, raw, is_fit):
     return 1
 
 
-@editor_bp.route("/Sendero/<path:name>/editor")
-def editor_page(name):
-    con = db()
-    r = con.execute(
-        "SELECT id,public_id,name,gpx_file,distance_m,ascent_m,descent_m,started_at,activity_type,"
-        "device,gps_issues FROM routes WHERE name=? ORDER BY COALESCE(started_at,created_at) DESC LIMIT 1",
-        (name,),
-    ).fetchone()
-    if not r:
-        return redirect("/rutas")
-    d = dict(r)
-    d["version"] = _current_version(con, r["id"])
+_EDITOR_COLS = ("SELECT id,public_id,name,gpx_file,distance_m,ascent_m,descent_m,started_at,"
+                "activity_type,device,gps_issues FROM routes ")
+
+
+def _editor_meta(con, row):
+    """Metadatos que el editor necesita para arrancar (el track va por /points)."""
+    d = dict(row)
+    d["version"] = _current_version(con, row["id"])
     # Umbral de velocidad plausible para la actividad (Ajustes → "GPS incorrecto");
     # el editor lo usa como valor inicial de "Corregir velocidad excesiva".
     d["gps_max_speed"] = cfg.gps_thresholds_for(d.get("activity_type"))["max_speed_kmh"]
@@ -117,7 +113,45 @@ def editor_page(name):
     d["gps_issues"] = json.loads(d.get("gps_issues") or "[]")
     # Recalcular elevación con DEM solo si hay servicio configurado en Ajustes.
     d["dem_enabled"] = bool(cfg.DEM_URL)
-    return render_template("editor.html", route_json=json.dumps(d))
+    return d
+
+
+@editor_bp.route("/Sendero/<path:ref>/editor")
+def editor_page(ref):
+    """Editor de una ruta por public_id (con el nombre como camino de compatibilidad).
+
+    Igual que el detalle: si `ref` es un nombre se redirige al public_id, que es
+    la URL canónica. Así el enlace "✎ Editar" de la sección `detalle` (que solo
+    conoce el public_id) y los marcadores antiguos llevan al mismo sitio.
+
+    Devuelve el shell de la SPA: el editor es la sección `editor`
+    (templates/sec/editor.html + static/js/sec/editor.js), y sus metadatos los
+    pide el módulo a /api/routes/<id>/editor. No se inyectan aquí a propósito:
+    el editor solo tiene sentido con conexión (opera sobre el estado guardado en
+    el servidor), así que no gana nada evitando ese fetch.
+    """
+    con = db()
+    r = con.execute(_EDITOR_COLS + "WHERE public_id=?", (ref,)).fetchone()
+    if not r:
+        byname = con.execute(
+            _EDITOR_COLS + "WHERE name=? ORDER BY COALESCE(started_at,created_at) DESC LIMIT 1",
+            (ref,),
+        ).fetchone()
+        if byname and byname["public_id"]:
+            return redirect("/Sendero/" + byname["public_id"] + "/editor", code=302)
+        if not byname:
+            return redirect("/rutas")
+    return render_template("shell.html")
+
+
+@editor_bp.route("/api/routes/<rid>/editor")
+def editor_meta(rid):
+    """Metadatos de arranque del editor (los inyectaba la plantilla en `route_json`)."""
+    con = db()
+    r = con.execute(_EDITOR_COLS + "WHERE public_id=?", (rid,)).fetchone()
+    if not r:
+        abort(404)
+    return jsonify(_editor_meta(con, r))
 
 
 @editor_bp.route("/api/routes/<rid>/points")

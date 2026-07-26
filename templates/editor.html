@@ -1,3 +1,8 @@
+{# LEGACY — ya no se sirve. Sustituido por la sección `editor` de la SPA:
+   templates/sec/editor.html + static/js/sec/editor.js + static/css/editor.css,
+   alojada en templates/shell.html. `GET /Sendero/<public_id>/editor` sirve el
+   shell y los metadatos van por `GET /api/routes/<public_id>/editor`.
+   Editar este archivo NO tiene ningún efecto; se conserva como referencia. #}
 {% extends "base.html" %}
 {% block title %}Editor — Sendero{% endblock %}
 
@@ -348,10 +353,10 @@ async function saveDetails(){
       headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   }catch(e){toast('Error de red al guardar');btn.disabled=false;return;}
   if(!res.ok){const j=await res.json().catch(()=>({}));toast(j.error||'No se pudo guardar');btn.disabled=false;return;}
-  const renamed = ('name' in payload);
   R.name=name; R.device=device;
   document.getElementById('ed-name').textContent=name;
-  if(renamed) history.replaceState({},'','/Sendero/'+encodeURIComponent(name)+'/editor');
+  /* La URL es /Sendero/<public_id>/editor: renombrar ya no la cambia (antes iba
+     por nombre y había que reescribirla con history.replaceState). */
   try{sessionStorage.setItem('sendero_cache_dirty','1');}catch(e){}
   toast('Detalles guardados');
 }
@@ -1359,7 +1364,7 @@ async function doMerge(){
   closeMerge();
   const extra=d.times_kept?'':' (tiempos descartados: se solapaban)';
   if(confirm(`Creada «${d.name}»${extra}. ¿Abrir la ruta nueva?`))
-    location.href='/Sendero/'+encodeURIComponent(d.name);
+    location.href='/Sendero/'+encodeURIComponent(d.public_id);
   else toast(`Creada «${d.name}»${extra}`);
 }
 
@@ -1677,7 +1682,7 @@ let leaving=false;   // salida ya confirmada por la app: no volver a avisar en b
 function goBack(){
   if(opsList.length && !confirm('Hay cambios sin guardar. ¿Salir de todas formas?'))return;
   leaving=true;
-  location.href='/Sendero/'+encodeURIComponent(R.name);
+  location.href='/Sendero/'+encodeURIComponent(R.public_id);
 }
 window.addEventListener('beforeunload',e=>{
   if(opsList.length && !leaving){e.preventDefault();e.returnValue='';}

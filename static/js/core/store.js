@@ -274,19 +274,27 @@ const Store = (() => {
 
      `lite` pide la variante ligera (track decimado y series remuestreadas): ~85%
      menos de bytes, suficiente para mapa, perfil y stats. */
-  async function route(pid, {lite = false, bootstrap = null} = {}) {
+  async function route(pid, {lite = false, bootstrap = null, refresh = false} = {}) {
     if (bootstrap && bootstrap.public_id === pid) {
-      await put('detail', {public_id: pid, rev: bootstrap.rev || 0, lite: false, data: bootstrap});
+      // El `lite` se toma del propio bootstrap, no del argumento: el servidor
+      // inyecta la variante que le toca (hoy la ligera, ver sendero_page) y si
+      // se guardase con la otra etiqueta la siguiente visita lo descartaría.
+      await put('detail', {public_id: pid, rev: bootstrap.rev || 0,
+                           lite: !!bootstrap.lite, data: bootstrap});
       return bootstrap;
     }
     const [row, cached] = await Promise.all([routeRow(pid), get('detail', pid)]);
     const expected = row && row.rev;
-    if (cached && cached.data && (!expected || cached.rev === expected) && cached.lite === lite) {
+    if (!refresh && cached && cached.data && (!expected || cached.rev === expected) && cached.lite === lite) {
       return cached.data;               // 0 peticiones
     }
     try {
+      // `refresh` fuerza traer el detalle de nuevo: lo usan las acciones que
+      // cambian la ruta por un camino que el cliente no puede replicar (subir
+      // fotos, reescanear, asociar fotos de Immich). Sin él, el rev del listado
+      // aún no ha llegado por la sincronización y se serviría la copia vieja.
       const headers = {};
-      if (cached && cached.rev) {
+      if (!refresh && cached && cached.rev) {
         headers['If-None-Match'] = `"${cached.rev}${cached.lite ? '-lite' : ''}"`;
       }
       const res = await netFetch(`/api/routes/${encodeURIComponent(pid)}${lite ? '?lite=1' : ''}`,
@@ -301,6 +309,17 @@ const Store = (() => {
       if (cached && cached.data) return cached.data;   // offline: lo que haya
       throw e;
     }
+  }
+
+  /* Guarda en local un detalle que la sección acaba de modificar (notas, nombre,
+     actividad…). Sin esto, un cambio hecho sin conexión se vería revertido al
+     volver a la vista: el PATCH está en la cola, pero la copia local del detalle
+     seguiría siendo la del servidor. Se conserva el `rev` que ya tenía: cuando el
+     servidor confirme el cambio subirá el rev y el detalle se re-descargará. */
+  async function putDetail(pid, data, {lite = false} = {}) {
+    const cached = await get('detail', pid);
+    await put('detail', {public_id: pid, rev: (cached && cached.rev) || data.rev || 0,
+                         lite: !!lite, data});
   }
 
   async function plan(pid, {bootstrap = null} = {}) {
@@ -396,7 +415,7 @@ const Store = (() => {
   return {
     open, meta, setMeta, onChange, isOnline,
     syncNow, checkState, verify, diffManifest,
-    routes, planned, route, plan, routeRow, planRow,
+    routes, planned, route, plan, routeRow, planRow, putDetail,
     prefetchAll, usage, clearLocal,
     patch, flushOutbox, pendingCount,
     _get: get, _put: put, _del: del, _getAll: getAll,

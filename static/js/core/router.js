@@ -76,17 +76,38 @@ const Router = (() => {
     return _mounting;
   }
 
+  // ms del fundido de salida (debe cuadrar con la transición de .sec en base.html)
+  const ANIM_OUT = 150;
+  let _primero = true;      // la carga inicial no se anima
+
   async function _show(target, bootstrap) {
     const {sec, params} = target;
     if (_cur && _cur.sec !== sec) {
       const prev = window.SEC[_cur.sec];
       if (prev && prev.unmount) { try { prev.unmount(); } catch (e) { console.warn('[router] unmount', e); } }
-      const pe = el(_cur.sec); if (pe) pe.classList.add('hidden');
+      const pe = el(_cur.sec);
+      if (pe) {
+        // Fundido de salida antes de ocultar (lo que hacía _showSec en app.html).
+        if (!_primero) {
+          pe.classList.add('_sec-leaving');
+          await new Promise(r => setTimeout(r, ANIM_OUT));
+          pe.classList.remove('_sec-leaving');
+        }
+        pe.classList.add('hidden');
+      }
     }
     document.documentElement.dataset.sec = sec;
     const node = el(sec);
-    if (node) node.classList.remove('hidden');
+    if (node) {
+      node.classList.remove('hidden');
+      if (!_primero) {
+        node.classList.add('_sec-entering');
+        setTimeout(() => node.classList.remove('_sec-entering'), 240);
+      }
+    }
+    _primero = false;
     markNav(sec);
+    showSectionActions(sec);
     try {
       await assets(sec);
     } catch (e) {
@@ -116,6 +137,16 @@ const Router = (() => {
       });
   }
 
+  /* Acciones de cabecera por sección: los botones que en app.html vivían en
+     #act-dashboard/#act-rutas/#act-planes. Van fuera de la sección (están en la
+     cabecera), así que no los puede mostrar el propio módulo sin saber cuándo
+     está activo: los marca `data-sec-actions="<sec>"` y los conmuta el router. */
+  function showSectionActions(sec) {
+    document.querySelectorAll('[data-sec-actions]').forEach(el2 => {
+      el2.classList.toggle('hidden', el2.dataset.secActions !== sec);
+    });
+  }
+
   function current() { return _cur; }
 
   /* Cambia la URL sin navegar (renombrar una ruta no debe recargar nada). */
@@ -132,9 +163,12 @@ const Router = (() => {
       if (!hosted(t.sec)) { location.reload(); return; }
       show(t, null);
     });
-    // Delegación: cualquier <a data-spa> o [data-nav] navega por el router.
+    // Delegación: <a data-spa>, [data-nav] y los enlaces del nav/tab bar
+    // (a.nav-link) navegan por el router. Sin `a.nav-link` aquí, el header haría
+    // una recarga completa: chrome.js se aparta cuando el router sabe montar el
+    // destino, y entonces nadie llamaría a go().
     document.addEventListener('click', e => {
-      const a = e.target.closest('a[data-spa], [data-nav]');
+      const a = e.target.closest('a[data-spa], [data-nav], a.nav-link');
       if (!a) return;
       const href = a.getAttribute('data-nav') || a.getAttribute('href');
       if (!href || !parse(href.split('?')[0])) return;

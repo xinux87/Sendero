@@ -15,6 +15,7 @@ from api.editor import editor_bp
 from api.mifit import mifit_bp
 from api.maps import maps_bp, map_cfg
 from api.sync import sync_bp
+from api.pwa import pwa_bp
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB por subida
@@ -32,7 +33,11 @@ def _inject_version():
     # Disponible como {{ app_version }} en todas las plantillas (pie de Ajustes).
     # map_cfg va en <body data-map-cfg> de base.html: lo lee MAP_CFG de
     # static/shared.js para saber si hay capa de mapa offline configurada.
-    return {"app_version": APP_VERSION, "map_cfg_json": json.dumps(map_cfg())}
+    # planner_url va en <body data-planner-url> por el mismo motivo (lo lee
+    # PLANNER_URL de shared.js): en el HTML no necesita fetch y funciona sin red.
+    import core.config as _cfg
+    return {"app_version": APP_VERSION, "map_cfg_json": json.dumps(map_cfg()),
+            "planner_url": _cfg.PLANNER_URL}
 
 
 @app.before_request
@@ -44,7 +49,7 @@ def _refresh_settings():
     refresh_config()
 
 for bp in (routes_bp, photos_bp, planned_bp, settings_bp, immich_bp, editor_bp, mifit_bp,
-           maps_bp, sync_bp):
+           maps_bp, sync_bp, pwa_bp):
     app.register_blueprint(bp)
 
 init_db()

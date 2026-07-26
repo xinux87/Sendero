@@ -11,16 +11,25 @@
 
    Se carga DESPUÉS de shared.js y ANTES de los módulos de sección. */
 const $=s=>document.querySelector(s);
-// Transición suave entre páginas del nav
+/* Transición suave entre páginas del nav, SOLO para los documentos que no son la
+   SPA (hoy el editor). Si el router está cargado y sabe montar ese destino, es él
+   quien navega: este listener corre antes (chrome.js se carga antes que
+   router.js) y sin esta comprobación haría un location.href 100 ms después de
+   que la SPA ya hubiera cambiado de sección — o sea, una recarga completa. */
 document.addEventListener('click', e => {
   const link = e.target.closest('a.nav-link');
   if (!link || link.classList.contains('on')) return;
+  const href = link.getAttribute('href');
+  // OJO: `typeof Router`, no `window.Router`. Router y Store se declaran con
+  // `const` en el ámbito superior de un script clásico, y eso crea un binding
+  // léxico global que NO aparece como propiedad de window. Con `window.Router`
+  // esta comprobación siempre era falsa y el nav hacía una recarga completa
+  // encima de la navegación de la SPA.
+  if (typeof Router !== 'undefined' && href && Router.parse(href.split('?')[0])) return;
   e.preventDefault();
-  if (window._spaNavTo) { window._spaNavTo(link.getAttribute('href')); return; }
-  const href = link.href;
   document.body.style.transition = 'opacity .1s ease';
   document.body.style.opacity = '0';
-  setTimeout(() => location.href = href, 100);
+  setTimeout(() => location.href = link.href, 100);
 });
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"),2200);}
@@ -30,6 +39,200 @@ function fmtDur(s){if(!s)return"–";s=Math.round(s);const h=Math.floor(s/3600),
 function fmtDate(iso){if(!iso)return"Sin fecha";const d=new Date(iso);
   return d.toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"});}
 function esc(s){return(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+
+/* ── PWA: Service Worker e indicador de estado (roadmap §5) ───────────────── */
+
+/* El SW se registra desde AQUÍ, no desde el shell, aunque el plan lo pusiera en
+   el shell: mientras la migración no termine, /dashboard, /rutas y
+   /planificacion los sirve templates/app.html, y registrándolo solo en el shell
+   esas tres vistas —las más usadas— se quedarían sin caché de código. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', {scope: '/'})
+      .catch(e => console.warn('[sw] registro', e));
+  });
+}
+
+/* Badge de estado: solo se muestra cuando hay algo que decir (sin conexión,
+   sincronizando o con escrituras en cola). Vive en chrome.js porque el header es
+   de base.html y lo comparten la SPA nueva y la vieja; el Store puede no estar
+   cargado (app.html no lo usa todavía), así que todo lo suyo es opcional. */
+function _netBadge(text, cls) {
+  const b = $('#net-badge');
+  if (!b) return;
+  b.className = 'net-badge' + (cls ? ' ' + cls : '') + (text ? '' : ' hidden');
+  b.textContent = text || '';
+}
+
+/* `typeof Store`, no `window.Store`: ver el comentario del listener del nav. */
+const _tieneStore = () => typeof Store !== 'undefined';
+
+function _netRefresh(ev) {
+  if (navigator.onLine === false) { _netBadge('sin conexión', 'off'); return; }
+  if (ev && ev.type === 'syncing') { _netBadge('sincronizando'); return; }
+  const pend = _tieneStore() ? Store.pendingCount() : Promise.resolve(0);
+  pend.then(n => {
+    if (navigator.onLine === false) return;               // cambió mientras tanto
+    if (n > 0) _netBadge(`${n} sin enviar`, 'pend');
+    else _netBadge('');
+  }).catch(() => _netBadge(''));
+}
+
+window.addEventListener('online',  () => _netRefresh());
+window.addEventListener('offline', () => _netRefresh());
+window.addEventListener('load', () => {
+  _netRefresh();
+  if (_tieneStore()) {
+    Store.onChange(_netRefresh);
+    Store.flushOutbox();          // por si quedó algo de una sesión sin conexión
+  }
+});
+
+/* ── Ajustes → Sin conexión (roadmap §6.3 y §7) ────────────────────────────
+   Todo esto es UI sobre lo que ya hace static/js/core/store.js: prefetchAll(),
+   usage(), verify(), flushOutbox() y clearLocal(). En el editor (que no carga el
+   Store) la sección avisa en vez de romperse. */
+
+function _fmtBytes(n) {
+  if (!n) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${u[i]}`;
+}
+
+async function loadOffline() {
+  const est = $('#off-estado');
+  if (!est) return;
+  if (!_tieneStore()) {
+    est.textContent = 'Esta pantalla no usa el almacén local.';
+    return;
+  }
+  try {
+    const [rutas, planes, uso, cursor, syncedAt] = await Promise.all([
+      Store._getAll('routes'), Store._getAll('planned'), Store.usage(),
+      Store.meta('cursor'), Store.meta('synced_at'),
+    ]);
+    const cuando = syncedAt
+      ? new Date(syncedAt).toLocaleString('es-ES', {day: '2-digit', month: 'short',
+                                                    hour: '2-digit', minute: '2-digit'})
+      : 'nunca';
+    const partes = [
+      `${rutas.length} ruta(s) y ${planes.length} plan(es) guardados`,
+      uso ? `${uso.cachedDetails} detalle(s) descargado(s)` : null,
+      uso && uso.usage ? `${_fmtBytes(uso.usage)} ocupados` : null,
+      `última sincronización: ${cuando}`,
+      // El cursor es opaco: no se muestra como número "de versión", solo como
+      // señal de que hay una copia establecida.
+      cursor ? null : 'sin sincronizar todavía',
+    ].filter(Boolean);
+    est.innerHTML = partes.join(' · ');
+    $('#off-prefetch-info').textContent = uso
+      ? `${uso.cachedDetails} / ${rutas.length}` : '';
+  } catch (e) {
+    est.textContent = 'No se pudo leer el almacén local.';
+  }
+  renderOutbox();
+}
+
+async function renderOutbox() {
+  const box = $('#off-cola');
+  if (!box || !_tieneStore()) return;
+  let items = [];
+  try { items = await Store._getAll('outbox'); } catch (e) {}
+  const flush = $('#off-flush-btn');
+  if (!items.length) {
+    box.innerHTML = '<div class="cfg-hint" style="margin:0">Nada pendiente: todo enviado.</div>';
+    if (flush) flush.disabled = true;
+    return;
+  }
+  if (flush) flush.disabled = false;
+  box.innerHTML = items.map(it => {
+    const cuando = new Date(it.ts).toLocaleString('es-ES',
+      {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'});
+    const campos = Object.keys(it.body || {}).join(', ');
+    return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+      border:1px solid var(--line);border-radius:7px;padding:7px 10px;margin-bottom:6px">
+      <span style="font-size:13px">${esc(it.label || campos || 'cambio')}
+        <span class="mono" style="color:var(--muted);font-size:11px"> · ${esc(campos)}</span></span>
+      <span class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap">${cuando}</span>
+    </div>`;
+  }).join('');
+}
+
+async function offRefresh() {
+  if (!_tieneStore()) return;
+  const r = await Store.syncNow({force: true});
+  toast(r && r.error ? 'No se pudo sincronizar (¿sin conexión?)' : 'Datos actualizados');
+  loadOffline();
+}
+
+async function offVerify() {
+  if (!_tieneStore()) return;
+  const btn = $('#off-verify-btn');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'Comprobando…';
+  try {
+    const rep = await Store.verify();
+    const n = ['routes', 'planned'].reduce((acc, k) =>
+      acc + (rep[k] ? rep[k].missing.length + rep[k].stale.length + rep[k].extra.length : 0), 0);
+    toast(n ? `Reparadas ${n} diferencia(s)` : 'La copia local coincide con el servidor');
+    loadOffline();
+  } catch (e) {
+    toast('La comprobación necesita conexión');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+async function offPrefetch() {
+  if (!_tieneStore()) return;
+  if (!Store.isOnline()) { toast('Descargar necesita conexión'); return; }
+  const btn = $('#off-prefetch-btn'), bg = $('#off-prefetch-bar-bg'), bar = $('#off-prefetch-bar');
+  btn.disabled = true;
+  bg.style.display = '';
+  const res = await Store.prefetchAll((hechas, total, fallidas) => {
+    bar.style.width = Math.round((hechas / total) * 100) + '%';
+    $('#off-prefetch-info').textContent = `${hechas} / ${total}`
+      + (fallidas ? ` · ${fallidas} fallo(s)` : '');
+  });
+  btn.disabled = false;
+  setTimeout(() => { bg.style.display = 'none'; bar.style.width = '0'; }, 800);
+  toast(res.failed ? `${res.done - res.failed} descargada(s), ${res.failed} fallo(s)`
+                   : `${res.done} ruta(s) disponibles sin conexión`);
+  loadOffline();
+}
+
+async function offFlush() {
+  if (!_tieneStore()) return;
+  const r = await Store.flushOutbox();
+  toast(r.sent || r.dropped
+    ? `${r.sent} enviado(s)${r.dropped ? `, ${r.dropped} descartado(s)` : ''}`
+    : 'No se pudo enviar (¿sin conexión?)');
+  loadOffline();
+}
+
+async function offDiscard() {
+  if (!_tieneStore()) return;
+  const items = await Store._getAll('outbox');
+  if (!items.length) { toast('No hay nada pendiente'); return; }
+  if (!confirm(`¿Descartar ${items.length} cambio(s) sin enviar? Se perderán.`)) return;
+  for (const it of items) await Store._del('outbox', it.id);
+  toast('Cambios pendientes descartados');
+  loadOffline();
+}
+
+async function offClear() {
+  if (!_tieneStore()) return;
+  const pend = await Store.pendingCount();
+  const extra = pend ? `\n\nOJO: hay ${pend} cambio(s) sin enviar que se perderán.` : '';
+  if (!confirm('¿Vaciar la copia local de este dispositivo?' + extra
+    + '\n\nNo se borra nada del servidor: los datos se vuelven a descargar.')) return;
+  await Store.clearLocal();
+  toast('Copia local vaciada');
+  loadOffline();
+}
 
 /* ── ajustes ─────────────────────────────────────────────────────────────── */
 const _CFG_ACTIVITIES=['senderismo','bicicleta','caminata','correr','esqui','otros'];
@@ -91,6 +294,7 @@ async function openSettings(){
   renderGpsThrTable();
   loadMaps();
   loadMifit();
+  loadOffline();
   cfgSection('immich',$('#cfg-nav-immich'));
   $('#cfg-overlay').classList.remove('hidden');
 }

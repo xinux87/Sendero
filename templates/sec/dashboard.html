@@ -1,0 +1,38 @@
+{# Dashboard (sección de la SPA). Markup extraído de templates/app.html; la
+   lógica vive en static/js/sec/dashboard.js y el CSS en static/css/dashboard.css.
+   Los botones de la cabecera están en shell.html (bloque header_actions), no
+   aquí: van fuera de la sección y el router los muestra por data-sec-actions. #}
+<section id="sec-dashboard" class="sec hidden">
+  <div id="ov-loading" class="ov-loading">Cargando estadísticas…</div>
+  <div id="ov-stale" class="stats-stale hidden"></div>
+  <div id="ov-content" class="hidden">
+    <div class="ov-section">
+      <div class="ov-section-title">Totales</div>
+      <div class="hero-grid">
+        <div class="hero-card"><div class="v" id="ov-total-routes">–</div><div class="l">Rutas</div></div>
+        <div class="hero-card"><div class="v" id="ov-total-km">–<small> km</small></div><div class="l">Distancia total</div></div>
+        <div class="hero-card"><div class="v" id="ov-total-asc">–<small> m</small></div><div class="l">Desnivel acumulado ↑</div></div>
+        <div class="hero-card"><div class="v" id="ov-total-time">–</div><div class="l">Tiempo en movimiento</div></div>
+      </div>
+    </div>
+    <div class="ov-section" id="ov-map-section">
+      <div class="ov-section-title">Todas las rutas</div>
+      <div id="dash-map"></div>
+      <div id="dash-map-loader" class="hidden" style="height:3px;background:var(--line);border-radius:0 0 8px 8px;overflow:hidden;margin-top:-1px">
+        <div id="dash-map-loader-bar" style="height:100%;width:0;background:var(--pr-yellow);transition:width .1s linear"></div>
+      </div>
+    </div>
+    <div class="ov-section">
+      <div class="ov-section-title">Por actividad</div>
+      <div class="act-rows" id="ov-act-rows"></div>
+    </div>
+    <div class="ov-section">
+      <div class="ov-section-title">Rutas por año</div>
+      <div class="year-chart" id="ov-year-chart"></div>
+    </div>
+    <div class="ov-section" id="ov-records-section">
+      <div class="ov-section-title">Récords personales</div>
+      <div class="records-grid" id="ov-records-grid"></div>
+    </div>
+  </div>
+</section>

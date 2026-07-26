@@ -8,21 +8,31 @@ para tocar el código sin romperlo. Si algo de aquí contradice al README, este 
 Monolito Flask + SQLite que sube/visualiza GPX y FIT, les asocia fotos (locales o de
 Immich por referencia), genera thumbnails PNG de cada track y guarda un resumen por ruta.
 
-## Por dónde vamos (trabajo en curso — v0.6.0)
-Hay una **migración a medias** en marcha, y saberlo evita tocar el archivo equivocado:
-SPA completa + funcionamiento sin conexión + sincronización delta. Plan y estado por
-fases: **`roadmap/spa-offline-sync.md`** (tabla al principio; ahí está también el
-"▶ POR DÓNDE VAMOS" con el siguiente paso y su checklist).
+## Por dónde vamos (migración terminada — pendiente de publicar)
+La conversión a **SPA completa + funcionamiento sin conexión + sincronización delta**
+(`roadmap/spa-offline-sync.md`) está **completa**: las 6 vistas son secciones de un
+único documento. Ya no hay dos mundos, así que no hay que elegir entre plantilla
+vieja y nueva — todo se toca en `static/js/sec/` (ver "Frontend").
 
-- **Hecho**: librerías y fuentes vendorizadas (sin CDN), sincronización delta completa en
-  el servidor (`sync_seq`/`sync_log` + triggers, `/api/sync/*`) y en el cliente
-  (`static/js/core/store.js`, IndexedDB), mapa base offline con PMTiles (`/tiles/...`,
-  Ajustes → Mapas), y el shell de la SPA (`templates/shell.html`) con la **primera** vista
-  migrada: el detalle de plan.
-- **Siguiente**: `sec/detalle.js` (detalle de ruta) → `dashboard`/`rutas`/`planes` (ahí el
-  listado pasa de `sessionStorage` al Store) → `editor` → PWA/Service Worker.
-- **Consecuencia práctica**: convive la SPA vieja (`templates/app.html`, 3 secciones) con
-  el shell nuevo (secciones en `static/js/sec/`). Ver "Frontend" para saber cuál toca.
+- **Hecho**: vendorizado sin CDN (fase 1), JS extraído a módulos por sección (2), shell
+  único con las 6 vistas (3), sincronización delta servidor+cliente (4), PWA con Service
+  Worker (5), mapa base offline con PMTiles (6.1), prefetch de detalles y panel de gestión
+  en Ajustes → Sin conexión (6.3), y cola de escrituras con su UI (7).
+- **Lo que funciona sin conexión**: abrir la app en cualquier vista (shell y código
+  precacheados), los listados de rutas y planes, el dashboard (con las últimas
+  estadísticas guardadas, avisando), el detalle de rutas y planes sincronizados, el mapa
+  base si hay un `.pmtiles` en `data/tiles/`, y editar nombre/notas/actividad (se encolan
+  y se envían al volver la red).
+- **Lo que NO funciona sin conexión, a propósito**: el **editor** (opera sobre el estado
+  guardado en el servidor y cada guardado lleva `base_version`; encolar eso sería
+  inventarse decisiones del servidor), subir rutas o fotos, Immich, reescanear y borrar.
+  Todas avisan en vez de fallar en silencio.
+- **Único punto del plan sin hacer: §6.2** (teselas por zona). Decisión razonada, no
+  olvido: cachear en masa las 4 capas de terceros va contra su política de uso, y para el
+  escenario "ni servidor ni internet" haría falta guardar el `.pmtiles` entero en el
+  navegador con un `Source` propio de pmtiles.js. Está descrito en el roadmap §6.2.
+- **Al publicar**: `APP_VERSION` invalida el precache del Service Worker, así que este
+  trabajo NO debe salir sin subir la versión (ver "Publicar una versión").
 
 ## Comandos
 ```bash
@@ -30,6 +40,18 @@ fases: **`roadmap/spa-offline-sync.md`** (tabla al principio; ahí está tambié
 pip install -r requirements-dev.txt   # incluye requirements.txt + pytest
 python app.py                      # http://localhost:8080, init_db() automático
 python -m pytest                   # tests unitarios (tests/): editing, parsers, FIT, gps_analysis
+node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
+node tests/sec_smoke.js            # sec/detalle.js carga contra los ids reales del markup
+
+# end-to-end en un navegador real (Playwright; NO va en requirements-dev.txt)
+python -m venv /tmp/pw && /tmp/pw/bin/pip install playwright
+/tmp/pw/bin/playwright install chromium
+SENDERO_DATA=/tmp/sendero-e2e python app.py &        # ¡datos de PRUEBA, no los reales!
+python tests/e2e_seed.py http://localhost:8080       # siembra 3 rutas + 1 plan
+SENDERO_E2E_URL=http://localhost:8080 /tmp/pw/bin/python tests/e2e_spa.py
+
+# y una de SOLO LECTURA que sí se puede lanzar contra la instalación real:
+SENDERO_E2E_URL=http://localhost:8090 /tmp/pw/bin/python tests/e2e_real_readonly.py
 
 # producción / como se despliega de verdad
 docker compose up -d --build       # servicio 'sendero' + servicio 'watcher'
@@ -53,6 +75,13 @@ todos estos deben coincidir con ese número (si no, quedan desincronizados):
    despliegue lo fija `.env` (`SENDERO_VERSION=`), que no se versiona.
 4. Tag de git `vX.Y.Z` y la imagen Docker `xinux87/sendero:X.Y.Z` (+ `:X.Y` y `:latest`)
    publicada en Docker Hub.
+
+`APP_VERSION` también **invalida el precache del Service Worker**: `/sw.js` la inyecta
+delante del archivo (`api/pwa.py`), así que al cambiarla el archivo cambia, el navegador
+instala el SW nuevo y su `activate` borra las cachés `sendero-shell-*`/`sendero-doc-*` de
+versiones anteriores. Por eso el punto 1 no es opcional: publicar cambios de frontend sin
+subir `APP_VERSION` deja a los clientes con el JS viejo hablando con la API nueva, que es
+el fallo más difícil de diagnosticar que tiene este proyecto.
 
 Los puntos 1-3 van en el commit de versión. Los puntos 4 (tag + imagen) son acciones
 hacia fuera: tras hacer el commit de versión, **devuelve siempre estos comandos** para
@@ -119,6 +148,10 @@ api/
   sync.py       — sincronización delta: /api/sync/state (ETag → 304), /changes, /manifest
   maps.py       — mapa base offline: sirve data/tiles/*.pmtiles con Range (206) y
                   /api/maps; map_cfg() se inyecta en <body data-map-cfg>
+  pwa.py        — /sw.js (static/sw.js con APP_VERSION inyectada delante),
+                  /manifest.webmanifest y /app-shell (el shell SIN datos, lo que
+                  precachea el SW). Las tres en la raíz a propósito: el ámbito de
+                  un Service Worker es su carpeta, desde /static no controlaría nada
 ```
 
 `watch.py` — importador de carpeta. Proceso **independiente**, no parte del server.
@@ -133,33 +166,48 @@ un hilo de gunicorn (evita duplicar el importador con 2 workers).
 `tests/` — pytest sin BD ni Flask (funciones puras): `conftest.py` trae un constructor
 de GPX sintéticos (`make_gpx_xml`) y un FIT de muestra (`tests/fixtures/Activity.fit`).
 Si tocas una op del editor o el aplanado, añade/ajusta el test correspondiente.
+Además hay dos pruebas de humo de JavaScript que se lanzan con **Node a pelo** (sin npm
+ni dependencias, regla 1; pytest ignora los `.js`): `node tests/sw_smoke.js` ejecuta
+`static/sw.js` con `caches`/`fetch` simulados y comprueba install/activate y qué
+estrategia le toca a cada URL, y `node tests/sec_smoke.js` carga `static/js/sec/detalle.js`
+contra los ids reales de `templates/sec/detalle.html` (pilla un selector que ya no existe).
 
 Rendimiento transversal: la BD corre en WAL (`init_db()`), las respuestas de texto van
 con gzip/brotli (flask-compress en `app.py`, mínimo 500 bytes), y los binarios llevan
 caché: thumbs con ETag/304 (revalidación: se regeneran con el mismo nombre), fotos
 locales inmutables con max-age 1 año, proxys Immich con caché privada de 7 días.
 
-### Frontend — SPA, en migración a un shell único
+### Frontend — una SPA, un documento, 6 secciones
 
-**Hoy hay DOS sitios donde vive la SPA** y hay que saber en cuál se toca:
+**Todas las vistas viven en `templates/shell.html`**, que no lleva datos dentro y
+aloja las 6 secciones. Cada una son tres archivos con el mismo nombre:
 
-1. `templates/app.html` — SPA "vieja" con tres secciones (Dashboard, Mis Rutas,
-   Mis Planes) y su propio router inline (`_showSec`/`_spaNavTo`). Sigue siendo la
-   que sirve `/dashboard`, `/rutas` y `/planificacion`.
-2. `templates/shell.html` — shell nuevo, sin datos dentro, que aloja las secciones
-   ya migradas a `static/js/sec/` y usa el router de `static/js/core/router.js`
-   (6 vistas). De momento aloja **solo** el detalle de plan (`/Plan/<public_id>`).
+| Sección | URL | Markup | Lógica | Estilos |
+|---|---|---|---|---|
+| `dashboard` | `/dashboard` | `templates/sec/dashboard.html` | `static/js/sec/dashboard.js` | `static/css/dashboard.css` |
+| `rutas` | `/rutas` | `sec/rutas.html` | `js/sec/rutas.js` | `css/rutas.css` |
+| `planes` | `/planificacion` | `sec/planes.html` | `js/sec/planes.js` | `css/planes.css` |
+| `detalle` | `/Sendero/<public_id>` | `sec/detalle.html` | `js/sec/detalle.js` | `css/detalle.css` |
+| `plan` | `/Plan/<public_id>` | `sec/plan.html` | `js/sec/plan.js` | `css/plan.css` |
+| `editor` | `/Sendero/<public_id>/editor` | `sec/editor.html` | `js/sec/editor.js` | `css/editor.css` |
 
-El plan completo de la migración y su estado están en
-**`roadmap/spa-offline-sync.md`** (fases 1-7). Regla práctica mientras dure: si la
-vista tiene su archivo en `static/js/sec/`, se toca ahí; si no, en su plantilla.
-El router cae a `location.href` al navegar hacia una vista que el documento actual
-no aloja (`hosted()`), así que ambos mundos conviven sin romper la navegación.
+El router (`static/js/core/router.js`) monta la sección según `location.pathname`,
+así que **navegar entre vistas no pide ningún documento**: solo el JSON que haga
+falta, y a menudo ni eso (lo tiene el Store).
 
-> **TRAMPA CRÍTICA:** Si tocas "Mis Rutas" o "Dashboard", el archivo es `app.html`,
-> NO `rutas.html` ni `dashboard.html`. Esos archivos legacy siguen en disco pero
-> ya no los sirve ninguna ruta Flask. Y si tocas el detalle de un plan, el archivo
-> es `static/js/sec/plan.js` + `templates/sec/plan.html`, NO `plan_detalle.html`.
+> **TRAMPA CRÍTICA:** en `templates/` quedan **cinco plantillas legacy** que ya no
+> sirve ninguna ruta Flask y que editar no tiene NINGÚN efecto: `app.html`
+> (dashboard/rutas/planes), `sendero.html` (detalle), `editor.html`, `rutas.html`,
+> `overview.html`, `planificacion.html` y `plan_detalle.html`. Todas llevan un
+> comentario Jinja al principio avisándolo. **Lo que se toca es siempre
+> `templates/sec/<sec>.html` + `static/js/sec/<sec>.js` + `static/css/<sec>.css`.**
+
+**Si añades una sección nueva** hacen falta cinco cosas, y olvidar cualquiera la
+rompe de una forma distinta: (1) el archivo en `templates/sec/`, incluido en
+`shell.html`; (2) su ruta en `ROUTES` de `router.js`; (3) su `.js` y `.css` en
+`PRECACHE_URLS` de `static/sw.js` (si no, no se puede montar sin conexión); (4) su
+URL en `SHELL_PATHS` del mismo archivo (si no, sin conexión da la página de aviso
+en vez del shell); (5) la ruta Flask que sirva `shell.html`.
 
 **Sin build step (regla 1), pero el JS ya no va todo inline.** Reparto:
 
@@ -167,11 +215,16 @@ no aloja (`hosted()`), así que ambos mundos conviven sin romper la navegación.
 static/vendor/     maplibre-gl-4.7.1.js|css, chart-4.4.1.umd.min.js, pmtiles-3.0.6.js
                    (antes unpkg/cdnjs; nombre con versión = cacheables como inmutables)
 static/fonts/      las 3 familias en .woff2 + fonts.css (antes fonts.googleapis.com)
+static/sw.js       Service Worker (lo sirve /sw.js, no /static/sw.js — ver api/pwa.py)
+static/icons/      icon-192.png, icon-512.png, icon-maskable-512.png, generados de
+                   static/icon.svg con cairosvg (el maskable al 80% sobre el fondo)
 static/shared.js   ACTIVITIES/activityOf/iconSvg/_loadActImages, BASEMAP_TILES,
                    buildStyle/basemapNames/defaultBasemap/applyBasemap, MAP_CFG
 static/js/core/    chrome.js  helpers globales ($, toast, fmtKm/fmtDur/fmtDate, esc)
-                              + TODO el modal de Ajustes. Se carga en base.html
-                              (sin IIFE a propósito: lo llaman los onclick=)
+                              + TODO el modal de Ajustes + registro del Service
+                              Worker + badge de conexión + Ajustes → Sin conexión.
+                              Se carga en base.html (sin IIFE a propósito: lo
+                              llaman los onclick=)
                    loader.js  loadOnce()/loadCssOnce(): inyecta el <script>/<link>
                               de una sección una sola vez
                    router.js  Router de las 6 vistas + window.go()
@@ -195,28 +248,39 @@ archivo, nunca en `mount()`.
 
 | Archivo | Ruta Flask | Contenido |
 |---------|-----------|-----------|
-| `templates/base.html` | — | CSS global, header, toast, modal de Ajustes. Carga `static/vendor/*`, `static/fonts/fonts.css`, `static/shared.js` y `static/js/core/chrome.js`. No redeclares en una plantilla nada que ya esté en `shared.js`/`chrome.js` (dos `const` globales con el mismo nombre en scripts distintos = SyntaxError) |
-| `templates/shell.html` | `GET /Plan/<public_id>` | Shell de la SPA nueva: incluye `templates/sec/*.html`, carga `core/loader.js`+`store.js`+`router.js` y llama a `Router.start()`. Cero datos inyectados salvo el `bootstrap_json` opcional de la primera carga |
+| `templates/base.html` | — | CSS global, header (con el badge `#net-badge` de estado de conexión), toast, modal de Ajustes, `<link rel="manifest">` y `theme-color`. Carga `static/vendor/*`, `static/fonts/fonts.css`, `static/shared.js` y `static/js/core/chrome.js` (que registra el Service Worker). No redeclares en una plantilla nada que ya esté en `shared.js`/`chrome.js` (dos `const` globales con el mismo nombre en scripts distintos = SyntaxError) |
+| `templates/shell.html` | **todas** las vistas (`/dashboard`, `/rutas`, `/planificacion`, `/Sendero/<id>`, `/Sendero/<id>/editor`, `/Plan/<id>`, `/app-shell`) | Shell de la SPA: incluye los 6 `templates/sec/*.html`, la tab bar, las acciones de cabecera por sección (`data-sec-actions`), carga `core/loader.js`+`store.js`+`router.js` y llama a `Router.start()`. Cero datos inyectados salvo el `bootstrap_json` opcional de la primera carga (`/app-shell` lo sirve **sin** él: es el que precachea el SW) |
+| `templates/sec/detalle.html` | (sección `detalle` del shell) | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación/velocidad/FC (Chart.js), notas, fotos, modal Immich, lightbox. Lógica en `static/js/sec/detalle.js`, estilos en `static/css/detalle.css`. Los ids genéricos llevan prefijo `d-` (`#d-map`, `#d-stats`, `#d-elev`, `#d-notes`…) para no chocar con otras secciones del mismo documento |
 | `templates/sec/plan.html` | (sección `plan` del shell) | Detalle de ruta planificada. Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
-| `templates/app.html` | `GET /dashboard` · `/rutas` · `/planificacion` | SPA vieja con tres secciones: Dashboard, Mis Rutas, Mis Planes. Usa MapLibre GL para el mapa de visión general. |
-| `templates/sendero.html` | `GET /Sendero/<public_id>` | Detalle de ruta: mapa MapLibre GL, stats, perfil de elevación (Chart.js), notas, fotos, modal Immich, lightbox. Botón "✎ Editar" → editor. |
-| `templates/editor.html` | `GET /Sendero/<public_id>/editor` | Editor de rutas (F1+F2): recorte/eliminación de tramos, invertir, editar vértices, simplificar, corregir picos, dividir, undo/redo, historial de versiones, zoom en gráficas. |
-| `templates/plan_detalle.html` *(legacy)* | — | Sustituido por `sec/plan.html` + `js/sec/plan.js`. Ya no se sirve. No editar. |
+| `templates/sec/dashboard.html` | (sección `dashboard`) | Totales, mapa de todas las rutas, "Por actividad", "Rutas por año" y récords. Lógica en `static/js/sec/dashboard.js` |
+| `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros, mapa de visión general, modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
+| `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa y alta por GPX. Lógica en `static/js/sec/planes.js` |
+| `templates/sec/editor.html` | (sección `editor`) | Editor de rutas (F1-F3). Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` |
+| `templates/app.html` *(legacy)* | — | Sustituido por `sec/dashboard.*`, `sec/rutas.*` y `sec/planes.*`. Ya no se sirve. No editar. |
+| `templates/sendero.html` *(legacy)* | — | Sustituido por `sec/detalle.*`. Ya no se sirve. No editar. |
+| `templates/editor.html` *(legacy)* | — | Sustituido por `sec/editor.*`. Ya no se sirve. No editar. |
+| `templates/plan_detalle.html` *(legacy)* | — | Sustituido por `sec/plan.*`. Ya no se sirve. No editar. |
 | `templates/rutas.html` *(legacy)* | — | Ya no se sirve. No editar. |
 | `templates/overview.html` *(legacy)* | — | Ya no se sirve. No editar. |
 | `templates/planificacion.html` *(legacy)* | — | Ya no se sirve. No editar. |
 
 ### Navegación
-- Tarjeta en "Mis Rutas" → `location.href = '/Sendero/' + encodeURIComponent(name)`
-- Tarjeta en "Mis Planes" → `location.href = '/Plan/' + p.public_id` (la URL canónica
-  es el `public_id`; por nombre el servidor redirige 302, y con nombres repetidos
-  abriría otro plan)
+- **La URL canónica de todo es el `public_id`**, en rutas y en planes: `/Sendero/<pid>`,
+  `/Sendero/<pid>/editor`, `/Plan/<pid>`. Por nombre el servidor redirige 302 (enlaces y
+  marcadores viejos siguen funcionando), pero no lo generes: el nombre es ambiguo con
+  rutas repetidas y cambia al renombrar. Única excepción viva: las tarjetas de récords
+  del dashboard, porque el caché de stats en `settings` solo guarda el nombre.
+- Tarjeta en "Mis Rutas" → `openRoute(r.public_id)` (guarda el encuadre del mapa en
+  memoria del módulo y navega con `go()`; al volver, `initMap()` lo restaura)
+- Tarjeta en "Mis Planes" → `location.href = '/Plan/' + p.public_id`
 - Cambio de sección (Dashboard ↔ Mis Rutas ↔ Mis Planes) → SPA con `_showSec(name)`
 - Dentro del shell nuevo: `Router.go(url)` / `window.go(url)`, o un `data-nav="/url"`
   en cualquier elemento (el router delega el click); si la vista destino no está en
   el documento, cae a `location.href` sola
-- Botón "← Volver" en detalle → `location.href = '/rutas'`
-- Renombrar ruta → `history.replaceState` (actualiza URL sin recargar)
+- Botón "← Volver" en detalle → `data-nav="/rutas"` (el router cae a `location.href`
+  porque el documento actual no aloja esa sección)
+- Renombrar ruta **ya no toca la URL**: al ir por `public_id` la URL no depende del
+  nombre (antes hacía falta `history.replaceState`)
 - El botón Atrás del navegador funciona vía `window.addEventListener('popstate', ...)`
 
 ### Rutas Flask completas
@@ -224,11 +288,12 @@ archivo, nunca en `mount()`.
 | Método | URL | Handler |
 |--------|-----|---------|
 | GET | `/` | redirect → `/dashboard` |
-| GET | `/dashboard` | `app.html` (sección dashboard) |
-| GET | `/rutas` | `app.html` (sección rutas) |
-| GET | `/planificacion` | `app.html` (sección planes) |
-| GET | `/Sendero/<name>` | `sendero.html` con JSON inyectado |
+| GET | `/dashboard` · `/rutas` · `/planificacion` | `shell.html` (secciones `dashboard`/`rutas`/`planes`); sin datos inyectados, los pide el Store |
+| GET | `/Sendero/<public_id>` | `shell.html` (sección `detalle`) con la ruta como `bootstrap_json` en su variante **ligera** (`?lite=1`, la misma que pide la sección: si no coincidieran, el Store guardaría en IndexedDB algo distinto de lo que sirve la red y pediría el detalle otra vez). Por nombre redirige 302 al `public_id` |
 | GET | `/Plan/<public_id>` | `shell.html` (sección `plan`) con el plan como `bootstrap_json`; por nombre redirige 302 al `public_id` |
+| GET | `/app-shell` | `shell.html` **sin** `bootstrap_json`. Lo precachea el Service Worker y es lo que se sirve al navegar sin conexión a una vista que el shell aloja |
+| GET | `/sw.js` | `static/sw.js` con `self.APP_VERSION = "X.Y.Z"` inyectada delante (`Cache-Control: no-cache`, `Service-Worker-Allowed: /`) |
+| GET | `/manifest.webmanifest` | manifiesto de la PWA (`application/manifest+json`) |
 | GET | `/api/routes` | lista paginada (incluye `thumb_file`); sin `limit` devuelve todas (es barata, ~130 KB/500 rutas) |
 | GET | `/api/routes/geojson` | FeatureCollection de líneas decimadas (props: id, name, activity, year, km). Acepta `?bbox=minLon,minLat,maxLon,maxLat`; sin él devuelve todas (no lo usa el dashboard salvo fallback) |
 | POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb. Dedup (ver sección): 409 exacta (hash) o blanda (firma); `?auto=1` importa la blanda marcada (`dup_suspect_of`) en vez de bloquear; `?force=1` la importa limpia (el usuario ya la aceptó en la web) |
@@ -238,7 +303,8 @@ archivo, nunca en `mount()`.
 | POST | `/api/routes/<id>/rescan` | re-parsea GPX/FIT; regenera thumb |
 | GET | `/api/routes/<id>/thumb` | sirve el PNG del track (image/png) |
 | GET | `/api/routes/<id>/gpx` | descarga el archivo GPX/FIT original |
-| GET | `/Sendero/<name>/editor` | `editor.html` con JSON ligero inyectado (sin geojson) |
+| GET | `/Sendero/<public_id>/editor` | `shell.html` (sección `editor`); por nombre redirige 302 al `public_id` |
+| GET | `/api/routes/<public_id>/editor` | metadatos de arranque del editor (nombre, versión, `gps_max_speed`, `gps_issues`, `dem_enabled`). Antes iban inyectados en la plantilla |
 | GET | `/api/routes/<id>/points` | puntos completos para el editor: arrays paralelos lonlat/ele/time/hr 1:1 con los trkpt + `segments` + `version` |
 | POST | `/api/routes/<id>/edit` | guarda edición: `{base_version, summary, ops}`; 409 si base_version ≠ actual |
 | POST | `/api/routes/<id>/split` | divide en el punto `index`: la original se recorta (versión nueva) y la 2ª mitad pasa a ruta nueva; las fotos se quedan en la original |
@@ -355,8 +421,9 @@ Para no importar dos veces el mismo track. Dos niveles, ambos funciones puras en
 
 **Política de diseño (no romper):** la ingesta automática **nunca** borra ni fusiona
 por su cuenta; el exacto se descarta (seguro), el semántico se conserva **marcado** y
-lo revisa una persona (badge en `makeCard`, banner en `sendero.html` con "descartar
-aviso"/ir a la parecida → borrar o `POST /api/routes/merge`).
+lo revisa una persona (badge en `makeCard`, banner `#dup-banner` en la sección `detalle`
+con "descartar aviso"/ir a la parecida → borrar o `POST /api/routes/merge`; el enlace usa
+`dup_suspect_public`, así que navega por el router de un detalle a otro).
 
 **Borrado masivo de duplicadas (frontend):** el modo edición de "Mis Rutas" tiene un
 botón "⚠ Borrar duplicados (N)" (`deleteDuplicates()` en `app.html`, visible solo si hay
@@ -423,10 +490,39 @@ navegador `mifit-auth`, pendiente). Implementado (fases 1-3):
   Ajustes): token, región, intervalo, toggle, badge de estado y botón "Sincronizar
   ahora" (sondea `/status` cada 3 s hasta que deja de estar `running`).
 
-### Estado JS relevante en `sendero.html`
+### Contrato de una sección (`static/js/sec/*.js`)
+Todas siguen el mismo patrón, y conviene leerlo una vez antes de tocar cualquiera:
+
+```js
+(() => { 'use strict';
+  let _tok = 0;                    // token de montaje: invalida cargas en vuelo
+  const q = sel => document.querySelector('#sec-<sec> ' + sel);   // consultas escopadas
+  const visible = () => { … };     // ¿está esta sección a la vista?
+  async function mount(params, opts) { const tok = ++_tok; … }
+  function unmount() { _tok++; /* destruir mapa, Charts, marcadores, timers */ }
+  document.addEventListener(…);    // listeners de documento: UNA vez, aquí abajo
+  window.SEC.<sec> = {mount, unmount, …lo que llamen los onclick= del markup};
+})();
+```
+
+Tres cosas que no son opcionales: **(a)** `unmount()` destruye mapas y `Chart`s (sin eso
+cada visita deja un contexto WebGL vivo y el navegador se degrada poco a poco: es la fuga
+nº 1 de esta conversión); **(b)** los listeners de `document` se registran al cargar el
+archivo, nunca en `mount()`, porque `loadOnce()` ejecuta el script una sola vez pero
+`mount()` puede correr decenas de veces; **(c)** el token `_tok` se compara después de cada
+`await`, o una respuesta vieja pintará encima de otra sección.
+
+### Estado JS relevante en `static/js/sec/detalle.js`
+Todo vive dentro del IIFE de la sección (nada de esto es global). Se reinicia en
+`resetView()`, que llaman **`mount()` y `unmount()`**: `mount()` también, porque se puede
+ir de un detalle a OTRO detalle (el enlace del aviso de duplicada) y el router no
+desmonta cuando la sección no cambia.
+
 | Variable | Contenido |
 |----------|-----------|
-| `current` | objeto completo de la ruta (geojson, elevation, heart_rate, photos…) — poblado desde el HTML, sin fetch |
+| `current` | objeto de la ruta (geojson, elevation, heart_rate, photos…) que devuelve `Store.route(pid, {lite:true})`: red, `bootstrap` de la primera carga o copia local, lo decide el Store |
+| `pid` / `_lite` | `public_id` de la ruta montada y si lo cargado es la variante ligera (se lo pasa a `Store.putDetail` para no guardar una copia con la etiqueta equivocada) |
+| `_tok` | token de montaje: `++_tok` invalida las cargas en vuelo, para que un fetch viejo no pinte encima de otra ruta |
 | `photoMarkers` | `{id: marker}` — marcadores MapLibre de fotos con GPS |
 | `lbIdx` | índice en `current.photos` de la foto visible en el lightbox |
 | `immichCands` / `immichSel` | candidatos de Immich y Set de índices seleccionados |
@@ -434,7 +530,21 @@ navegador `mifit-auth`, pendiente). Implementado (fases 1-3):
 | `hoverD` | distancia (km) resaltada ahora mismo en el hover sincronizado mapa↔gráficos, o `null` |
 | `trackCumKm` | distancia acumulada (km) por punto de `current.geojson`, recalculada en cada `renderMap()` |
 
-### Hover sincronizado mapa↔gráficos en `sendero.html`
+### Escrituras en el detalle (`static/js/sec/detalle.js`)
+Dos categorías, y la diferencia importa:
+- **Por `Store.patch`** (nombre, notas, actividad, `immich_checked`, descartar aviso de
+  duplicada): sin conexión se **encolan** en el outbox y se envían al volver. Después hay
+  que llamar a `saveLocal()` (= `markCacheDirty()` + `Store.putDetail`), o el cambio hecho
+  sin conexión se vería revertido al volver a la vista: el PATCH está en la cola, pero la
+  copia local del detalle seguiría siendo la del servidor.
+- **Con conexión obligatoria** (`needOnline()`): reescanear, subir fotos, Immich, borrar
+  ruta o foto. El servidor decide cosas que el cliente no puede simular (dedup por hash,
+  409 por `base_version`, EXIF), y un borrado no debe encolarse porque no se puede deshacer.
+  Tras ellas, `reload()` (= `Store.route(..., {refresh:true})` + `syncNow`): el `rev` del
+  listado aún no ha llegado por la sincronización, así que sin `refresh` se serviría la
+  copia vieja.
+
+### Hover sincronizado mapa↔gráficos en el detalle (`static/js/sec/detalle.js`)
 Pasar el ratón por la línea del track en el mapa, o por el perfil de elevación/velocidad/FC,
 resalta la misma posición en los otros 3 elementos y muestra un cuadro flotante en el mapa
 con altitud/velocidad/FC en ese punto. Punto de entrada único: `setHoverD(d)` (d en km o `null`).
@@ -464,7 +574,7 @@ con altitud/velocidad/FC en ese punto. Punto de entrada único: `setHoverD(d)` (
 - `renderMap()` resetea `hoverD=null` y `hoverBoxEl=null` al principio (el mapa se destruye y
   recrea por completo en cada `renderAll()`, así que cualquier estado de hover anterior queda huérfano).
 
-### Mapa de visión general en `app.html` (sección Mis Rutas)
+### Mapa de visión general en `static/js/sec/rutas.js`
 Usa **MapLibre GL** (no Leaflet), basemap **Satélite** (Esri) por defecto con selector de
 4 capas (Topográfico/Callejero/Satélite/Oscuro) — a diferencia del dashboard, que no tiene
 selector y usa siempre CartoDB Oscuro fijo. La fuente GeoJSON de puntos se actualiza con
@@ -482,15 +592,15 @@ patrón, ver más abajo, pero adaptado a que aquí sí hay filtros de lista acti
   350ms en `moveend` (`_ovScheduleLineLoad`/`_ovLoadLinesForView`), solo si el zoom pasó
   `OV_LINES_PREFETCH_ZOOM` (`OV_LINES_MINZOOM-2`). `ovLineIds`/`ovLineFeaturesAll` acumulan
   TODO lo descargado por bbox (nunca se recorta), pero **a diferencia del dashboard, la capa
-  se filtra por los filtros activos de la lista**: `_ovApplyLineFilter()` recalcula qué
+  se filtra por los filtros activos de la lista**: `applyLineFilter()` recalcula qué
   subconjunto de `ovLineFeaturesAll` mostrar cada vez que cambia `ovRoutes` (filtro de
   actividad/fecha/búsqueda), sin volver a pedir red — el endpoint `/api/routes/geojson` solo
   filtra por bbox, así que el filtrado por actividad/fecha es 100% cliente.
-- **Invalidación de caché**: `clearRouteCache()` (ya usada para invalidar `allRoutes`)
-  también vacía `ovLineIds`/`ovLineFeaturesAll` y limpia la fuente `ov-lines` — si añades un
-  nuevo punto de mutación de rutas (upload/rescan/delete), reutiliza esa función en vez de
-  inventar otra invalidación; si el caché queda vacío pero hay rutas que mostrar,
-  `_ovApplyLineFilter()` relanza `_ovLoadLinesForView()` sola.
+- **Invalidación**: `invalidateLines()` vacía `lineIds`/`lineFeaturesAll` y limpia la
+  fuente `ov-lines`; la llama `reload()`, así que cualquier mutación que acabe en un
+  `Store.syncNow()` + `reload()` queda cubierta sin inventar otra invalidación. Si la
+  caché queda vacía pero hay rutas que mostrar, `applyLineFilter()` relanza
+  `loadLinesForView()` sola.
 - **Encuadre inicial instantáneo**: `fitMap(true)` en la creación del mapa usa
   `duration:0` — el centro/zoom del constructor (`[-84,10]`, un placeholder en Costa Rica)
   nunca se ve, salta directo a la posición real de las rutas. Sin el `true`, MapLibre anima
@@ -498,46 +608,43 @@ patrón, ver más abajo, pero adaptado a que aquí sí hay filtros de lista acti
   otro lado del mundo. El resto de llamadas a `fitMap()` (botón "centrar", cambios de filtro)
   sí animan, ahí tiene sentido.
 
-### Mapa del dashboard en `app.html` (sección Dashboard)
-Segundo mapa MapLibre (`dashMap`). Dibuja las rutas con **dos representaciones según el
-zoom** en vez de cargar siempre las 500 líneas completas:
+### Mapa del dashboard en `static/js/sec/dashboard.js`
+Segundo mapa MapLibre. Dibuja las rutas con **dos representaciones según el zoom** en vez
+de cargar siempre todas las líneas completas:
 - **Bolitas/clusters (`dash-points`/`dash-clusters`/`dash-unclustered`)**: se pintan casi
-  al instante a partir de `dashRoutesLite` (el mismo `GET /api/routes` ligero, ~130 KB,
-  sin geojson) — clustering nativo de MapLibre, igual patrón que el mapa de "Mis Rutas".
-  Visibles siempre que no haya filtro de actividad/año activo.
-- **Líneas reales (`dash-lines`)**: solo `minzoom: DASH_LINES_MINZOOM` (9). Se piden a
-  `GET /api/routes/geojson?bbox=...` **solo para la zona visible** (+ 50% de margen) en
-  el listener `dashMap.on('moveend', _dashScheduleLineLoad)` (debounce 350 ms), y solo si
-  el zoom ya pasó `DASH_LINES_PREFETCH_ZOOM` (`DASH_LINES_MINZOOM - 2`, para que estén
-  listas antes de que se vuelvan visibles). `dashLineIds` (Set) evita volver a pedir
-  rutas ya cargadas; `dashLineFeatures` acumula el FeatureCollection mostrado.
-- **Filtros combinados**: `_dashApplyFilters()` aplica un filtro MapLibre `['all', ...]`
-  combinando año (`dashSelectedYear`) y actividades (`dashActiveActs`) **solo sobre
-  `dash-lines`** — los clusters no tienen `activity`/`year` en sus propiedades (son
-  agregados de MapLibre), así que con cualquier filtro activo se ocultan
-  `dash-clusters`/`dash-unclustered` y se confía en las líneas filtradas.
-- **Barras de año clicables** (`toggleDashYear(year)`) / **filas de actividad clicables**
-  (`toggleDashAct(actId)`): togglean filtros/visibilidad como antes.
-- **`_refreshActRows()`**: re-renderiza "Por actividad" desde `dashRoutesLite` (no del
-  geojson pesado), respetando el año seleccionado.
-- **`_reloadDashboard()`**: se llama en cada visita al dashboard. `initDashMap()` está
-  guardado (`if(dashMapLoaded||dashMap)return`) así que no repite el setup ni el fetch
-  ligero en revisitas dentro de la misma sesión.
-- **TRAMPA**: `dashActiveActs` se inicializa dentro de `initDashMap()` (no en la declaración) porque `ACTIVITIES` se define más abajo en el mismo fichero y causaría ReferenceError.
+  al instante a partir del listado de `Store.routes()` — clustering nativo de MapLibre,
+  mismo patrón que el mapa de "Mis Rutas". Las etiquetas con el número de rutas de cada
+  cluster son marcadores DOM (`syncClusterLabels`), no símbolos de MapLibre: pintar texto
+  necesitaría un servidor de glyphs, que no hay (ni tendría sentido sin conexión).
+- **Líneas reales (`dash-lines`)**: solo desde `LINES_MINZOOM` (9). Se piden a
+  `GET /api/routes/geojson?bbox=...` **solo para la zona visible** (+50% de margen) en
+  `map.on('moveend', scheduleLineLoad)` (debounce 350 ms), y solo si el zoom ya pasó
+  `LINES_PREFETCH_ZOOM` (`LINES_MINZOOM - 2`, para que estén listas antes de volverse
+  visibles). `lineIds` evita volver a pedir rutas ya cargadas.
+- **Sin filtros**: este mapa NO tiene filtros de actividad ni de año (los tiene el de
+  "Mis Rutas", que sí filtra `ov-lines` por la lista). Las barras de "Rutas por año" y las
+  filas de "Por actividad" son informativas, no clicables. *(Versiones anteriores de este
+  documento describían `toggleDashYear`/`toggleDashAct`/`_dashApplyFilters`: nunca
+  existieron en el código.)*
+- **Estadísticas**: vienen de `GET /api/stats` (las calcula el servidor) y se guardan en
+  el Store con `Store.setMeta('stats', …)`. Sin conexión se pintan las últimas guardadas y
+  aparece el aviso `#ov-stale`. "Por actividad" **sí** se recalcula del listado local, así
+  que sigue al día aunque las stats sean de la última sincronización. Los récords no se
+  pueden recalcular en el cliente: `avg_speed` no está en `ROUTE_LIST_COLS`.
+- **`reloadRoutes()`** repinta mapa y "Por actividad" desde el Store; se llama al montar y
+  cuando `Store.onChange` avisa de una sincronización con cambios.
 - Si añades una representación nueva por zoom (p.ej. una capa intermedia), sigue el mismo
   patrón: dato ligero primero (instantáneo), dato pesado filtrado por bbox después, en
   segundo plano, sin loader que bloquee.
 
-### Listado de rutas en `app.html` (sección Mis Rutas) — scroll infinito
+### Listado de rutas en `static/js/sec/rutas.js` — scroll infinito
 Cada tarjeta (`makeCard`) muestra nombre, fecha, **distancia** (`fmtKm(r.distance_m)`) y
-**localidad** (`r.locality`, con icono de pin `_pinSvg()`) en una línea `.card-meta`, más
-el badge de posible duplicada. `distance_m` y `locality` vienen ya en `/api/routes` (por
-eso al añadir `locality` se subió la clave de caché a `sendero_routes_v3`, y al añadir
-`public_id` a `sendero_routes_v4`, regla 11).
+**localidad** (`r.locality`, con icono de pin `pinSvg()`) en una línea `.card-meta`, más
+el badge de posible duplicada. `distance_m` y `locality` vienen ya en el listado.
 
-`loadList()` trae **todas** las rutas en una sola llamada a `/api/routes` (sin `limit`;
-es barata, no hace falta paginar la red). Lo que se pagina es el **renderizado de
-tarjetas**, no la petición:
+`reload()` pide el listado completo a **`Store.routes()`** (IndexedDB; si está vacío
+espera la primera sincronización, y si no devuelve lo local al instante y sincroniza por
+detrás). Lo que se pagina es el **renderizado de tarjetas**, no la petición:
 - `renderList()` filtra/ordena/agrupa por mes el array completo, pero solo manda a
   `appendBatchToDOM()` las primeras `PAGE_SIZE` (30) vía `loadNextListPage()`.
 - Un `<div id="list-sentinel">` al final de `#routes`, observado con
@@ -547,9 +654,12 @@ tarjetas**, no la petición:
   porque "Selec. mes"/"Seleccionar visibles" necesitan que la tarjeta ya exista en el DOM.
 - `visibleRoutes` solo contiene lo que ya está renderizado (no todo lo cargado); úsalo
   con eso en mente si tocas selección.
-- El mapa de overview (`renderOverviewMap`) sigue recibiendo el array **completo**
-  filtrado de una vez (es barato, son solo puntos), independientemente de cuántas
-  tarjetas estén ya en el DOM.
+- El mapa de overview (`renderMap`) sigue recibiendo el array **completo** filtrado de
+  una vez (es barato, son solo puntos), independientemente de cuántas tarjetas estén ya
+  en el DOM.
+- Una sincronización posterior (otro dispositivo, `watch.py`, `mifit_sync.py`) repinta
+  la lista sola: `mount()` se suscribe con `Store.onChange` y llama a `reload()` cuando
+  llega un `synced` con cambios. La suscripción se cancela en `unmount()`.
 
 ### Header (`base.html`)
 El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se copia en el Dockerfile; si añades assets estáticos, asegúrate de que el `COPY static ./static` siga en el Dockerfile.
@@ -571,16 +681,30 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
   distintos según qué worker tocara. Solución: `refresh_config()` en
   `before_request` (app.py) — un SELECT de ~10 filas por request, despreciable.
 
-- **`dashActiveActs` inicializado fuera de orden** — declarar `dashActiveActs=new Set(ACTIVITIES.map(...))` en el `let` del módulo lanza `ReferenceError` porque `ACTIVITIES` se define más abajo. Siempre inicializar dentro de `initDashMap()`.
+- **Estado de módulo inicializado a partir de `ACTIVITIES` fuera de orden** — en su día,
+  declarar `new Set(ACTIVITIES.map(...))` en los `let` de cabecera de `app.html` lanzaba
+  `ReferenceError`, porque `ACTIVITIES` se definía más abajo en el mismo archivo. Hoy
+  `ACTIVITIES` vive en `static/shared.js` (cargado antes), pero la lección vale igual para
+  los módulos de sección: inicializa ese estado **dentro de `mount()`**, no en la
+  declaración (ver `activeActs` en `sec/rutas.js`).
+
+- **`window.Router`/`window.Store` no existen** — `Router` y `Store` se declaran con
+  `const` en el ámbito superior de un script clásico, y eso crea un binding léxico global
+  que **no** es propiedad de `window`. `chrome.js` comprobaba `window.Router` para
+  apartarse cuando el router podía navegar; al ser siempre `undefined`, hacía un
+  `location.href` 100 ms después de que la SPA ya hubiera cambiado de sección: cada click
+  del nav recargaba la página entera. Lo mismo dejaba muerto el contador de cambios
+  pendientes del badge. Se comprueba con `typeof X !== 'undefined'`.
 
 
 
 - **`init_db()` a nivel de módulo** — Gunicorn importa `app:app` sin ejecutar el
   bloque `__main__`; sin `init_db()` al importar falla en el primer request.
 
-- **Especificidad CSS del modal Immich** (`sendero.html`): la regla
-  `.overlay.hidden{display:none}` (especificidad doble) debe estar inmediatamente
-  después de `.overlay{display:flex}`. Sin ella el modal Immich aparece al cargar.
+- **Especificidad CSS del modal Immich** (hoy `static/css/detalle.css`): la regla
+  `#sec-detalle .overlay.hidden{display:none}` (especificidad doble) debe estar
+  inmediatamente después de `#sec-detalle .overlay{display:flex}`. Sin ella el modal
+  Immich aparece al cargar.
 
 - **SPA en `app.html`, no en archivos separados** — el antiguo CLAUDE.md decía
   "app multi-página"; ya no es cierto. Editar `rutas.html` no tiene efecto.
@@ -644,15 +768,18 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 9. **Identidad visual** — paleta CSS (`--gr-red`, `--pr-yellow`, `--panel` #17241c,
    curvas de nivel en header). No metas framework de UI ni cambies la paleta sin pedirlo.
 
-10. **`{{ route_json | safe }}` en sendero.html** — intencional. El JSON viene de
-    `json.dumps()` sobre datos de la BD, no de input de usuario. No lo escapes dos veces.
+10. **`{{ bootstrap_json | safe }}` en shell.html** (y `{{ route_json | safe }}` en
+    editor.html) — intencional. El JSON viene de `json.dumps()` sobre datos de la BD, no
+    de input de usuario. No lo escapes dos veces. En el shell va dentro de un
+    `<script type="application/json">`, que el navegador no ejecuta, y lo lee `JSON.parse`.
 
 11. **Caché de rutas en el cliente** — si cambias los campos que devuelve `/api/routes`,
-    invalida la copia de los clientes: la clave de `sessionStorage` en `app.html`
-    (`sendero_routes_v4`, TTL 10 min) y, cuando la sección esté migrada al Store,
-    `DB_VERSION` de IndexedDB en `static/js/core/store.js` (su `onupgradeneeded` vacía los
-    almacenes). Añadir `thumb_file` sin cambiar la clave causó que los usuarios vieran
-    tarjetas sin thumbnail hasta que la caché expiró.
+    sube `DB_VERSION` en `static/js/core/store.js`: su `onupgradeneeded` vacía los
+    almacenes de IndexedDB y los clientes se rehacen la copia. Es la ÚNICA caché de datos
+    que queda (el `sessionStorage` con TTL de 10 min, `sendero_routes_v4`, murió con la
+    migración de "Mis Rutas" al Store; en `sessionStorage` solo quedan los filtros de la
+    lista, que son preferencias). Añadir `thumb_file` sin invalidar causó en su día que se
+    vieran tarjetas sin miniatura hasta que la caché expirara.
     Recuerda que `/api/routes` y los `upserted` de `/api/sync/changes` comparten
     columnas (`ROUTE_LIST_COLS`/`PLANNED_LIST_COLS`): la lista se toca en un solo sitio.
 
@@ -682,7 +809,21 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
     entre capas raster hace `setTiles()` (barato), pero al entrar o salir de
     `OFFLINE_LAYER` (`pmtiles://`, otro maxzoom) **reconstruye el estilo y eso borra todas
     tus fuentes y capas de datos** — repinta escuchando `map.on('sendero:basemap')` o
-    recreando el mapa (ver `plan.js` y `sendero.html`/`app.html` respectivamente).
+    recreando el mapa (ver `plan.js` y `sec/detalle.js`/`app.html` respectivamente).
+
+16. **El Service Worker NO cachea documentos que lleven datos inyectados dentro.**
+    `/Sendero/<pid>` trae la ruta en `bootstrap_json`, así que su HTML es una copia de
+    los datos: guardarlo haría que al recargar sin conexión ese bootstrap viejo pisara
+    en IndexedDB una edición hecha sin conexión (`Store.route` confía en el bootstrap
+    sin preguntar). Para esas vistas se sirve `/app-shell` (sin datos) y los pone el
+    Store. Si migras una vista al shell, mira si su ruta debe entrar en `SHELL_PATHS`
+    de `static/sw.js` — y si inyecta datos, que NO entre en la caché de documentos.
+    Tampoco se cachean `/api/*` (de eso vive el Store) ni las peticiones con `Range`
+    (los `.pmtiles` se piden por rangos y una respuesta parcial cacheada rompe el mapa).
+    Y **caché primero solo para lo que lleva versión en el nombre** (`static/vendor/**`)
+    o no cambia (fuentes, iconos): `static/js/**`, `static/css/**` y `shared.js` van con
+    revalidación por detrás, porque su nombre no lleva versión y si no, editar
+    `detalle.js` sin subir `APP_VERSION` no llegaría nunca al navegador.
 
 ## Modelo de datos
 
@@ -714,7 +855,7 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | signature | TEXT | Huella SEMÁNTICA del entreno (`route_signature`): `started_at` al minuto + primer/último punto a 4 decimales (~11 m). Sin timestamps cae a distancia(100 m)+nº puntos. Dedup BLANDA. Índice propio `idx_routes_signature`. Deliberadamente NO incluye distancia cuando hay hora (el hash por igualdad daría falsos negativos en las fronteras de cubo). Solo al importar, no se recalcula |
 | dup_suspect_of | INTEGER | id de la ruta a la que se parece, cuando la ingesta AUTOMÁTICA (`?auto=1`) la importó pese al aviso semántico. NULL = limpia. Se lee en el listado → va en `idx_routes_list_cov4` (regla 12). Se limpia al editar la ruta o con `PATCH {dup_suspect_of:null}` ("descartar aviso") |
 | locality | TEXT | Sitio donde se hizo la ruta ("Localidad, Región"), por geocoding inverso del punto de inicio (`core/geocode.py`, `GEOCODE_URL` en Ajustes → Editor). Se rellena best-effort al importar (`create_route`) y al reescanear una ruta que aún no la tenga (`_reanalyse_and_update`, backfill vía "Re-escanear"); NULL = servicio desactivado o geocoding fallido. Se lee en el listado y se muestra en la tarjeta de "Mis Rutas" y en el detalle → va en `idx_routes_list_cov4` (regla 12) |
-| public_id | TEXT | Identificador **opaco no secuencial** (`secrets.token_urlsafe(8)`, ~11 chars) expuesto en TODAS las URLs `/api/routes/<public_id>/...`; la PK entera `id` queda solo interna (FKs, `versions/<route_id>/`, prefijo de nombre de foto). Evita que CrowdSec vea enumeración al pedir las miniaturas del listado. Índice UNIQUE `idx_routes_public_id`; se lee en el listado → va en `idx_routes_list_cov4` (regla 12). Se fija al importar (con reintento por colisión) y por backfill en `init_db()`; NO se recalcula. Los endpoints resuelven `public_id`→`id` con `rid_from_public()` en su 1ª línea (thumb/gpx/foto consultan `WHERE public_id=?` directo). Cache del listado `sendero_routes_v4` (regla 11) |
+| public_id | TEXT | Identificador **opaco no secuencial** (`secrets.token_urlsafe(8)`, ~11 chars) expuesto en TODAS las URLs `/api/routes/<public_id>/...`; la PK entera `id` queda solo interna (FKs, `versions/<route_id>/`, prefijo de nombre de foto). Evita que CrowdSec vea enumeración al pedir las miniaturas del listado. Índice UNIQUE `idx_routes_public_id`; se lee en el listado → va en `idx_routes_list_cov4` (regla 12). Se fija al importar (con reintento por colisión) y por backfill en `init_db()`; NO se recalcula. Los endpoints resuelven `public_id`→`id` con `rid_from_public()` en su 1ª línea (thumb/gpx/foto consultan `WHERE public_id=?` directo). Al añadirlo se invalidó la caché del cliente (regla 11) |
 
 ### Tabla `route_versions`
 Historial del editor de rutas (append-only, ver sección "Editor de rutas").
@@ -800,10 +941,12 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - La validación de extensión en `create_route` acepta cualquier nombre que termine en
   `gpx` o `.fit`. No endurezcas sin revisar el watcher.
 - No hay autenticación. Intencional para LAN.
-- `rutas.html`, `overview.html`, `planificacion.html`, `plan_detalle.html` — archivos
-  legacy en `templates/`. No los borres (pueden servir de referencia) pero no los edites;
-  el app no los usa. `plan_detalle.html` es el original del que salió `sec/plan.html` +
-  `js/sec/plan.js`: editarlo no tiene ningún efecto.
+- `rutas.html`, `overview.html`, `planificacion.html`, `plan_detalle.html`,
+  `sendero.html` — archivos legacy en `templates/`. No los borres (pueden servir de
+  referencia) pero no los edites; el app no los usa. `plan_detalle.html` es el original
+  del que salió `sec/plan.html` + `js/sec/plan.js`, y `sendero.html` el de
+  `sec/detalle.html` + `js/sec/detalle.js` + `css/detalle.css`: editarlos no tiene ningún
+  efecto. Los dos llevan un comentario Jinja al principio avisándolo.
 - **Docker Desktop sobre WSL2 (esta instalación) puede dejar procesos `gunicorn`/
   `watch.py` huérfanos** tras varios `docker compose down`/`up --build` seguidos: el
   proceso sigue vivo (visible en `ps aux` del host, propiedad de `root`) y sigue
@@ -823,8 +966,18 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tocaste fotos: ¿probaste los dos caminos (local y `immich_id`)?
 - Si tocaste el esquema: ¿añadiste la migración defensiva en `init_db()`?
 - ¿La UI sigue en español y sin paso de build?
-- Si tocaste el CSS del modal Immich en `sendero.html`: comprueba que `.overlay.hidden`
-  sigue ocultando el modal al cargar la ruta.
+- Si tocaste el CSS del modal Immich (`static/css/detalle.css`): comprueba que
+  `#sec-detalle .overlay.hidden` sigue ocultando el modal al cargar la ruta.
+- Con Playwright disponible, la comprobación de verdad es `python tests/e2e_spa.py`
+  (~115 asserts en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
+  Worker, modo sin conexión y cola de escrituras). Necesita un servidor con
+  `SENDERO_DATA` **de pruebas** y `python tests/e2e_seed.py` para sembrarlo.
+- Si tocaste la PWA (`static/sw.js`, `api/pwa.py`, el precache): `node tests/sw_smoke.js`,
+  y comprueba que **todas** las URLs de `PRECACHE_URLS` devuelven 200 (un 404 se salta sin
+  romper la instalación, pero deja esa pieza sin cachear y la app no arranca sin conexión).
+  En el navegador: DevTools → Application → Service Workers → "Offline" y recargar.
+- Si añadiste un archivo a `static/js/sec/` o `static/css/`: añádelo a `PRECACHE_URLS`
+  de `static/sw.js`, o esa sección no se podrá montar sin conexión.
 - Si tocaste `_build_route_dict()`: verifica que `/api/routes/<id>` y
   `/Sendero/<nombre>` devuelven los mismos campos.
 - Si añadiste columnas a `/api/routes` (lista): tócalas en `ROUTE_LIST_COLS`
@@ -835,16 +988,28 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   segunda con `If-None-Match` debe dar **304**), y comprueba que crear/editar/borrar una
   ruta mueve el `cursor` y aparece en `/api/sync/changes?since=<anterior>` (los triggers
   se disparan en el esquema, no en la conexión, pero verifícalo, no lo asumas).
-- Si migraste una vista a sección de la SPA: ¿`unmount()` destruye el mapa y los `Chart`?
-  Monta y desmonta la sección 20 veces seguidas y mira que el heap no crezca ni se
-  dupliquen marcadores o listeners (roadmap §2). ¿Los listeners de `document` se
-  registran una sola vez al cargar el archivo, no en cada `mount()`?
+- Si tocaste una sección de la SPA: ¿`unmount()` destruye el mapa y los `Chart`?
+  `node tests/sec_smoke.js` y la suite e2e lo comprueban montando y desmontando 20 veces
+  y contando `<canvas>`. ¿Los listeners de `document` se registran una sola vez al cargar
+  el archivo, y no en cada `mount()`?
+- Si añadiste un archivo a `static/js/sec/` o `static/css/`: ¿está en `PRECACHE_URLS` y su
+  URL en `SHELL_PATHS` (`static/sw.js`)? Sin lo primero la sección no se monta sin
+  conexión; sin lo segundo su URL da la página de aviso en vez del shell.
+- Si tocaste algo del editor: además de la paridad `doOp()`↔`apply_ops()`, comprueba que
+  salir con cambios sin guardar sigue preguntando. Ya no basta `beforeunload`: salir del
+  editor puede ser un simple cambio de sección, y de eso se encarga un listener en fase de
+  captura dentro de `sec/editor.js`.
+- Si tocaste `chrome.js`, `router.js` o `store.js`: recuerda que `Router` y `Store` son
+  `const` de un script clásico y **no** están en `window` (ver "Bugs corregidos"). Para
+  saber si están cargados: `typeof X !== 'undefined'`.
 - Si creaste un mapa nuevo o tocaste el selector de capas: ¿pasa por
   `buildStyle(defaultBasemap(...))` y por `applyBasemap()`, y repinta sus capas de datos
   al entrar/salir de la capa offline? (regla 15).
-- Si tocaste `app.html` (`makeCard`, CSS de `.card`): recuerda que tanto "Mis Rutas"
-  como las tarjetas del mapa de overview están en ese mismo archivo.
-- Si tocaste el mapa del dashboard: verifica que `_reloadDashboard()` limpia los contenedores antes de repoblar y que `initDashMap()` no se llama dos veces (guarda `if(dashMapLoaded||dashMap)return`).
+- Si tocaste `makeCard` o el CSS de `.card`: están en `sec/rutas.*`, y el CSS va escopado
+  bajo `#sec-rutas` (sin el prefijo pisaría a `.plan-card` y a las tarjetas del detalle).
+- Si tocaste el mapa del dashboard: verifica que `paintRoutes()` limpia las fuentes antes
+  de repoblar (si no, tras borrar rutas quedan puntos y líneas fantasma) y que
+  `initMap()` no crea dos mapas (guarda `if (map) return`).
 - Si añades assets estáticos a `static/`: el `COPY static ./static` ya está en el Dockerfile.
 - Si añadiste una columna a `routes` que se lee en un listado/agregado frecuente:
   ¿le añadiste también su índice de cobertura en `init_db()`? (ver regla 12).
@@ -857,11 +1022,11 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tras `docker compose up -d --build` los cambios no se reflejan en `localhost:8090`
   pese a que el build no falla: revisa el quirk de procesos huérfanos de Docker
   Desktop/WSL2 antes de sospechar del código.
-- Si tocaste el mapa de "Mis Rutas" (`app.html`): ¿las líneas (`ov-lines`) siguen
-  respetando los filtros de actividad/fecha/búsqueda vía `_ovApplyLineFilter()`, o se
-  te ha colado un caso que las muestra sin filtrar? ¿sigue usando `fitMap(true)` en el
-  primer encuadre (sin animación de vuelo)?
-- Si tocaste `renderElev/renderSpeed/renderHR` o el mapa en `sendero.html`: ¿el hover
+- Si tocaste el mapa de "Mis Rutas" (`sec/rutas.js`): ¿las líneas (`ov-lines`) siguen
+  respetando los filtros de actividad/fecha vía `applyLineFilter()`, o se te ha colado un
+  caso que las muestra sin filtrar? ¿sigue usando `fitMap(true)` en el primer encuadre
+  (sin animación de vuelo)?
+- Si tocaste `renderElev/renderSpeed/renderHR` o el mapa en `sec/detalle.js`: ¿el hover
   sincronizado sigue funcionando en las 4 direcciones (mapa→gráficos y cada gráfico→resto)?
   Si añades un `Chart` nuevo, usa `ctx.onmouseleave=...` (asignación directa, no
   `addEventListener`) para no acumular listeners en cada `renderAll()`.
