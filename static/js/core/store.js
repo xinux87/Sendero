@@ -20,7 +20,12 @@ const Store = (() => {
   const DB_NAME = 'sendero';
   // Subir la versión vacía los almacenes cuyo formato cambie (equivalente a
   // cambiar la clave de sessionStorage, regla 11 de CLAUDE.md).
-  const DB_VERSION = 1;
+  /* Sube al cambiar los campos que devuelve /api/routes o el detalle
+     (regla 11 de CLAUDE.md): onupgradeneeded vacía los almacenes y los clientes
+     se rehacen la copia. 2 = el detalle trae `n_points` (rediseño 0.9.0), y un
+     detalle ya guardado no lo recibiría nunca: su rev no cambia, así que el
+     Store seguiría sirviendo la copia vieja. */
+  const DB_VERSION = 2;
   const STORES = {
     meta:     {keyPath: 'k'},
     routes:   {keyPath: 'public_id'},

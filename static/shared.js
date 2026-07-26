@@ -6,76 +6,76 @@
 
 /* ── actividades ── */
 const ACTIVITIES=[
-  {id:'senderismo',label:'Senderismo',color:'#c97a3a',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="white" stroke-width="1.3" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  {id:'senderismo',label:'Senderismo',color:'#e8863c',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="#0b120e"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="#0b120e" stroke-width="1.3" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
   `},
-  {id:'bicicleta',label:'Bicicleta',color:'#3a9ed8',symbol:`
-    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
-    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="white" stroke-width="1.6"/>
+  {id:'bicicleta',label:'Bicicleta',color:'#3d9be9',symbol:`
+    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="#0b120e" stroke-width="1.6"/>
+    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="#0b120e" stroke-width="1.6"/>
     <path d="M9.5,17.5 L13,14 L16.5,17.5 M13,14 L11.5,17.5"
-      stroke="white" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="15.5" cy="10" r="1.5" fill="white"/>
-    <line x1="15.5" y1="11.5" x2="13" y2="14"   stroke="white" stroke-width="1.7" stroke-linecap="round"/>
-    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
+      stroke="#0b120e" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="15.5" cy="10" r="1.5" fill="#0b120e"/>
+    <line x1="15.5" y1="11.5" x2="13" y2="14"   stroke="#0b120e" stroke-width="1.7" stroke-linecap="round"/>
+    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="#0b120e" stroke-width="1.4" stroke-linecap="round"/>
   `},
-  {id:'caminata',label:'Caminata',color:'#5ab87a',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  {id:'caminata',label:'Caminata',color:'#43b97f',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="#0b120e"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
   `},
-  {id:'correr',label:'Correr',color:'#e05252',symbol:`
-    <circle cx="14" cy="8" r="1.6" fill="white"/>
-    <line x1="14" y1="9.6"  x2="12" y2="15"   stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="16" y2="10"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="10" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="12" y1="15"   x2="15.5" y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="12" y1="15"   x2="9.5"  y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  {id:'correr',label:'Correr',color:'#e34b4b',symbol:`
+    <circle cx="14" cy="8" r="1.6" fill="#0b120e"/>
+    <line x1="14" y1="9.6"  x2="12" y2="15"   stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="16" y2="10"   stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="10" y2="13"   stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="15.5" y2="19" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="15"   x2="9.5"  y2="18" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
   `},
-  {id:'esqui',label:'Esquí',color:'#9b6fd4',symbol:`
-    <circle cx="13" cy="8" r="1.6" fill="white"/>
-    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
-    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="white" stroke-width="2"   stroke-linecap="round"/>
+  {id:'esqui',label:'Esquí',color:'#a86ee0',symbol:`
+    <circle cx="13" cy="8" r="1.6" fill="#0b120e"/>
+    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="#0b120e" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="#0b120e" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="#0b120e" stroke-width="2"   stroke-linecap="round"/>
+    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="#0b120e" stroke-width="2"   stroke-linecap="round"/>
   `},
-  {id:'otros',label:'Otros',color:'#e0559e',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="white"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="8.5" y2="11"  stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="17.5" y2="11" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="11"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15"   y2="19" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  {id:'otros',label:'Otros',color:'#e055c0',symbol:`
+    <circle cx="13" cy="8.5" r="1.6" fill="#0b120e"/>
+    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="8.5" y2="11"  stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="11.5" x2="17.5" y2="11" stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="11"   y2="19" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="15.5" x2="15"   y2="19" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
   `},
 ];
 function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
 function iconSvg(a,size=26){
   return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="13" cy="13" r="11" fill="${a.color}" stroke="#101a14" stroke-width="2.5"/>
+    <circle cx="13" cy="13" r="11" fill="${a.color}" stroke="#0b120e" stroke-width="2.5"/>
     ${a.symbol}
   </svg>`;}
 function genericIconSvg(size=26){
   return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="13" cy="13" r="11" fill="#2c4435" stroke="#101a14" stroke-width="2.5"/>
-    <circle cx="13" cy="10" r="2" fill="#8aa394"/>
-    <line x1="13" y1="12.5" x2="13" y2="17"   stroke="#8aa394" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="14"   x2="11" y2="15.5" stroke="#8aa394" stroke-width="1.4" stroke-linecap="round"/>
-    <line x1="13" y1="14"   x2="15" y2="15.5" stroke="#8aa394" stroke-width="1.4" stroke-linecap="round"/>
-    <line x1="13" y1="17"   x2="11.5" y2="19" stroke="#8aa394" stroke-width="1.6" stroke-linecap="round"/>
-    <line x1="13" y1="17"   x2="14.5" y2="19" stroke="#8aa394" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="13" cy="13" r="11" fill="#1c2c22" stroke="#0b120e" stroke-width="2.5"/>
+    <circle cx="13" cy="10" r="2" fill="#8b9a8f"/>
+    <line x1="13" y1="12.5" x2="13" y2="17"   stroke="#8b9a8f" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="14"   x2="11" y2="15.5" stroke="#8b9a8f" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="13" y1="14"   x2="15" y2="15.5" stroke="#8b9a8f" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="13" y1="17"   x2="11.5" y2="19" stroke="#8b9a8f" stroke-width="1.6" stroke-linecap="round"/>
+    <line x1="13" y1="17"   x2="14.5" y2="19" stroke="#8b9a8f" stroke-width="1.6" stroke-linecap="round"/>
   </svg>`;}
 /* Registra los iconos de actividad como imágenes MapLibre ('act-<id>'). */
 function _loadActImages(map){

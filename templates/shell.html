@@ -38,9 +38,10 @@
   <div style="display:flex;align-items:center;gap:12px">
     <div style="display:flex;gap:6px">
       <button class="view-btn" id="view-a" onclick="SEC.rutas.setView('a')">⊞ Cuadrícula</button>
+      <button class="view-btn" id="view-t" onclick="SEC.rutas.setView('t')">☰ Tabla</button>
       <button class="view-btn" id="view-b" onclick="SEC.rutas.setView('b')">▤ Panel</button>
     </div>
-    <span id="count" class="mono" style="color:var(--muted);font-size:13px"></span>
+    <span id="count" class="hdr-count"></span>
     <label class="btn" style="margin:0;cursor:pointer" title="Arrastra GPX/FIT o pulsa para elegir">+ Añadir ruta
       <input id="gpx-input" type="file" accept=".gpx,.fit" multiple class="hidden">
     </label>

@@ -40,6 +40,56 @@ function fmtDate(iso){if(!iso)return"Sin fecha";const d=new Date(iso);
   return d.toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"});}
 function esc(s){return(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
 
+/* ── formatos del rediseño ────────────────────────────────────────────────────
+   Las cifras van con separador de millares en ESPACIO fino ("1 782 m", no
+   "1.782 m"), que es lo que pide redesign/README.md y lo que hace legible una
+   columna de datos en monoespaciada. Los tiempos, en h:mm y h:mm:ss. */
+const _NBSP_FINO = ' ';
+function fmtNum(n){
+  if (n == null || isNaN(n)) return '–';
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, _NBSP_FINO);
+}
+/* "8:46" — tiempo en movimiento / total. Sin unidad: la lleva la etiqueta. */
+function fmtHM(s){
+  if (!s) return '–';
+  s = Math.round(s);
+  return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`;
+}
+function fmtHMS(s){
+  if (!s) return '–';
+  s = Math.round(s);
+  return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`
+       + `:${String(s % 60).padStart(2, '0')}`;
+}
+/* Ritmo medio en min:ss por km (el inverso de la velocidad media). */
+function fmtPace(sPerKm){
+  if (!sPerKm || !isFinite(sPerKm)) return '–';
+  const s = Math.round(sPerKm);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} /km`;
+}
+/* "11 DE JULIO DE 2026" — la fecha larga de las tarjetas, en versalitas. */
+function fmtDateLong(iso){
+  if (!iso) return 'SIN FECHA';
+  return new Date(iso).toLocaleDateString('es-ES',
+    {day: 'numeric', month: 'long', year: 'numeric'}).toUpperCase();
+}
+/* "11-07-2026 · 05:42" — la línea meta del detalle. */
+function fmtDateTime(iso){
+  if (!iso) return 'Sin fecha';
+  const d = new Date(iso);
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} · `
+       + `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* Flecha "atrás" de la cabecera móvil (solo se ve en detalle/plan/editor).
+   Prefiere el historial: así volver desde un detalle deja el listado con su
+   scroll y su encuadre de mapa. Si no hay historial propio, va a Mis Rutas. */
+function senderoBack(){
+  if (history.length > 1) { history.back(); return; }
+  if (typeof Router !== 'undefined') Router.go('/rutas'); else location.href = '/rutas';
+}
+
 /* ── PWA: Service Worker e indicador de estado ────────────────────────────── */
 
 /* El SW se registra desde AQUÍ y no desde el shell: chrome.js lo carga

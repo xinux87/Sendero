@@ -74,15 +74,12 @@ const PRECACHE_URLS = [
   '/static/vendor/pmtiles-3.0.6.js',
   '/static/fonts/fonts.css',
   // Solo los subconjuntos "latin": son los que usa el español. Los "-ext" se
-  // cachean solos la primera vez que el navegador los pide.
-  '/static/fonts/inter-400-latin.woff2',
-  '/static/fonts/inter-500-latin.woff2',
-  '/static/fonts/inter-600-latin.woff2',
-  '/static/fonts/saira-condensed-500-latin.woff2',
-  '/static/fonts/saira-condensed-600-latin.woff2',
-  '/static/fonts/saira-condensed-700-latin.woff2',
-  '/static/fonts/space-mono-400-latin.woff2',
-  '/static/fonts/space-mono-700-latin.woff2',
+  // cachean solos la primera vez que el navegador los pide. Oswald e IBM Plex
+  // Sans son variables: un archivo cubre los pesos 400-600.
+  '/static/fonts/oswald-latin.woff2',
+  '/static/fonts/ibm-plex-sans-latin.woff2',
+  '/static/fonts/ibm-plex-mono-400-latin.woff2',
+  '/static/fonts/ibm-plex-mono-500-latin.woff2',
 ];
 
 /* Vistas que aloja el shell: TODAS. Al navegar a cualquiera de ellas sin
@@ -103,10 +100,10 @@ const OFFLINE_HTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sin conexión – Sendero</title>
 <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-background:#101a14;color:#e8efe6;font-family:system-ui,sans-serif;text-align:center;padding:24px}
-h1{font-size:22px;margin:0 0 8px}p{color:#8aa394;margin:0 0 18px;line-height:1.5}
-a{display:inline-block;color:#e8c44a;text-decoration:none;border:1px solid #2c4435;
-border-radius:8px;padding:9px 16px}</style></head><body><div>
+background:#0b120e;color:#ece5d8;font-family:system-ui,sans-serif;text-align:center;padding:24px}
+h1{font-size:22px;margin:0 0 8px}p{color:#8b9a8f;margin:0 0 18px;line-height:1.5}
+a{display:inline-block;color:#e3b23c;text-decoration:none;border:1px solid rgba(236,229,216,.16);
+border-radius:999px;padding:9px 18px}</style></head><body><div>
 <h1>Sin conexión</h1>
 <p>Esta pantalla no está guardada en este dispositivo.<br>
 Las rutas que ya has abierto sí se pueden consultar.</p>

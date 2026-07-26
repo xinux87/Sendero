@@ -8,7 +8,7 @@
 <!-- PWA. El manifiesto y el Service Worker se sirven desde la raíz
      (api/pwa.py), no desde /static: el ámbito de un SW es su carpeta. -->
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#17241c">
+<meta name="theme-color" content="#0b120e">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <!-- Librerías vendorizadas en static/vendor/ (antes unpkg.com y cdnjs.com). Van
      aquí, no en el head_libs de cada plantilla, porque la SPA sirve todas las
@@ -25,54 +25,82 @@
      internet. Si añades un peso nuevo, regenera fonts.css. -->
 <link href="/static/fonts/fonts.css" rel="stylesheet">
 <style>
+/* ── Tokens del rediseño (redesign/README.md) ──────────────────────────────
+   Única fuente de verdad del color y la tipografía: NADA de hex sueltos en las
+   plantillas ni en el CSS de las secciones. Los nombres antiguos (--bg, --panel,
+   --line, --ink, --gr-red, --pr-yellow) se conservan porque los usan las seis
+   secciones y el modal de Ajustes; lo que cambia es su VALOR, así que todo lo
+   que no se ha rediseñado a mano (planes, plan, editor) hereda la paleta nueva
+   sin tocar una línea. */
 :root{
-  --bg:#101a14;
-  --panel:#17241c;
-  --panel-2:#1f3327;
-  --line:#2c4435;
-  --ink:#e8efe6;
-  --muted:#8aa394;
-  --gr-red:#d24a3a;
-  --pr-yellow:#e8c44a;
-  --mono:'Space Mono',monospace;
+  --bg:#0b120e;              /* fondo de aplicación */
+  --bg-deep:#070c09;         /* lienzo/exterior */
+  --panel:#101a14;           /* tarjetas y paneles */
+  --panel-2:#16241c;         /* inputs, selects, filas realzadas */
+  --line:rgba(236,229,216,.09);        /* borde de tarjeta */
+  --line-strong:rgba(236,229,216,.16); /* borde de control */
+  --ink:#ece5d8;             /* texto principal (crema) */
+  --muted:#8b9a8f;           /* texto secundario */
+  --muted-dim:#7f9184;       /* etiquetas de métrica */
+  --muted-faint:#68786d;     /* ejes, fechas, contadores */
+  --sage:#8fb69f;            /* títulos de sección, curvas de nivel */
+  --pr-yellow:#e3b23c;       /* ámbar: cifras clave, estado activo, avisos */
+  --gr-red:#e2492c;          /* rojo: acción primaria */
+  --gr-red-hover:#c93d22;
+  --display:'Oswald',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
-  font-family:'Inter',system-ui,sans-serif;line-height:1.5;
+  font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;
   animation:pagein .12s ease}
 @keyframes pagein{from{opacity:0}to{opacity:1}}
-a{color:var(--pr-yellow)}
-h1,h2,h3{font-family:'Saira Condensed',sans-serif;letter-spacing:.02em;margin:0}
+a{color:var(--pr-yellow);text-decoration:none}
+a:hover{color:#f2c95f}
+h1,h2,h3{font-family:var(--display);font-weight:500;letter-spacing:.02em;margin:0}
 button{font-family:inherit;cursor:pointer}
 .mono{font-family:var(--mono)}
-header{position:relative;padding:10px 22px;border-bottom:1px solid var(--line);
-  overflow:hidden;background:var(--panel)}
-header svg{position:absolute;inset:0;width:100%;height:100%;opacity:.5;pointer-events:none}
-header .header-inner{position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px}
-header .brand{display:flex;align-items:center;gap:14px}
-header .brand-logo{height:48px;width:48px;flex-shrink:0}
-header h1{font-size:40px;font-weight:700;text-transform:uppercase;line-height:1}
-header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transform:uppercase}
+/* Foco de teclado visible en ámbar en TODA la app (redesign/README.md,
+   "Estados"). Va con :focus-visible para no marcarlo en clicks de ratón. */
+:focus-visible{outline:2px solid var(--pr-yellow);outline-offset:2px}
+/* ── Cabecera ──────────────────────────────────────────────────────────────
+   Marca a la izquierda, nav en píldoras al centro, contador + acción primaria
+   a la derecha, sobre las curvas de nivel de siempre. */
+header{position:relative;padding:16px 26px;border-bottom:1px solid var(--line);
+  overflow:hidden;background:var(--bg)}
+header svg.contornos{position:absolute;inset:0;width:100%;height:100%;opacity:.5;pointer-events:none}
+header .header-inner{position:relative;display:flex;align-items:center;gap:26px}
+header .brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
+header .brand-logo{height:40px;width:46px;flex-shrink:0}
+header h1{font-size:30px;font-weight:600;text-transform:uppercase;line-height:1;letter-spacing:.02em}
+header .tag{display:block;font-family:var(--mono);font-size:10px;line-height:1;margin-top:5px;
+  color:var(--muted-dim);letter-spacing:.22em;text-transform:uppercase}
+header .header-mid{display:flex;align-items:center;gap:6px;margin:0 auto}
+header .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;margin-left:auto}
+/* Flecha "atrás" del móvil: solo en las vistas de detalle (el router escribe
+   data-sec en <html>), como el 2d del rediseño. */
+.hdr-back{display:none;background:none;border:0;color:var(--ink);padding:4px;line-height:0}
 /* Indicador de conexión / cola de escrituras. En móvil el .tag se
    oculta, pero este no: es justo donde más falta hace saber si hay red. */
-.net-badge{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:20px;
-  font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-  border:1px solid var(--line);background:var(--bg);color:var(--muted);vertical-align:middle}
+.net-badge{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;
+  font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;
+  border:1px solid var(--line-strong);background:var(--panel);color:var(--muted);vertical-align:middle}
 .net-badge.off{border-color:var(--gr-red);color:var(--gr-red)}
 .net-badge.pend{border-color:var(--pr-yellow);color:var(--pr-yellow)}
-.header-nav{display:flex;gap:4px;flex-shrink:0}
-.nav-link{padding:5px 12px;border-radius:20px;border:1px solid transparent;
-  background:transparent;color:var(--muted);font-size:12px;font-weight:600;
-  cursor:pointer;text-decoration:none;transition:all .15s;letter-spacing:.04em}
-.nav-link:hover{border-color:var(--muted);color:var(--ink)}
-.nav-link.on{background:var(--panel-2);border-color:var(--line);color:var(--ink)}
+.header-nav{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.nav-link{padding:8px 16px;border-radius:999px;border:1px solid transparent;
+  background:transparent;color:var(--muted);font-size:14px;font-weight:400;
+  cursor:pointer;text-decoration:none;transition:color .15s,border-color .15s}
+.nav-link:hover{color:var(--ink)}
+.nav-link.on{background:transparent;border-color:var(--pr-yellow);color:var(--pr-yellow)}
+.hdr-count{font-family:var(--mono);font-size:13px;color:#a9b8ac;white-space:nowrap}
 
 /* ── modal de ajustes a pantalla completa ── */
 .cfg-overlay{position:fixed;inset:0;background:rgba(8,14,11,.88);
   display:flex;align-items:center;justify-content:center;
   padding:20px;z-index:9998}
 .cfg-overlay.hidden{display:none}
-.cfg-fullscreen{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+.cfg-fullscreen{background:var(--panel);border:1px solid var(--line-strong);border-radius:13px;
   width:100%;max-width:860px;height:min(640px,calc(100vh - 40px));
   display:flex;overflow:hidden}
 
@@ -80,7 +108,7 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 .cfg-sidebar{width:176px;flex-shrink:0;background:var(--panel-2);
   border-right:1px solid var(--line);display:flex;flex-direction:column}
 .cfg-sidebar-head{padding:20px 16px 14px;
-  font-family:'Saira Condensed',sans-serif;font-size:22px;font-weight:700;
+  font-family:var(--display);font-size:22px;font-weight:600;
   text-transform:uppercase;letter-spacing:.04em;
   border-bottom:1px solid var(--line);color:var(--ink)}
 .cfg-nav{padding:6px 0;flex:1}
@@ -105,8 +133,8 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 .cfg-field{margin-bottom:12px}
 .cfg-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
   font-weight:600;display:block;margin-bottom:4px}
-.cfg-input{width:100%;background:var(--bg);color:var(--ink);
-  border:1px solid var(--line);border-radius:7px;padding:8px 11px;
+.cfg-input{width:100%;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--line-strong);border-radius:8px;padding:8px 12px;
   font-family:inherit;font-size:13px}
 .cfg-input:focus{outline:none;border-color:var(--pr-yellow)}
 /* input[type=date] en tema oscuro. color-scheme:dark hace que el popup y el texto
@@ -116,7 +144,7 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
    showPicker(). Funciona en Chromium y Firefox. */
 .cfg-input[type=date]{
   -webkit-appearance:none;-moz-appearance:none;appearance:none;  /* sin esto el fondo nativo (gris) no se puede tematizar */
-  background:var(--bg);color:var(--ink);
+  background:var(--panel-2);color:var(--ink);
   color-scheme:dark;accent-color:#8fdca8}
 .cfg-input[type=date]::-webkit-datetime-edit{color:var(--ink)}     /* texto de la fecha */
 .cfg-input[type=date]::-webkit-calendar-picker-indicator{opacity:0;display:none;-webkit-appearance:none}
@@ -126,8 +154,8 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
   background:none;border:0;padding:4px;cursor:pointer;color:#8fdca8;
   display:inline-flex;align-items:center;line-height:0}
 .cfg-date-btn:hover{color:#b6ead0}
-.cfg-textarea{width:100%;background:var(--bg);color:var(--ink);
-  border:1px solid var(--line);border-radius:7px;padding:8px 11px;
+.cfg-textarea{width:100%;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--line-strong);border-radius:8px;padding:8px 11px;
   font-family:var(--mono);font-size:11px;resize:vertical;min-height:56px;max-height:110px}
 .cfg-textarea:focus{outline:none;border-color:var(--pr-yellow)}
 .cfg-hint{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.4}
@@ -142,15 +170,30 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 .gpx-types-table td:last-child{width:40px;text-align:center;padding-right:0}
 .gpx-types-table .cfg-input{padding:5px 8px}
 
-.wrap{max-width:1040px;margin:0 auto;padding:22px}
+/* Ancho de página: el rediseño trabaja a 1320 px con 26 px de padding.
+   Antes eran 1040 px, que dejaba la banda de 7 métricas del detalle apretada. */
+.wrap{max-width:1320px;margin:0 auto;padding:0 26px 26px}
 .bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
-.btn{background:var(--gr-red);color:#fff;border:0;padding:10px 16px;border-radius:7px;
-  font-weight:600;font-size:14px}
-.btn:hover{filter:brightness(1.08)}
-.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
-.btn.sm{padding:6px 11px;font-size:13px}
+.btn{background:var(--gr-red);color:#fff5ec;border:0;padding:9px 18px;border-radius:999px;
+  font-weight:500;font-size:14px;display:inline-flex;align-items:center;gap:7px;
+  justify-content:center;transition:background .15s,border-color .15s,color .15s}
+.btn:hover{background:var(--gr-red-hover)}
+.btn.ghost{background:transparent;border:1px solid var(--line-strong);color:var(--ink)}
+.btn.ghost:hover{background:transparent;border-color:rgba(236,229,216,.32)}
+.btn.sm{padding:7px 15px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:default}
 .empty{color:var(--muted);text-align:center;padding:48px 0}
 .hidden{display:none}
+/* Título de vista: "ANALÍTICA GLOBAL" + subtítulo mono (dashboard y planes). */
+.view-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+  margin:26px 0 16px;flex-wrap:wrap}
+.view-head h2{font-size:26px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin:0 0 5px}
+.view-head .sub{font-family:var(--mono);font-size:12px;color:var(--muted-dim);
+  text-transform:uppercase;letter-spacing:.04em}
+/* Título de panel: mono en versalitas verde salvia. Lo comparten las tres
+   vistas rediseñadas (detalle, rutas, dashboard). */
+.panel-title{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--sage)}
 /* ── MapLibre GL: lo común a los 5 mapas de la app ─────────────────────────
    Antes estaba repetido en cada plantilla; con la SPA todas las secciones
    comparten documento, así que va una sola vez aquí. Lo que cambia por sección
@@ -159,10 +202,19 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 .maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;
   padding:8px 12px;font-family:inherit;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
 .maplibregl-popup-tip{border-top-color:var(--panel);border-bottom-color:var(--panel)}
-.maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
-.maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important;
-  border-color:var(--line)!important}
-.maplibregl-ctrl button:hover{background:var(--panel-2,var(--panel))!important}
+/* Controles de MapLibre con el aspecto del rediseño: panel translúcido oscuro,
+   borde de control y radio 8 (los +/− y el de pantalla completa del mapa
+   cabecera del detalle son exactamente estos). */
+.maplibregl-ctrl-group{background:rgba(11,18,14,.85)!important;
+  border:1px solid var(--line-strong)!important;border-radius:8px!important;
+  box-shadow:none!important;overflow:hidden}
+.maplibregl-ctrl button{background:transparent!important;color:var(--ink)!important;
+  border-color:var(--line-strong)!important}
+.maplibregl-ctrl button+button{border-top:1px solid var(--line-strong)!important}
+.maplibregl-ctrl button:hover{background:rgba(236,229,216,.08)!important}
+.maplibregl-ctrl select{background:transparent;color:var(--ink);border:0;
+  font-family:inherit;font-size:13px;padding:8px 10px;cursor:pointer;width:100%}
+.maplibregl-ctrl select option{background:var(--panel);color:var(--ink)}
 /* Los iconos (+/− zoom, pantalla completa) son SVG oscuros de serie: sobre el
    panel oscuro no se verían. brightness(0) los aplana a negro e invert(1) los
    pone en blanco. */
@@ -170,28 +222,29 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 .maplibregl-ctrl button:disabled .maplibregl-ctrl-icon{filter:brightness(0) invert(1);opacity:.35}
 /* ── Loaders flotantes (subidas, borrados, re-escaneos) ────────────────────
    Globales porque el JS los cuelga de document.body, no de la sección. */
-.upload-loader{position:fixed;bottom:24px;right:24px;background:var(--panel-2);
-  border:1px solid var(--line);border-radius:11px;padding:16px 20px;min-width:300px;
+.upload-loader{position:fixed;bottom:24px;right:24px;background:var(--panel);
+  border:1px solid var(--line-strong);border-radius:12px;padding:16px 20px;min-width:300px;
   z-index:9999;box-shadow:0 6px 28px #00000070}
-.upload-loader-title{font-family:'Saira Condensed',sans-serif;font-size:18px;font-weight:600;
+.upload-loader-title{font-family:var(--display);font-size:18px;font-weight:600;
   text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;
   display:flex;justify-content:space-between;align-items:baseline}
 .upload-loader-count{font-family:var(--mono);font-size:13px;color:var(--pr-yellow)}
-.upload-bar-bg{background:var(--line);border-radius:4px;height:5px;margin-bottom:8px;overflow:hidden}
-.upload-bar-fill{background:var(--pr-yellow);height:100%;border-radius:4px;transition:width .25s ease;width:0%}
+.upload-bar-bg{background:rgba(236,229,216,.09);border-radius:4px;height:7px;
+  margin-bottom:8px;overflow:hidden}
+.upload-bar-fill{background:#e8863c;height:100%;border-radius:4px;transition:width .25s ease;width:0%}
 .upload-bar-fill.del{background:var(--gr-red)}
 .upload-filename{color:var(--muted);font-size:11px;font-family:var(--mono);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
 /* ── Acciones del header por sección ──────────────────────────────────────
    Van fuera de #sec-<nombre> (están en la cabecera), así que su CSS es global.
    El router muestra el bloque de la sección activa: data-sec-actions. */
-.view-btn{padding:5px 12px;border-radius:20px;border:1px solid var(--line);background:transparent;
-  color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
-.view-btn:hover{border-color:var(--ink);color:var(--ink)}
-.view-btn.on{background:var(--panel-2);border-color:var(--ink);color:var(--ink)}
+.view-btn{padding:7px 14px;border-radius:999px;border:1px solid var(--line-strong);background:transparent;
+  color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
+.view-btn:hover{border-color:rgba(236,229,216,.32);color:var(--ink)}
+.view-btn.on{background:transparent;border-color:var(--pr-yellow);color:var(--pr-yellow)}
 /* ── Tab bar inferior + FAB (solo móvil) ──────────────────────────────────── */
 .tabbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:950;
-  background:var(--panel);border-top:1px solid var(--line);
+  background:var(--panel);border-top:1px solid var(--line-strong);
   padding:2px 0 calc(2px + env(safe-area-inset-bottom))}
 .tabbar .tab-link{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
   justify-content:center;padding:6px 0;min-height:50px;background:none;border:0;border-radius:0;
@@ -205,11 +258,13 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
   align-items:center;justify-content:center;padding:0}
 /* ── Transición entre secciones (la aplica static/js/core/router.js) ─────── */
 @keyframes _sec-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
-.sec{transition:opacity .15s ease,transform .15s ease}
+/* El aire de arriba lo pone la sección, no .wrap: así el mapa cabecera del
+   detalle (que empieza pegado al padding de página) no acumula dos márgenes. */
+.sec{padding-top:22px;transition:opacity .15s ease,transform .15s ease}
 .sec._sec-leaving{opacity:0;transform:translateY(8px);pointer-events:none}
 .sec._sec-entering{animation:_sec-in .22s ease both}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel-2);
-  border:1px solid var(--line);padding:11px 18px;border-radius:8px;font-size:14px;opacity:0;
+  border:1px solid var(--line-strong);padding:11px 18px;border-radius:8px;font-size:14px;opacity:0;
   transition:.2s;pointer-events:none;z-index:9999}
 .toast.show{opacity:1}
 .table-scroll{overflow-x:auto}
@@ -217,15 +272,29 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 /* ── responsive móvil ──────────────────────────────────────────────────────
    Breakpoints del proyecto: 900px (tablet/apilado) y 600px (móvil).
    Además, @media(hover:none) and (pointer:coarse) para ajustes táctiles. */
+@media(max-width:900px){
+  .wrap{padding:0 16px 20px}
+}
 @media(max-width:600px){
-  header{padding:8px 14px}
-  header .header-inner{flex-wrap:wrap;gap:10px}
+  header{padding:12px 14px;background:var(--bg)}
+  header .header-inner{gap:11px}
   header .brand{gap:10px}
-  header .brand-logo{height:34px;width:34px}
-  header h1{font-size:24px}
+  header .brand-logo{display:none}       /* 2d: solo flecha + wordmark + ⋯ */
+  header h1{font-size:19px;font-weight:600}
   header .tag{display:none}
+  header svg.contornos{display:none}
   .net-badge{margin-left:0}   /* el .tag de al lado desaparece, este no */
   .header-nav{display:none}   /* la SPA la sustituye por la tab bar inferior */
+  /* En detalle/plan/editor la cabecera del móvil lleva la flecha de volver
+     (data-sec lo pone el router). */
+  html[data-sec="detalle"] .hdr-back,
+  html[data-sec="plan"] .hdr-back,
+  html[data-sec="editor"] .hdr-back{display:inline-flex;align-items:center}
+  /* Acciones de cabecera en móvil: el selector de vista y el contador no caben
+     (390 px), y "+ Añadir ruta" ya lo cubre el FAB. */
+  header .header-right .view-btn{display:none}
+  #count{display:none}
+  [data-sec-actions="rutas"] label.btn{display:none}
   body{padding-bottom:calc(60px + env(safe-area-inset-bottom))}
   .toast{bottom:calc(72px + env(safe-area-inset-bottom))}
   .tabbar{display:flex}
@@ -233,7 +302,9 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
   #nav-ajustes{display:none}          /* la tab bar ya lleva Ajustes */
   .upload-loader{left:12px;right:12px;min-width:0;
     bottom:calc(66px + env(safe-area-inset-bottom))}
-  .wrap{padding:14px}
+  .wrap{padding:0 14px 14px}
+  .view-head{margin:16px 0 12px}
+  .view-head h2{font-size:22px}
   /* inputs a 16px: por debajo iOS Safari hace zoom automático al enfocar */
   input,select,textarea,.cfg-input,.cfg-textarea{font-size:16px}
   /* modal de Ajustes a pantalla completa con pestañas horizontales */
@@ -259,7 +330,7 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
   .view-btn{min-height:40px}
 }
 .mifit-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
-  padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
+  padding:3px 10px;border-radius:999px;border:1px solid var(--line-strong);background:var(--panel)}
 .mifit-badge.ok{color:#8fdca8;border-color:#2f6b45;background:rgba(47,107,69,.18)}
 .mifit-badge.warn{color:var(--pr-yellow);border-color:#7a6a1f;background:rgba(122,106,31,.18)}
 .mifit-badge.err{color:#f0a0a0;border-color:var(--gr-red);background:rgba(160,40,40,.18)}
@@ -279,8 +350,10 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
 </head>
 <body data-map-cfg='{{ map_cfg_json }}' data-planner-url='{{ planner_url }}'>
 <header>
-  <svg viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true">
-    <g fill="none" stroke="#2c4435" stroke-width="1.2">
+  <!-- Curvas de nivel de la identidad, ahora en verde salvia (--sage) al 14 %
+       como pide el rediseño. -->
+  <svg class="contornos" viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true">
+    <g fill="none" stroke="#8fb69f" stroke-opacity=".14" stroke-width="1.2">
       <path d="M0,150 Q150,90 320,120 T640,90 T980,130 T1200,100"/>
       <path d="M0,170 Q150,120 320,145 T640,120 T980,155 T1200,130"/>
       <path d="M0,120 Q150,60 320,95 T640,60 T980,100 T1200,70"/>
@@ -288,6 +361,11 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
     </g>
   </svg>
   <div class="header-inner">
+    <!-- Solo en móvil (CSS): volver a la vista anterior desde un detalle. -->
+    <button class="hdr-back" aria-label="Volver" onclick="senderoBack()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
     <div class="brand">
       <img src="/static/icon.svg" class="brand-logo" alt="Sendero">
       <div>
@@ -298,11 +376,13 @@ header .tag{color:var(--muted);font-size:13px;letter-spacing:.16em;text-transfor
         <span id="net-badge" class="net-badge hidden"></span>
       </div>
     </div>
-    <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+    <div class="header-mid">
       {% block header_nav %}{% endblock %}
       <button class="nav-link" id="nav-ajustes" onclick="openSettings()">Ajustes</button>
     </div>
-    {% block header_actions %}{% endblock %}
+    <div class="header-right">
+      {% block header_actions %}{% endblock %}
+    </div>
   </div>
 </header>
 
