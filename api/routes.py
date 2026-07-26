@@ -53,6 +53,10 @@ def _build_route_dict(rid):
     d["heart_rate"] = json.loads(d["heart_rate"] or "[]")
     d["speed"]      = json.loads(d["speed"]      or "[]")
     d["gps_issues"] = json.loads(d.get("gps_issues") or "[]")
+    # Nº de puntos del track COMPLETO. Se calcula aquí, antes de que ?lite=1
+    # decime el geojson, porque si no el cliente contaría los puntos de la
+    # versión ligera y "Puntos GPS" mentiría por un factor de 20.
+    d["n_points"]   = len(d["geojson"])
     d["photos"]     = [dict(p) for p in photos]
     d["auto_summary"]   = auto_summary(r)
     d["device"]         = d.get("device") or None

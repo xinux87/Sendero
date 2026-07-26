@@ -1,81 +1,202 @@
-/* Detalle de ruta. Extraído de templates/sendero.html (roadmap §2-§3).
-   Escopado bajo #sec-detalle: .stat, .section, .overlay, .modal, .act-badge y
-   una docena más de clases están definidas también en otras vistas, y en la SPA
-   todas conviven en el mismo documento. Los ids genéricos (#map, #stats, #elev,
+/* Detalle de ruta — rediseño de redesign/ (2a escritorio, 2d móvil).
+
+   Escopado bajo #sec-detalle: .stat, .panel, .overlay, .modal, .act-badge y una
+   docena más de clases existen también en otras vistas, y en la SPA todas
+   conviven en el mismo documento. Los ids genéricos (#map, #stats, #elev,
    #notes, #auto, #drop, #gallery…) llevan prefijo d- por el mismo motivo.
-   .wrap se deja SIN escopar a propósito: es el contenedor de base.html. */
-#sec-detalle .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+   .wrap se deja SIN escopar a propósito: es el contenedor de base.html.
+
+   Todos los colores salen de las variables de base.html: nada de hex sueltos
+   (los rgba() de los velos y separadores son los del propio rediseño). */
+
+/* ── aviso de posible duplicada ─────────────────────────────────────────── */
 #sec-detalle .dup-banner{align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
-  background:rgba(214,69,65,.12);border:1px solid rgba(214,69,65,.45);
-  border-radius:9px;padding:10px 14px;margin-bottom:16px;font-size:14px;color:var(--text)}
-#sec-detalle .dup-banner a{color:var(--gr-red);font-weight:600}
-#sec-detalle #d-map{height:380px;border-radius:11px;border:1px solid var(--line);z-index:0;overflow:hidden}
-#sec-detalle .stats-row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
-#sec-detalle .stat{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);
-  border-radius:9px;padding:12px 14px}
-#sec-detalle .stat .v{font-family:var(--mono);font-size:23px;font-weight:700}
-#sec-detalle .stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
-#sec-detalle .stat .v small{font-size:13px;color:var(--muted)}
-#sec-detalle .section{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:18px;margin-top:16px}
-#sec-detalle .section h2{font-size:24px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:10px}
-#sec-detalle .section h2::before{content:"";width:10px;height:24px;border-radius:2px;
-  background:linear-gradient(var(--pr-yellow) 0 50%,#fff 50% 100%)}
-#sec-detalle textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
-  border:1px solid var(--line);border-radius:8px;padding:12px;font-family:inherit;font-size:14px;resize:vertical}
-#sec-detalle .auto{color:var(--muted);font-style:italic;margin-bottom:12px;padding:10px 12px;
-  background:var(--bg);border-radius:8px;border-left:3px solid var(--pr-yellow)}
-#sec-detalle .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
-#sec-detalle .thumb{position:relative;aspect-ratio:4/3;border-radius:8px;overflow:hidden;border:1px solid var(--line);cursor:pointer}
+  background:rgba(226,73,44,.12);border:1px solid rgba(226,73,44,.45);
+  border-radius:12px;padding:10px 14px;margin:0 0 16px;font-size:13.5px;color:var(--ink)}
+#sec-detalle .dup-banner a{color:var(--gr-red);font-weight:500}
+
+/* ── CABECERA-MAPA ───────────────────────────────────────────────────────────
+   360 px de alto dentro del padding de página (no full-bleed). El mapa ocupa
+   todo; encima van el velo y el título. */
+/* El envoltorio existe para las acciones: dentro de .d-hero (overflow:hidden) no
+   podrían salir del mapa, y en pantalla estrecha tienen que caer debajo. */
+#sec-detalle .d-hero-wrap{position:relative}
+#sec-detalle .d-hero{position:relative;height:360px;
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  background:radial-gradient(120% 150% at 25% 20%,#16281c 0%,#0f1c15 48%,#0a1310 100%)}
+#sec-detalle #d-map{position:absolute;inset:0;z-index:0}
+#sec-detalle .d-hero-veil{position:absolute;inset:0;z-index:2;pointer-events:none;
+  background:linear-gradient(to top,rgba(7,12,9,.94) 0%,rgba(7,12,9,.4) 40%,transparent 72%)}
+/* pointer-events:none para no robarle el arrastre al mapa; lo recuperan solo el
+   chip de actividad y los botones. */
+#sec-detalle .d-hero-info{position:absolute;left:24px;right:24px;bottom:20px;z-index:3;
+  pointer-events:none;padding-right:min(40%,360px)}
+#sec-detalle .d-hero-top{display:flex;align-items:center;gap:9px;margin-bottom:8px;flex-wrap:wrap}
+/* Sombra en el texto que va sobre el mapa: con una capa clara (topográfica o
+   satélite) el crema sobre crema no se leería. */
+#sec-detalle .d-hero-zone{display:inline-flex;align-items:center;gap:4px;
+  font-family:var(--mono);font-size:12px;color:#c3cfc6;letter-spacing:.06em;
+  text-transform:uppercase;text-shadow:0 1px 6px rgba(7,12,9,.9)}
+#sec-detalle #d-name{font-size:38px;font-weight:500;line-height:1.05;letter-spacing:.01em;
+  text-transform:uppercase;margin:0 0 8px;text-shadow:0 2px 12px rgba(7,12,9,.75)}
+#sec-detalle .d-hero-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  font-size:12.5px;color:#a9b8ac;text-shadow:0 1px 6px rgba(7,12,9,.9)}
+#sec-detalle .d-hero-meta .sep{opacity:.35}
+#sec-detalle .d-hero-actions{position:absolute;right:24px;bottom:20px;z-index:4;
+  display:flex;gap:8px;align-items:flex-end}
+#sec-detalle .d-hero-actions .btn.ghost{background:rgba(11,18,14,.8);
+  border-color:rgba(236,229,216,.2);backdrop-filter:blur(2px);white-space:nowrap}
+/* Acciones secundarias tras el ⋯ (también en escritorio: el rediseño deja sobre
+   el mapa solo las dos acciones principales). */
+#sec-detalle .d-more{display:none;position:absolute;right:0;bottom:calc(100% + 8px);z-index:10;
+  flex-direction:column;gap:6px;background:var(--panel);border:1px solid var(--line-strong);
+  border-radius:12px;padding:10px;box-shadow:0 8px 28px #00000080;min-width:190px}
+#sec-detalle .d-more.open{display:flex}
+#sec-detalle .d-more .btn{text-align:left;justify-content:flex-start}
+
+/* ── BANDA DE MÉTRICAS ─────────────────────────────────────────────────────
+   Siete tarjetas (auto-fit: con FC son ocho y siguen cabiendo en una fila).
+   La primera lleva el acento de la actividad y la cifra en ámbar (lo pone el
+   JS con .acc, para que el color sea el de la actividad de ESTA ruta). */
+#sec-detalle .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:10px;margin:14px 0 0}
+#sec-detalle .stat{background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:12px 14px;min-width:0}
+#sec-detalle .stat .l{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted-dim);margin-bottom:6px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+#sec-detalle .stat .v{font-family:var(--display);font-weight:500;font-size:25px;line-height:1;
+  white-space:nowrap}
+#sec-detalle .stat .v small{font-size:12px;color:var(--muted);font-family:var(--display)}
+#sec-detalle .stat.acc{border-left-width:3px;border-left-style:solid}
+#sec-detalle .stat.acc .v{color:var(--pr-yellow)}
+
+/* ── CUERPO: dos columnas (1fr | 350px) ────────────────────────────────────── */
+#sec-detalle .d-body{display:grid;grid-template-columns:1fr 350px;gap:16px;margin-top:16px}
+#sec-detalle .d-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+#sec-detalle .d-duo{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+#sec-detalle .panel{background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:14px 16px}
+#sec-detalle .panel-head{display:flex;align-items:baseline;justify-content:space-between;
+  gap:12px;margin-bottom:6px}
+#sec-detalle .panel-sub{font-size:11px;color:var(--muted-dim);text-align:right}
+#sec-detalle .panel-foot{font-size:11.5px;color:var(--muted-dim);margin-top:4px}
+/* Altura explícita: los charts van con maintainAspectRatio:false. */
+#sec-detalle .chart-box{position:relative}
+#sec-detalle .chart-elev{height:188px}
+#sec-detalle .chart-mini{height:94px}
+
+/* lista clave/valor de "Datos técnicos" */
+#sec-detalle .kv .kv-row{display:flex;justify-content:space-between;gap:10px;
+  padding:7px 0;border-bottom:1px solid rgba(236,229,216,.07);font-size:13px}
+#sec-detalle .kv .kv-row:last-child{border-bottom:0}
+#sec-detalle .kv .kv-k{color:var(--muted)}
+#sec-detalle .kv .kv-v{font-family:var(--mono);text-align:right;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
+
+/* Calidad del track */
+#sec-detalle .badge-amber{padding:3px 10px;border-radius:999px;background:var(--pr-yellow);
+  color:var(--bg);font-family:var(--mono);font-size:10.5px;font-weight:500;white-space:nowrap}
+#sec-detalle .d-warns{display:flex;flex-direction:column;gap:8px}
+#sec-detalle .warn{display:flex;gap:9px;align-items:flex-start;padding:10px 11px;
+  border-radius:9px;font-size:12.5px;line-height:1.5}
+#sec-detalle .warn svg{flex:none;margin-top:2px}
+#sec-detalle .warn b{font-weight:500}
+#sec-detalle .warn.crit{background:rgba(227,178,60,.1);border:1px solid rgba(227,178,60,.22)}
+#sec-detalle .warn.info{background:rgba(236,229,216,.05);border:1px solid rgba(236,229,216,.09)}
+#sec-detalle .warn .link-btn{font-size:11.5px}
+#sec-detalle .d-ok{color:var(--muted);font-size:13px}
+
+/* enlace-botón (sin caja): "Ver galería →", "Corregir en el editor"… */
+#sec-detalle .link-btn{background:none;border:0;padding:0;color:var(--pr-yellow);
+  font-family:inherit;font-size:12.5px;cursor:pointer}
+#sec-detalle .link-btn:hover{color:#f2c95f}
+
+/* ── FOTOS ─────────────────────────────────────────────────────────────────── */
+#sec-detalle .d-block-head{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+#sec-detalle .d-block-title{font-family:var(--display);font-size:15px;font-weight:500;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--sage)}
+#sec-detalle .d-block-count{font-size:11px;color:var(--muted-faint);
+  text-transform:uppercase;letter-spacing:.06em}
+#sec-detalle .d-block-head .rule{flex:1;height:1px;background:rgba(236,229,216,.1)}
+#sec-detalle .gallery{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+#sec-detalle .gallery:empty{display:none}
+#sec-detalle .thumb{position:relative;aspect-ratio:4/3;border-radius:10px;overflow:hidden;
+  border:1px solid var(--line);cursor:pointer}
 #sec-detalle .thumb img{width:100%;height:100%;object-fit:cover;display:block}
-#sec-detalle .thumb .geo{position:absolute;top:6px;left:6px;background:rgba(16,26,20,.8);
+#sec-detalle .thumb .geo{position:absolute;top:6px;left:6px;background:rgba(11,18,14,.8);
   color:var(--pr-yellow);font-size:10px;padding:2px 6px;border-radius:4px;font-family:var(--mono)}
-#sec-detalle .thumb .del{position:absolute;top:6px;right:6px;background:rgba(16,26,20,.8);
+#sec-detalle .thumb .cap{position:absolute;left:0;right:0;bottom:0;padding:14px 8px 5px;
+  font-family:var(--mono);font-size:10.5px;color:var(--ink);
+  background:linear-gradient(to top,rgba(7,12,9,.85),transparent);pointer-events:none}
+#sec-detalle .thumb .del{position:absolute;top:6px;right:6px;background:rgba(11,18,14,.8);
   border:0;color:#fff;border-radius:4px;padding:2px 7px;opacity:0;transition:.15s}
 #sec-detalle .thumb:hover .del{opacity:1}
-#sec-detalle .drop{border:1.5px dashed var(--line);border-radius:9px;padding:22px;text-align:center;
-  color:var(--muted);cursor:pointer}
+#sec-detalle .d-photos-all{display:none;width:100%;margin-top:12px;padding:12px 18px}
+#sec-detalle .drop{border:1.5px dashed var(--line-strong);border-radius:12px;padding:22px;
+  text-align:center;color:var(--muted);cursor:pointer;font-size:13px}
 #sec-detalle .drop.over{border-color:var(--gr-red);color:var(--ink)}
-#sec-detalle .photo-marker{width:26px;height:26px;border-radius:50%;background:#e8c44a;
-  border:2.5px solid #101a14;box-shadow:0 2px 6px rgba(0,0,0,.7);
+#sec-detalle .photo-marker{width:26px;height:26px;border-radius:50%;background:var(--pr-yellow);
+  border:2.5px solid var(--bg);box-shadow:0 2px 6px rgba(0,0,0,.7);
   display:flex;align-items:center;justify-content:center}
-/* MapLibre GL overrides */
-#sec-detalle .maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;padding:8px 12px;font-family:inherit;font-size:13px}
+
+/* ── NOTAS ─────────────────────────────────────────────────────────────────── */
+#sec-detalle textarea{width:100%;min-height:120px;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--line-strong);border-radius:8px;padding:12px;font-family:inherit;
+  font-size:13.5px;resize:vertical}
+#sec-detalle .auto{color:var(--muted);font-style:italic;margin-bottom:12px;padding:10px 12px;
+  font-size:13px;background:var(--bg);border-radius:8px;border-left:3px solid var(--pr-yellow)}
+#sec-detalle .auto:empty{display:none}
+
+/* ── PESTAÑAS (solo móvil, ver el bloque @media de abajo) ─────────────────── */
+#sec-detalle .d-tabs{display:none;gap:18px;padding:0 2px;margin-top:14px;
+  border-bottom:1px solid var(--line)}
+#sec-detalle .d-tab{background:none;border:0;padding:10px 2px;font-family:inherit;font-size:12.5px;
+  color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+#sec-detalle .d-tab.on{color:var(--pr-yellow);border-bottom-color:var(--pr-yellow)}
+
+/* ── MapLibre dentro del mapa cabecera ───────────────────────────────────── */
+#sec-detalle .maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;
+  padding:8px 12px;font-family:inherit;font-size:13px}
 #sec-detalle .maplibregl-popup-tip{border-top-color:var(--panel);border-bottom-color:var(--panel)}
-#sec-detalle .maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
-#sec-detalle .maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
-#sec-detalle .maplibregl-ctrl button:hover{background:var(--panel-2,var(--panel))!important}
-#sec-detalle .maplibregl-ctrl-icon{filter:invert(0)}
-#sec-detalle #d-btn3d{position:absolute;bottom:10px;left:10px;z-index:10;
-  background:var(--panel);border:1px solid var(--line);color:var(--ink);
-  padding:5px 11px;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit}
+#sec-detalle .maplibregl-ctrl-icon{filter:brightness(0) invert(1)}
 #sec-detalle .hover-infobox{position:absolute;z-index:6;pointer-events:none;display:none;
-  background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  padding:6px 10px;font-size:12px;line-height:1.6;white-space:nowrap;
+  background:rgba(11,18,14,.92);border:1px solid var(--line-strong);border-radius:8px;
+  padding:6px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.6;white-space:nowrap;
   box-shadow:0 2px 8px rgba(0,0,0,.5)}
-#sec-detalle .hover-infobox .hb-km{font-weight:700;color:var(--pr-yellow);margin-bottom:2px}
-/* lightbox */
-#sec-detalle .lb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;align-items:center;
-  justify-content:center;z-index:2000}
+#sec-detalle .hover-infobox .hb-km{font-weight:500;color:var(--pr-yellow);margin-bottom:2px}
+
+/* ── lightbox ──────────────────────────────────────────────────────────────── */
+#sec-detalle .lb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.93);display:flex;
+  align-items:center;justify-content:center;z-index:2000}
 #sec-detalle .lb-overlay.hidden{display:none}
-#sec-detalle .lb-img{max-width:calc(100vw - 140px);max-height:calc(100vh - 60px);border-radius:8px;object-fit:contain;display:block}
+#sec-detalle .lb-img{max-width:calc(100vw - 140px);max-height:calc(100vh - 60px);
+  border-radius:8px;object-fit:contain;display:block}
 #sec-detalle .lb-close{position:fixed;top:14px;right:18px;background:none;border:none;color:#fff;
   font-size:30px;cursor:pointer;opacity:.7;line-height:1;padding:4px}
 #sec-detalle .lb-close:hover{opacity:1}
-#sec-detalle .lb-nav{position:fixed;top:50%;transform:translateY(-50%);background:rgba(16,26,20,.65);
+#sec-detalle .lb-nav{position:fixed;top:50%;transform:translateY(-50%);background:rgba(11,18,14,.65);
   border:none;color:#fff;font-size:40px;width:52px;height:72px;cursor:pointer;border-radius:9px;
   opacity:.7;display:flex;align-items:center;justify-content:center;transition:.15s}
-#sec-detalle .lb-nav:hover{opacity:1;background:rgba(16,26,20,.95)}
+#sec-detalle .lb-nav:hover{opacity:1;background:rgba(11,18,14,.95)}
 #sec-detalle .lb-prev{left:10px}
 #sec-detalle .lb-next{right:10px}
 #sec-detalle .lb-counter{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
   color:rgba(255,255,255,.55);font-family:var(--mono);font-size:13px;pointer-events:none}
-/* modal Immich */
-#sec-detalle .overlay{position:fixed;inset:0;background:rgba(8,14,11,.78);display:flex;align-items:center;
-  justify-content:center;padding:16px;z-index:1000}
+
+/* ── modales (actividad, Immich) ───────────────────────────────────────────
+   OJO: la regla .overlay.hidden va INMEDIATAMENTE detrás de .overlay y con
+   especificidad doble. Si se separan, el modal de Immich aparece al cargar la
+   ruta (bug conocido, ver CLAUDE.md). */
+#sec-detalle .overlay{position:fixed;inset:0;background:rgba(7,12,9,.82);display:flex;
+  align-items:center;justify-content:center;padding:16px;z-index:1000}
 #sec-detalle .overlay.hidden{display:none}
-#sec-detalle .modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:100%;
-  max-width:760px;max-height:88vh;display:flex;flex-direction:column;padding:18px;overflow:hidden}
-#sec-detalle .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+#sec-detalle .modal{background:var(--panel);border:1px solid var(--line-strong);border-radius:13px;
+  width:100%;max-width:760px;max-height:88vh;display:flex;flex-direction:column;padding:18px;
+  overflow:hidden}
+#sec-detalle .modal-head{display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:6px}
+#sec-detalle .modal-head h2{font-size:24px;text-transform:uppercase;letter-spacing:.03em}
 #sec-detalle .modal-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;
   margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
 #sec-detalle .imgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
@@ -83,77 +204,116 @@
   overflow-y:auto;padding:2px 6px 2px 2px;flex:1;min-height:0}
 #sec-detalle .imgrid::-webkit-scrollbar{width:6px}
 #sec-detalle .imgrid::-webkit-scrollbar-track{background:var(--bg);border-radius:3px}
-#sec-detalle .imgrid::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+#sec-detalle .imgrid::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:3px}
 #sec-detalle .imgrid::-webkit-scrollbar-thumb:hover{background:var(--muted)}
-#sec-detalle .pick{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:2px solid transparent;cursor:pointer}
+#sec-detalle .pick{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;
+  border:2px solid transparent;cursor:pointer}
 #sec-detalle .pick img{width:100%;height:100%;object-fit:cover;display:block}
 #sec-detalle .pick.on{border-color:var(--gr-red)}
-#sec-detalle .pick .check{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;
-  background:rgba(8,14,11,.7);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px}
+#sec-detalle .pick .check{position:absolute;top:5px;right:5px;width:22px;height:22px;
+  border-radius:50%;background:rgba(7,12,9,.7);color:#fff;display:flex;align-items:center;
+  justify-content:center;font-size:13px}
 #sec-detalle .pick.on .check{background:var(--gr-red)}
-#sec-detalle .pick .gps{position:absolute;bottom:5px;left:5px;font-size:11px;background:rgba(8,14,11,.7);
-  color:var(--pr-yellow);padding:1px 5px;border-radius:4px;font-family:var(--mono)}
-#sec-detalle #d-name{font-size:34px}
-/* contenedor de gráficas con altura explícita (los charts usan
-   maintainAspectRatio:false; sin esto en móvil quedarían enanas) */
-#sec-detalle .chart-box{position:relative;height:260px}
-/* menú "⋯" de acciones secundarias (solo móvil; en desktop display:contents
-   deja los botones en línea como siempre) */
-#sec-detalle .detail-actions{display:flex;gap:8px;flex-wrap:wrap;position:relative}
-#sec-detalle #d-more-btn{display:none}
-#sec-detalle .d-more{display:contents}
-@media(max-width:600px){
-#sec-detalle .stat .v{font-size:19px}
-#sec-detalle #d-name{font-size:24px}
-#sec-detalle #d-map{height:45vh;height:45dvh;min-height:280px}
-#sec-detalle .section{padding:14px}
-#sec-detalle .section h2{font-size:20px}
-#sec-detalle .chart-box{height:180px}
-.wrap{overflow-x:clip}
-  /* acciones secundarias tras el botón ⋯ */
-#sec-detalle #d-more-btn{display:inline-flex;align-items:center}
-#sec-detalle .d-more{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:100;
-    flex-direction:column;gap:6px;background:var(--panel);border:1px solid var(--line);
-    border-radius:9px;padding:10px;box-shadow:0 8px 28px #00000080;min-width:170px}
-#sec-detalle .d-more.open{display:flex}
-#sec-detalle .d-more .btn{text-align:left}
-  /* lightbox a pantalla completa */
-#sec-detalle .lb-img{max-width:100vw;max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);border-radius:0}
-#sec-detalle .lb-nav{width:44px;height:64px;font-size:32px;background:rgba(16,26,20,.45)}
-  /* modal Immich a pantalla completa */
-#sec-detalle #immich-modal{padding:0}
-#sec-detalle #immich-modal .modal{max-width:none;height:100vh;height:100dvh;max-height:none;
-    border-radius:0;border:0;padding:12px}
-#sec-detalle .modal-foot{flex-wrap:wrap}
-#sec-detalle #d-activity-modal .modal{max-height:88vh;max-height:88dvh;overflow-y:auto}
-}
-@media(hover:none) and (pointer:coarse){
-#sec-detalle .thumb .del{opacity:1;padding:6px 10px}   /* sin hover no habría forma de borrar */
-#sec-detalle .lb-close{padding:10px 14px}
-#sec-detalle #d-btn3d{padding:9px 13px}
-#sec-detalle .act-badge{min-height:40px}
-#sec-detalle .act-opt:hover{transform:none}
-}
-/* actividad */
-#sec-detalle .act-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 10px;
-  border-radius:20px;font-size:13px;font-weight:700;border:2px solid;cursor:pointer;
-  transition:filter .15s;letter-spacing:.03em;white-space:nowrap}
-#sec-detalle .act-badge:hover{filter:brightness(1.18)}
-#sec-detalle .act-badge .ico{font-size:17px;line-height:1}
-#sec-detalle .act-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;padding-top:6px}
+#sec-detalle .pick .gps{position:absolute;bottom:5px;left:5px;font-size:11px;
+  background:rgba(7,12,9,.7);color:var(--pr-yellow);padding:1px 5px;border-radius:4px;
+  font-family:var(--mono)}
+
+/* ── actividad ─────────────────────────────────────────────────────────────── */
+#sec-detalle .act-badge{display:inline-flex;align-items:center;gap:7px;padding:4px 12px 4px 5px;
+  border-radius:999px;font-family:var(--mono);font-size:11.5px;font-weight:500;
+  letter-spacing:.12em;text-transform:uppercase;cursor:pointer;pointer-events:auto;
+  border:1px solid transparent;transition:filter .15s;white-space:nowrap}
+#sec-detalle .act-badge:hover{filter:brightness(1.15)}
+#sec-detalle .act-badge .ico{line-height:0}
+#sec-detalle .act-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
+  gap:10px;padding-top:6px}
 #sec-detalle .act-opt{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;
-  border-radius:11px;border:2px solid var(--line);cursor:pointer;
+  border-radius:11px;border:1px solid var(--line-strong);cursor:pointer;
   transition:border-color .15s,transform .15s;background:var(--bg)}
 #sec-detalle .act-opt:hover{transform:translateY(-2px)}
 #sec-detalle .act-opt.on{background:var(--panel-2)}
-#sec-detalle .act-ico-lg{font-size:36px;line-height:1}
-#sec-detalle .act-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:center}
+#sec-detalle .act-lbl{font-family:var(--mono);font-size:10.5px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.08em;text-align:center}
 
-/* Aviso/progreso de la descarga del mapa sin conexión (roadmap §6.2). */
+/* Aviso/progreso de la descarga del mapa sin conexión. */
 #sec-detalle .offline-map-info{margin-top:10px;font-size:12px;color:var(--muted);
-  background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
-#sec-detalle .offline-map-info .bar{background:var(--line);border-radius:4px;height:5px;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+#sec-detalle .offline-map-info .bar{background:rgba(236,229,216,.09);border-radius:4px;height:5px;
   margin:8px 0 0;overflow:hidden}
 #sec-detalle .offline-map-info .bar i{display:block;height:100%;width:0;
   background:var(--pr-yellow);border-radius:4px;transition:width .2s linear}
-#sec-detalle .offline-map-info.ok{color:var(--pr-yellow);border-color:rgba(232,196,74,.4)}
+#sec-detalle .offline-map-info.ok{color:var(--pr-yellow);border-color:rgba(227,178,60,.4)}
+
+/* ── 768-1199 px: una columna, banda de métricas a 4 ─────────────────────── */
+@media(max-width:1199px){
+  #sec-detalle .d-body{grid-template-columns:1fr}
+  #sec-detalle .stats-row{grid-template-columns:repeat(4,1fr)}
+  #sec-detalle .d-hero-info{padding-right:0}
+  #sec-detalle .d-hero-actions{position:static;justify-content:flex-end;margin-top:10px;
+    flex-wrap:wrap}
+  #sec-detalle .d-hero-actions .btn.ghost{background:transparent;
+    border-color:var(--line-strong);backdrop-filter:none}
+  #sec-detalle .d-more{bottom:auto;top:calc(100% + 6px)}
+  #sec-detalle #d-name{font-size:30px}
+}
+
+/* ── < 768 px: disposición móvil (2d) ─────────────────────────────────────
+   El cuerpo pasa a pestañas en vez de dos columnas: solo se ve el panel de la
+   pestaña activa (data-tab en la sección, data-dtab en cada bloque). */
+@media(max-width:767px){
+  #sec-detalle .d-hero{height:236px}
+  #sec-detalle .d-hero-info{left:14px;right:14px;bottom:12px}
+  #sec-detalle #d-name{font-size:23px;line-height:1.08;margin-bottom:5px}
+  /* La línea meta se queda en fecha y hora: el archivo y el dispositivo no caben
+     sobre el mapa (y los dos están en la pestaña Datos). */
+  #sec-detalle .d-hero-meta{font-size:11.5px;gap:8px}
+  #sec-detalle .d-hero-meta #d-file,
+  #sec-detalle .d-hero-meta #d-device,
+  #sec-detalle .d-hero-meta .sep{display:none!important}
+  /* Título de panel y su subtítulo, uno debajo del otro. */
+  #sec-detalle .panel-head{flex-direction:column;align-items:flex-start;gap:2px}
+  #sec-detalle .panel-sub{text-align:left}
+  #sec-detalle .stats-row{grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  #sec-detalle .stat{padding:9px 11px;border-radius:9px}
+  #sec-detalle .stat .l{font-size:9px;letter-spacing:.12em;margin-bottom:4px}
+  #sec-detalle .stat .v{font-size:19px}
+  #sec-detalle .d-tabs{display:flex}
+  #sec-detalle .d-body{margin-top:14px}
+  #sec-detalle .d-duo{grid-template-columns:1fr}
+  #sec-detalle [data-dtab]{display:none}
+  #sec-detalle[data-tab="perfil"] [data-dtab="perfil"],
+  #sec-detalle[data-tab="fotos"]  [data-dtab="fotos"],
+  #sec-detalle[data-tab="datos"]  [data-dtab="datos"],
+  #sec-detalle[data-tab="notas"]  [data-dtab="notas"]{display:block}
+  #sec-detalle .gallery{grid-template-columns:1fr 1fr;gap:9px}
+  #sec-detalle .d-photos-all{display:block}
+  #sec-detalle .chart-elev{height:150px}
+  #sec-detalle .panel{padding:12px 14px}
+  /* lightbox y modal Immich a pantalla completa */
+  #sec-detalle .lb-img{max-width:100vw;max-height:calc(100vh - 40px);
+    max-height:calc(100dvh - 40px);border-radius:0}
+  #sec-detalle .lb-nav{width:44px;height:64px;font-size:32px;background:rgba(11,18,14,.45)}
+  #sec-detalle #immich-modal{padding:0}
+  #sec-detalle #immich-modal .modal{max-width:none;height:100vh;height:100dvh;max-height:none;
+    border-radius:0;border:0;padding:12px}
+  #sec-detalle .modal-foot{flex-wrap:wrap}
+  #sec-detalle #d-activity-modal .modal{max-height:88vh;max-height:88dvh;overflow-y:auto}
+}
+/* A 600 px el mapa cabecera va a ancho completo y sin radio, como el 2d
+   (el negativo cancela el padding de .wrap en móvil). */
+@media(max-width:600px){
+  #sec-detalle .d-hero{margin:0 -14px;border-radius:0;border-left:0;border-right:0}
+  /* Las cuatro acciones en rejilla 2×2: con flex-wrap el ⋯ se quedaba solo en una
+     segunda fila alineado a la derecha, y dejaba un hueco raro. */
+  #sec-detalle .d-hero-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;
+    margin-top:12px}
+  #sec-detalle .d-hero-actions .btn{width:100%}
+  #sec-detalle .d-more{grid-column:1 / -1}
+}
+@media(hover:none) and (pointer:coarse){
+  #sec-detalle .thumb .del{opacity:1;padding:6px 10px}   /* sin hover no habría forma de borrar */
+  #sec-detalle .lb-close{padding:10px 14px}
+  #sec-detalle .act-badge{min-height:34px}
+  #sec-detalle .act-opt:hover{transform:none}
+  #sec-detalle .d-tab{min-height:44px}
+}

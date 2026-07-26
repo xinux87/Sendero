@@ -49,17 +49,19 @@
     return false;
   }
 
-  /* ── actividad ─────────────────────────────────────────────────────────── */
+  /* ── actividad ─────────────────────────────────────────────────────────────
+     El chip vive SOBRE el mapa cabecera (rediseño 2a/2d), así que lleva fondo
+     translúcido oscuro: encima de una capa satélite el color solo no se leería. */
   function renderActivity() {
     const a = activityOf(current.activity_type);
     const el = $('#d-activity-badge-sm');
     if (!el) return;
     el.innerHTML = a
       ? `<span class="act-badge" onclick="SEC.detalle.openActivityPicker()"
-           style="background:${a.color}1a;border-color:${a.color};color:${a.color}">
-           ${iconSvg(a, 18)} ${esc(a.label)}</span>`
+           style="background:rgba(11,18,14,.55);color:${a.color}">
+           <span class="ico">${iconSvg(a, 24)}</span>${esc(a.label)}</span>`
       : `<span class="act-badge" onclick="SEC.detalle.openActivityPicker()"
-           style="background:var(--panel-2);border-color:var(--line);color:var(--muted)">
+           style="background:rgba(11,18,14,.55);border-color:var(--line-strong);color:var(--muted)">
            + Añadir tipo de actividad</span>`;
   }
 
@@ -100,30 +102,123 @@
     if (!current.photos.length && IMMICH && !current.immich_checked) autoSearchImmich();
   }
 
-  /* ── stats ─────────────────────────────────────────────────────────────── */
+  /* ── banda de métricas ─────────────────────────────────────────────────────
+     Siete tarjetas en el orden del rediseño (Distancia · Desnivel + · Desnivel −
+     · Altitud máx · En movimiento · Vel. media · FC). La primera lleva el borde
+     izquierdo del color de la actividad y la cifra en ámbar (clase .acc).
+     La actividad ya no es una tarjeta: se cambia desde el chip de la cabecera. */
   function renderStats() {
     const r = current;
     const a = activityOf(r.activity_type);
-    const actStat = a
-      ? `<div class="stat" style="border-color:${a.color}40;cursor:pointer" onclick="SEC.detalle.openActivityPicker()">
-           <div class="v" style="line-height:1">${iconSvg(a, 26)}</div>
-           <div class="l" style="color:${a.color}">${esc(a.label)}</div></div>`
-      : `<div class="stat" style="border-style:dashed;cursor:pointer" onclick="SEC.detalle.openActivityPicker()">
-           <div class="v" style="font-size:20px;color:var(--muted)">＋</div>
-           <div class="l">Actividad</div></div>`;
     const items = [
-      ['Distancia', fmtKm(r.distance_m), 'km'],
-      ['Desnivel +', r.ascent_m ? Math.round(r.ascent_m) : '–', 'm'],
-      ['Desnivel −', r.descent_m ? Math.round(r.descent_m) : '–', 'm'],
-      ['En movimiento', fmtDur(r.moving_s || r.duration_s), ''],
+      ['Distancia', fmtKm(r.distance_m), 'km', true],
+      ['Desnivel +', fmtNum(r.ascent_m), 'm'],
+      ['Desnivel −', fmtNum(r.descent_m), 'm'],
+      ['Altitud máx', fmtNum(r.ele_max), 'm'],
+      ['En movimiento', fmtHM(r.moving_s || r.duration_s), ''],
       ['Vel. media', r.avg_speed ? r.avg_speed.toFixed(1) : '–', 'km/h'],
-      ['Altitud máx', r.ele_max != null ? Math.round(r.ele_max) : '–', 'm'],
     ];
-    if (r.hr_avg) items.push(['FC media', r.hr_avg, 'bpm']);
-    if (r.hr_max) items.push(['FC máx', r.hr_max, 'bpm']);
-    $('#d-stats').innerHTML = actStat + items.map(([l, v, u]) =>
-      `<div class="stat"><div class="v">${v} <small>${u}</small></div><div class="l">${l}</div></div>`
+    if (r.hr_avg) items.push(['FC media', Math.round(r.hr_avg), 'bpm']);
+    if (r.hr_max) items.push(['FC máx', Math.round(r.hr_max), 'bpm']);
+    $('#d-stats').innerHTML = items.map(([l, v, u, acc]) =>
+      `<div class="stat${acc ? ' acc' : ''}"${acc ? ` style="border-left-color:${(a || {}).color || 'var(--pr-yellow)'}"` : ''}>
+         <div class="l">${l}</div>
+         <div class="v">${v}${u ? ` <small>${u}</small>` : ''}</div></div>`
     ).join('');
+  }
+
+  /* ── datos técnicos ───────────────────────────────────────────────────────
+     Solo campos que la ruta tiene de verdad: los que el modelo no guarda
+     (cadencia, temperatura) no se inventan, se omiten. */
+  function renderTech() {
+    const r = current;
+    const rows = [];
+    const add = (k, v) => { if (v != null && v !== '' && v !== '–') rows.push([k, v]); };
+    add('Tiempo total', r.duration_s ? fmtHMS(r.duration_s) : null);
+    if (r.duration_s && r.moving_s && r.duration_s - r.moving_s > 30) {
+      add('En pausa', fmtHMS(r.duration_s - r.moving_s));
+    }
+    if (r.distance_m && r.moving_s) add('Ritmo medio', fmtPace(r.moving_s / (r.distance_m / 1000)));
+    const vmax = _maxOf(r.speed, 'v');
+    add('Vel. máx', vmax != null ? `${vmax.toFixed(1)} km/h` : null);
+    add('Altitud mín', r.ele_min != null ? `${fmtNum(r.ele_min)} m` : null);
+    add('Puntos GPS', r.n_points ? fmtNum(r.n_points) : null);
+    add('Formato', /\.fit$/i.test(r.gpx_file || '') ? 'FIT' : 'GPX');
+    add('Versión', r.version ? `v${r.version}` : 'Archivo original');
+    add('Importada', r.created_at ? fmtDate(r.created_at) : null);
+    $('#d-tech').innerHTML = rows.map(([k, v]) =>
+      `<div class="kv-row"><span class="kv-k">${esc(k)}</span>` +
+      `<span class="kv-v" title="${esc(String(v))}">${esc(String(v))}</span></div>`).join('');
+  }
+
+  function _maxOf(arr, key) {
+    if (!arr || !arr.length) return null;
+    let m = -Infinity;
+    arr.forEach(p => { if (p[key] > m) m = p[key]; });
+    return isFinite(m) ? m : null;
+  }
+
+  /* ── calidad del track ────────────────────────────────────────────────────
+     Los avisos son los `gps_issues` que calcula core/gps_analysis.py con los
+     umbrales de la actividad (Ajustes → "GPS incorrecto"); quien los arregla es
+     el editor, así que la acción de cada aviso lleva allí. */
+  const _ISSUE_TXT = {
+    speed: i => `Salto de GPS: <b>${Math.round(i.value_max)} km/h</b> en el km `
+              + `${i.d_from.toFixed(1)}–${i.d_to.toFixed(1)} (umbral ${Math.round(i.threshold)})`,
+    elevation: i => `Pico de elevación: <b>${i.value_max.toFixed(1)} m/s</b> de ascenso en el km `
+              + `${i.d_from.toFixed(1)}–${i.d_to.toFixed(1)} (umbral ${i.threshold})`,
+    altitude: i => `Altitud imposible: <b>${fmtNum(i.value_max)} m</b> en el km `
+              + `${i.d_from.toFixed(1)}–${i.d_to.toFixed(1)} (máx ${fmtNum(i.threshold)})`,
+  };
+  const _ICO_WARN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e3b23c" stroke-width="1.9"><path d="M12 9v5m0 3.5v.01M10.3 3.9 2.5 18a1.7 1.7 0 0 0 1.5 2.6h16a1.7 1.7 0 0 0 1.5-2.6L13.7 3.9a1.7 1.7 0 0 0-3.4 0z"/></svg>';
+  const _ICO_INFO = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8fb69f" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/></svg>';
+
+  function renderQuality() {
+    const issues = current.gps_issues || [];
+    const badge = q('#d-quality-badge'), body = q('#d-quality-body');
+    if (!issues.length) {
+      badge.textContent = '';
+      badge.style.display = 'none';
+      body.innerHTML = '<div class="d-ok">Sin errores detectados.</div>';
+      return;
+    }
+    badge.style.display = '';
+    badge.textContent = issues.length === 1 ? '1 AVISO' : `${issues.length} AVISOS`;
+    body.innerHTML = issues.map(i => {
+      const txt = (_ISSUE_TXT[i.type] || (x => `Aviso en el km ${x.d_from.toFixed(1)}`))(i);
+      const crit = i.severity === 'high';
+      return `<div class="warn ${crit ? 'crit' : 'info'}">${crit ? _ICO_WARN : _ICO_INFO}
+        <div>${txt}<br>
+        <button class="link-btn" onclick="SEC.detalle.openEditor()">Corregir en el editor</button></div></div>`;
+    }).join('');
+  }
+
+  /* ── cabecera del bloque de fotos ─────────────────────────────────────── */
+  function renderPhotosHead() {
+    const n = current.photos.length;
+    const deImmich = current.photos.filter(p => p.immich_id).length;
+    const cnt = q('#d-photos-count'), link = q('#d-gallery-link'), all = q('#d-photos-all');
+    cnt.textContent = !n ? 'Ninguna todavía'
+      : `${n} · ${deImmich === n ? 'REFERENCIADAS DESDE IMMICH'
+                : deImmich ? `${deImmich} DESDE IMMICH` : 'LOCALES'}`;
+    link.style.display = n ? '' : 'none';
+    all.textContent = n === 1 ? 'Ver la foto' : `Ver las ${n} fotos`;
+    all.style.display = n ? '' : 'none';
+  }
+
+  /* ── pestañas del móvil ───────────────────────────────────────────────────
+     En pantalla grande no se ven (el CSS solo las activa por debajo de 768 px),
+     así que cambiar de pestaña ahí no tiene efecto visible. Tras mostrar un
+     panel oculto hay que redimensionar sus Charts: mientras estuvo en
+     display:none su canvas medía 0. */
+  function setTab(name) {
+    const sec = document.getElementById('sec-detalle');
+    if (!sec) return;
+    sec.dataset.tab = name;
+    sec.querySelectorAll('.d-tab').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+    if (name === 'perfil') {
+      [elevChart, speedChart, hrChart].forEach(c => { if (c) { try { c.resize(); } catch (e) {} } });
+    }
   }
 
   /* ── mapa ──────────────────────────────────────────────────────────────── */
@@ -199,19 +294,7 @@
     });
     map.addControl(new maplibregl.AttributionControl({compact: true}), 'bottom-right');
     map.addControl(new maplibregl.NavigationControl({showCompass: true}), 'top-right');
-    // botón centrar
-    map.addControl({
-      onAdd() {
-        const c = document.createElement('div');
-        c.className = 'maplibregl-ctrl maplibregl-ctrl-group';
-        const b = document.createElement('button');
-        b.innerHTML = '⤢'; b.title = 'Centrar en la ruta';
-        b.style.cssText = 'font-size:16px;width:29px;height:29px;cursor:pointer;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center';
-        b.onclick = () => fitRoute();
-        c.appendChild(b); return c;
-      }, onRemove() {},
-    }, 'top-left');
-    // selector de capas (top-left, debajo del botón centrar)
+    // selector de capas (top-left, arriba: es lo que pide el rediseño)
     map.addControl({
       onAdd() {
         const sel = document.createElement('select');
@@ -241,6 +324,18 @@
         wrap.className = 'maplibregl-ctrl maplibregl-ctrl-group';
         wrap.appendChild(sel);
         return wrap;
+      }, onRemove() {},
+    }, 'top-left');
+    // botón centrar (top-left, debajo del selector)
+    map.addControl({
+      onAdd() {
+        const c = document.createElement('div');
+        c.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+        const b = document.createElement('button');
+        b.innerHTML = '⤢'; b.title = 'Centrar en la ruta';
+        b.style.cssText = 'font-size:16px;width:29px;height:29px;cursor:pointer;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center';
+        b.onclick = () => fitRoute();
+        c.appendChild(b); return c;
       }, onRemove() {},
     }, 'top-left');
 
@@ -434,14 +529,57 @@
     elevChart = speedChart = hrChart = null;
   }
 
+  /* ── estilo común de las 3 gráficas (rediseño) ───────────────────────────
+     Rejilla casi invisible, ejes en mono y sin títulos: la unidad ya la dice el
+     título del panel ("Velocidad · km/h"). */
+  const GRID = 'rgba(236,229,216,.07)';
+  const TICK = {color: '#68786d', font: {family: "'IBM Plex Mono',monospace", size: 10}};
+  function _scales(data, xKey, yKey, {yTicks = true} = {}) {
+    return {
+      x: {type: 'linear', min: 0, max: data[data.length - 1][xKey],
+          ticks: {...TICK, maxTicksLimit: 8}, grid: {color: GRID, drawTicks: false},
+          border: {display: false}},
+      y: {ticks: yTicks ? {...TICK, callback: v => fmtNum(v)} : {display: false},
+          grid: {color: GRID, drawTicks: false}, border: {display: false}},
+    };
+  }
+  /* Relleno del perfil: degradado del color de la actividad (.38 → 0), como el
+     prototipo. Scriptable porque necesita el chartArea, que no existe hasta el
+     primer layout. */
+  function _areaGradient(chart, hex) {
+    const {ctx, chartArea} = chart;
+    if (!chartArea) return 'transparent';
+    const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    g.addColorStop(0, hex + '61');      // 0x61 ≈ 38 %
+    g.addColorStop(1, hex + '00');
+    return g;
+  }
+  /* Subtítulo del perfil: "2 083 m salida · 3 404 m cima · pendiente máx. 34 %".
+     La pendiente se mide sobre tramos de al menos 30 m para que el ruido del GPS
+     no dé porcentajes absurdos. */
+  function _elevSub(data) {
+    if (!data.length) return '';
+    let max = data[0].e, slope = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i].e > max) max = data[i].e;
+      const dx = (data[i].d - data[i - 1].d) * 1000;
+      if (dx >= 30) slope = Math.max(slope, (data[i].e - data[i - 1].e) / dx * 100);
+    }
+    return `${fmtNum(data[0].e)} m salida · ${fmtNum(max)} m cima`
+         + (slope > 0 ? ` · pendiente máx. ${Math.round(slope)} %` : '');
+  }
+
   function renderElev() {
     const ctx = $('#d-elev');
     if (elevChart) { elevChart.destroy(); elevChart = null; }
     const data = current.elevation;
-    if (!data.length) { ctx.closest('.section').style.display = 'none'; return; }
-    ctx.closest('.section').style.display = '';
+    const panel = ctx.closest('.panel');
+    if (!data.length) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
+    q('#d-elev-sub').textContent = _elevSub(data);
+    const actColor = (activityOf(current.activity_type) || {}).color || '#e8863c';
 
-    const svg = `<svg width="26" height="26" xmlns="http://www.w3.org/2000/svg"><circle cx="13" cy="13" r="11" fill="#e8c44a" stroke="#101a14" stroke-width="2.5"/><g transform="translate(6.5,7.5)"><rect x="0" y="2" width="13" height="9" rx="1.5" fill="#101a14"/><path d="M4 0h5l1 2H3z" fill="#101a14"/><circle cx="6.5" cy="6.5" r="2.3" fill="#e8c44a"/><circle cx="6.5" cy="6.5" r="1.1" fill="#101a14"/></g></svg>`;
+    const svg = `<svg width="26" height="26" xmlns="http://www.w3.org/2000/svg"><circle cx="13" cy="13" r="11" fill="#e3b23c" stroke="#0b120e" stroke-width="2.5"/><g transform="translate(6.5,7.5)"><rect x="0" y="2" width="13" height="9" rx="1.5" fill="#0b120e"/><path d="M4 0h5l1 2H3z" fill="#0b120e"/><circle cx="6.5" cy="6.5" r="2.3" fill="#e3b23c"/><circle cx="6.5" cy="6.5" r="1.1" fill="#0b120e"/></g></svg>`;
     const photoIcon = new Image(26, 26);
     photoIcon.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
     const ppts = photoElevPoints();
@@ -454,8 +592,9 @@
       },
     };
     const sets = [{
-      data: data.map(d => ({x: d.d, y: d.e})), fill: true, borderColor: '#d24a3a',
-      backgroundColor: 'rgba(210,74,58,.15)', pointRadius: 0, borderWidth: 2, tension: .3,
+      data: data.map(d => ({x: d.d, y: d.e})), fill: true, borderColor: '#f0b070',
+      backgroundColor: c => _areaGradient(c.chart, actColor),
+      pointRadius: 0, borderWidth: 2, tension: .3,
     }];
     if (ppts.length) sets.push({
       type: 'scatter', data: ppts.map(p => ({x: p.x, y: p.y})),
@@ -483,13 +622,7 @@
           },
           title(items) { return `${Number(items[0].raw.x).toFixed(2)} km`; },
         }}},
-        scales: {
-          x: {type: 'linear', min: 0, max: data[data.length - 1].d,
-              title: {display: true, text: 'km', color: '#8aa394'},
-              ticks: {color: '#8aa394', maxTicksLimit: 8}, grid: {color: '#2c4435'}},
-          y: {title: {display: true, text: 'm', color: '#8aa394'},
-              ticks: {color: '#8aa394'}, grid: {color: '#2c4435'}},
-        },
+        scales: _scales(data, 'd', 'e'),
       },
     });
     // Asignación directa, NO addEventListener: renderElev/renderSpeed/renderHR
@@ -505,12 +638,18 @@
     if (speedChart) { speedChart.destroy(); speedChart = null; }
     if (!data || !data.length) { section.style.display = 'none'; return; }
     section.style.display = '';
+    // Pie del panel: "media 3.1 · máx 9.4 · en movimiento 84 %"
+    const vmax = _maxOf(data, 'v');
+    const mov = (current.duration_s && current.moving_s)
+      ? ` · en movimiento ${Math.round(current.moving_s / current.duration_s * 100)} %` : '';
+    q('#d-speed-foot').textContent =
+      `media ${current.avg_speed ? current.avg_speed.toFixed(1) : '–'}`
+      + (vmax != null ? ` · máx ${vmax.toFixed(1)}` : '') + mov;
     const ctx = q('#speed-chart');
     speedChart = new Chart(ctx, {type: 'line', plugins: [_crosshairPlugin()],
       data: {datasets: [{
-        data: data.map(d => ({x: d.d, y: d.v})), fill: true,
-        borderColor: '#3a9ed8', backgroundColor: 'rgba(58,158,216,.12)',
-        pointRadius: 0, borderWidth: 1.5, tension: .3,
+        data: data.map(d => ({x: d.d, y: d.v})), fill: false,
+        borderColor: '#3d9be9', pointRadius: 0, borderWidth: 1.7, tension: .3,
       }]},
       options: {
         maintainAspectRatio: false,
@@ -522,13 +661,7 @@
           label(c) { return `${c.raw.y.toFixed(1)} km/h`; },
           title(items) { return `${Number(items[0].raw.x).toFixed(2)} km`; },
         }}},
-        scales: {
-          x: {type: 'linear', min: 0, max: data[data.length - 1].d,
-              title: {display: true, text: 'km', color: '#8aa394'},
-              ticks: {color: '#8aa394', maxTicksLimit: 8}, grid: {color: '#2c4435'}},
-          y: {title: {display: true, text: 'km/h', color: '#8aa394'},
-              ticks: {color: '#8aa394'}, grid: {color: '#2c4435'}},
-        },
+        scales: _scales(data, 'd', 'v', {yTicks: false}),
       }});
     ctx.onmouseleave = () => setHoverD(null);
     ctx.ontouchend = () => setHoverD(null);
@@ -540,12 +673,14 @@
     if (hrChart) { hrChart.destroy(); hrChart = null; }
     if (!data || !data.length) { section.style.display = 'none'; return; }
     section.style.display = '';
+    q('#d-hr-foot').textContent =
+      `media ${current.hr_avg ? Math.round(current.hr_avg) : '–'}`
+      + (current.hr_max ? ` · máx ${Math.round(current.hr_max)}` : '');
     const ctx = q('#hr-chart');
     hrChart = new Chart(ctx, {type: 'line', plugins: [_crosshairPlugin()],
       data: {datasets: [{
-        data: data.map(d => ({x: d.d, y: d.hr})), fill: true,
-        borderColor: '#e05252', backgroundColor: 'rgba(224,82,82,.12)',
-        pointRadius: 0, borderWidth: 1.5, tension: .3,
+        data: data.map(d => ({x: d.d, y: d.hr})), fill: false,
+        borderColor: '#e34b4b', pointRadius: 0, borderWidth: 1.7, tension: .3,
       }]},
       options: {
         maintainAspectRatio: false,
@@ -557,19 +692,23 @@
           label(c) { return `${Math.round(c.raw.y)} bpm`; },
           title(items) { return `${Number(items[0].raw.x).toFixed(2)} km`; },
         }}},
-        scales: {
-          x: {type: 'linear', min: 0, max: data[data.length - 1].d,
-              title: {display: true, text: 'km', color: '#8aa394'},
-              ticks: {color: '#8aa394', maxTicksLimit: 8}, grid: {color: '#2c4435'}},
-          y: {title: {display: true, text: 'bpm', color: '#8aa394'},
-              ticks: {color: '#8aa394'}, grid: {color: '#2c4435'}},
-        },
+        scales: _scales(data, 'd', 'hr', {yTicks: false}),
       }});
     ctx.onmouseleave = () => setHoverD(null);
     ctx.ontouchend = () => setHoverD(null);
   }
 
   /* ── galería ───────────────────────────────────────────────────────────── */
+  /* Pie de cada miniatura: "09:02" (hora de la foto), como el prototipo. Sin
+     hora no se pone nada. */
+  function _photoCap(p) {
+    if (!p.taken_at) return '';
+    const d = new Date(p.taken_at);
+    if (isNaN(d)) return '';
+    const hora = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `<span class="cap">${hora}</span>`;
+  }
+
   function renderGallery() {
     const g = $('#d-gallery');
     g.innerHTML = '';
@@ -579,7 +718,7 @@
       d.dataset.photoid = p.public_id;
       d.onclick = () => openLightbox(i);
       d.innerHTML = `<img src="/api/photos/${encodeURIComponent(p.public_id)}/file" loading="lazy">
-        ${p.lat ? '<span class="geo">GPS</span>' : ''}`;
+        ${p.lat ? '<span class="geo">GPS</span>' : ''}${_photoCap(p)}`;
       // El botón se engancha desde JS, no con onclick=: public_id es una cadena
       // opaca ("aB3_x9Qk"), y en un atributo quedaría como identificador suelto.
       const btn = document.createElement('button');
@@ -709,6 +848,7 @@
     if (idx !== -1) current.photos.splice(idx, 1);
     if (photoMarkers[id]) { try { photoMarkers[id].remove(); } catch (e) {} delete photoMarkers[id]; }
     if (!q('#lb-overlay').classList.contains('hidden')) closeLightbox();
+    renderPhotosHead();
     await saveLocal();
     Store.syncNow({force: true});
     toast('Foto eliminada');
@@ -744,7 +884,7 @@
       if (!res.ok) { toast('Error al subir las fotos'); return; }
     } catch (e) { toast('Error de red al subir las fotos'); return; }
     if (!await reload()) return;
-    renderMap(); renderElev(); renderGallery();
+    renderMap(); renderElev(); renderGallery(); renderPhotosHead();
     const pin = $('#d-photo-input');
     if (pin) pin.value = '';
   }
@@ -842,7 +982,7 @@
     closeImmich();
     toast(`${items.length} foto(s) añadidas`);
     if (!await reload()) return;
-    renderMap(); renderElev(); renderGallery();
+    renderMap(); renderElev(); renderGallery(); renderPhotosHead();
   }
 
   function closeImmich() {
@@ -891,6 +1031,7 @@
     const el = q(`.thumb[data-photoid="${id}"]`);
     if (el) el.remove();
     current.photos.splice(lbIdx, 1);
+    renderPhotosHead();
     if (photoMarkers[id]) { try { photoMarkers[id].remove(); } catch (e) {} delete photoMarkers[id]; }
     await saveLocal();
     Store.syncNow({force: true});
@@ -906,24 +1047,32 @@
     $('#d-stats').innerHTML = '';
     $('#d-auto').textContent = '';
     $('#d-gallery').innerHTML = '';
+    $('#d-date').textContent = '';
+    $('#d-file').textContent = '';
+    $('#d-tech').innerHTML = '';
+    $('#d-elev-sub').textContent = '';
   }
 
   function renderAll() {
     $('#d-name').textContent = current.name;
     document.title = `${current.name} – Sendero`;
-    $('#d-date').textContent = fmtDate(current.started_at);
+    // Línea meta de la cabecera: fecha · hora | archivo | dispositivo
+    $('#d-date').textContent = fmtDateTime(current.started_at);
+    $('#d-file').textContent = current.gpx_file || '';
     const loc = $('#d-loc');
     if (current.locality) { $('#d-loc-text').textContent = current.locality; loc.style.display = 'inline-flex'; }
     else { loc.style.display = 'none'; }
-    const dev = $('#d-device');
-    if (current.device) { dev.textContent = '· ' + current.device; dev.style.display = ''; }
-    else { dev.style.display = 'none'; }
+    const dev = $('#d-device'), devSep = $('#d-device-sep');
+    if (current.device) { dev.textContent = current.device; dev.style.display = ''; devSep.style.display = ''; }
+    else { dev.style.display = 'none'; devSep.style.display = 'none'; }
     $('#d-auto').textContent = current.auto_summary || '';
     $('#d-notes').value = current.notes || '';
     const ibtn = q('#immich-btn');
     if (ibtn) ibtn.classList.toggle('hidden', !IMMICH);
     renderActivity(); renderDupBanner();
-    renderStats(); renderMap(); renderElev(); renderSpeed(); renderHR(); renderGallery();
+    renderStats(); renderTech(); renderQuality();
+    renderMap(); renderElev(); renderSpeed(); renderHR();
+    renderGallery(); renderPhotosHead();
     // Si el mapa de esta ruta ya está descargado, decirlo sin que haya que pulsar.
     Tiles.statusForTrack({coords: current.geojson, capa: curBasemap || defaultBasemap(),
                           infoEl: q('#d-offline-info')});
@@ -944,6 +1093,7 @@
     immichCands = []; immichSel = new Set();
     hoverD = null; trackCumKm = []; lbIdx = 0;
     map3dMode = false;
+    setTab('perfil');            // en móvil, siempre se entra por el perfil
   }
 
   async function mount(params, opts) {
@@ -1040,7 +1190,7 @@
   })();
 
   window.SEC.detalle = {
-    mount, unmount,
+    mount, unmount, setTab,
     openActivityPicker, closeActivityPicker, setActivity,
     toggle3D, saveNotes, rescanRoute, renameRoute, removeRoute, downloadGpx, downloadMap,
     openEditor, dismissDup, delPhoto,
