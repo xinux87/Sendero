@@ -1,0 +1,30 @@
+# Finales de línea: LF en el repositorio, siempre.
+#
+# El 26-07-2026 el árbol de trabajo se reescribió entero con CRLF (64 archivos
+# "modificados" sin un solo cambio de contenido) y eso bloqueó los `git checkout`
+# con un error que no dice lo que pasa. Este proyecto se edita desde Windows y
+# desde WSL contra el MISMO directorio (/mnt/c/...), así que sin esto vuelve a
+# ocurrir. `text=auto eol=lf` normaliza al hacer commit y entrega LF al checkout,
+# que es lo que necesitan los scripts que corren dentro del contenedor Linux.
+* text=auto eol=lf
+
+# Binarios: que git no intente normalizar nada dentro de ellos.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.fit   binary
+*.pmtiles binary
+*.mbtiles binary
+*.db    binary
+*.sqlite binary
+*.sqlite3 binary
