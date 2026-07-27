@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.9.8-2e7d32?style=for-the-badge" alt="Versión 0.9.8">
+  <img src="https://img.shields.io/badge/versión-0.9.9-2e7d32?style=for-the-badge" alt="Versión 0.9.9">
   <img src="https://img.shields.io/badge/100%25-autoalojado-17241c?style=for-the-badge" alt="100% autoalojado">
   <img src="https://img.shields.io/badge/Docker-xinux87%2Fsendero-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Hub: xinux87/sendero">
   <img src="https://img.shields.io/badge/Flask%20+%20SQLite-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Flask + SQLite">
@@ -153,6 +153,8 @@ La forma rápida de saber si es eso: **abre la misma dirección en una ventana d
 Para arreglarlo, abre **`/actualizar`** (por ejemplo `https://tu-sendero/actualizar`, también en **Ajustes → Mantenimiento → «Actualizar la app en este dispositivo»**). Esa página borra el código guardado, sus cachés y la copia local de rutas y planes, y te deja volver a la app, que se descarga de cero y se sincroniza otra vez. En **Ajustes → Mantenimiento** tienes además el estado de este navegador: qué versión sirve el servidor y cuál tiene guardada tu dispositivo, que es lo que delata el problema. **No toca nada del servidor**: tus rutas, fotos y ajustes siguen intactos.
 
 Si tienes Sendero **instalada como app**, cerrar la ventana no basta: usa `/actualizar` desde dentro de la app o desinstálala y vuelve a instalarla.
+
+> **Si ves la chapa «otra ventana» en la cabecera**, o `/actualizar` te dice que la copia local la tiene otra ventana: hay otra ventana de Sendero (o la app instalada) abierta con una versión anterior, y hasta que se cierre no se puede actualizar la copia local de este dispositivo. Ciérralas todas y vuelve a abrir. Desde la 0.9.9 esto se resuelve solo entre ventanas con la versión al día.
 
 > **Detrás de un proxy con autenticación** (Pangolin, Authelia, oauth2-proxy…) puede aparecer en la consola `Access to manifest … blocked by CORS policy`. Es el manifiesto de la PWA, el único archivo que el navegador pide sin tu sesión; el aviso es inofensivo (solo afecta a instalar la app). Si te molesta, comprueba que tu sesión del SSO no ha caducado o excluye `/manifest.webmanifest` de la autenticación en el proxy.
 

@@ -23,6 +23,7 @@ import os
 import re
 import sys
 import time
+import urllib.request
 
 from playwright.sync_api import sync_playwright
 
@@ -136,6 +137,33 @@ Tiles_MAX = 3000     # el tope duro de static/js/core/tiles.js
 
 def api(page, path):
     return page.evaluate("""async p => { const r = await fetch(p); return r.ok ? r.json() : null; }""", path)
+
+
+
+def _version_del_store():
+    """`DB_VERSION` que declara static/js/core/store.js (no está expuesta en el
+    navegador: es una const dentro del IIFE). Se lee del archivo para que este
+    test siga valiendo cuando la versión suba otra vez."""
+    src = urllib.request.urlopen(BASE + "/static/js/core/store.js", timeout=10)
+    m = re.search(r"const DB_VERSION = (\d+)", src.read().decode("utf-8"))
+    return int(m.group(1)) if m else None
+
+
+def _abrir_version_vieja(n):
+    """Abre `sendero` en la versión n y se queda con la conexión, sin escuchar
+    `versionchange` — exactamente como una ventana con el código anterior."""
+    return """() => new Promise(res => {
+      const req = indexedDB.open('sendero', %d);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        ['meta','routes','detail','planned','outbox'].forEach(n => {
+          if (!db.objectStoreNames.contains(n)) db.createObjectStore(n, {keyPath: 'k'});
+        });
+      };
+      req.onsuccess = () => { window.__vieja = req.result; res('abierta'); };
+      req.onerror = () => res('error');
+      req.onblocked = () => res('bloqueada');
+    })""" % n
 
 
 def main():
@@ -906,6 +934,59 @@ def main():
         errs = con.limpias()
         check(not errs, "ningún error de JS ni excepción sin capturar"
               + (":\n     " + "\n     ".join(errs[:8]) if errs else ""))
+
+        # ── 17. copia local retenida por otra ventana (IndexedDB) ─────────────
+        # Regresión de la 0.9.9. Al subir DB_VERSION (v3 → v4 en la 0.9.8), una
+        # ventana con el código anterior retenía la BD: el open() de la ventana
+        # actualizada no resolvía NUNCA —la app se veía a medias y sin error— y el
+        # deleteDatabase de /actualizar, encolado detrás de ese open bloqueado, se
+        # quedaba en "…" para siempre. Este bloque monta ese escenario a mano.
+        seccion("Copia local retenida por otra ventana (IndexedDB)")
+        dbv = _version_del_store()
+        if not check(bool(dbv), f"se lee DB_VERSION de store.js ({dbv})"):
+            dbv = 0
+        if dbv:
+            ctx2 = navegador.new_context(viewport={"width": 1200, "height": 800})
+            vieja = ctx2.new_page()
+            vieja.goto(BASE + "/api/config")      # mismo origen y sin cargar la app
+            vieja.evaluate(_abrir_version_vieja(dbv - 1))
+
+            nueva = ctx2.new_page()
+            nueva.goto(BASE + "/planificacion")
+            nueva.wait_for_timeout(5000)
+            check("otra ventana" in (nueva.text_content("#net-badge") or ""),
+                  "la app avisa en el badge en vez de quedarse muda")
+
+            rep = ctx2.new_page()
+            rep.goto(BASE + "/actualizar")
+            rep.wait_for_timeout(7000)
+            pasos = [" ".join(t.split())
+                     for t in rep.locator("#pasos li").all_text_contents()]
+            check(len(pasos) == 4, f"/actualizar termina sus 4 pasos ({len(pasos)})")
+            check(any("otra ventana" in t for t in pasos),
+                  "y dice que la copia local la retiene otra ventana")
+            check(rep.is_visible("#aviso") and rep.is_visible("#reintentar"),
+                  "con el aviso de qué hacer y el botón de reintentar")
+
+            vieja.close()                          # se cierra la ventana culpable
+            nueva.reload()
+            nueva.wait_for_selector("#sec-planes .plan-card", timeout=20000)
+            check(nueva.locator("#sec-planes .plan-card").count() >= 1,
+                  "cerrada la ventana vieja, la app carga (la BD migra sola)")
+
+            # Y con dos ventanas al día, /actualizar borra de verdad: la otra
+            # suelta la conexión al recibir el aviso por BroadcastChannel.
+            rep2 = ctx2.new_page()
+            rep2.goto(BASE + "/actualizar")
+            rep2.wait_for_timeout(6000)
+            pasos = [" ".join(t.split())
+                     for t in rep2.locator("#pasos li").all_text_contents()]
+            check(any("borrada" in t for t in pasos),
+                  "con la app abierta al día, /actualizar SÍ borra la copia local")
+            bases = rep2.evaluate(
+                "async () => (await indexedDB.databases()).map(d => d.name)")
+            check("sendero" not in bases, "y la base deja de existir")
+            ctx2.close()
 
         navegador.close()
 

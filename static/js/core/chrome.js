@@ -116,15 +116,40 @@ function _netBadge(text, cls) {
 /* `typeof Store`, no `window.Store`: ver el comentario del listener del nav. */
 const _tieneStore = () => typeof Store !== 'undefined';
 
+/* Copia local bloqueada por otra ventana: sin este aviso la app se queda con los
+   listados vacíos y sin explicación (era el síntoma de "no cargan las opciones"
+   al publicar una versión que sube el almacén del Store). Se cuenta UNA vez: el
+   evento puede repetirse con cada lectura que lo reintente. */
+let _dbBlockedAvisado = false;
+function _dbBlocked() {
+  _netBadge('otra ventana', 'off');
+  if (_dbBlockedAvisado) return;
+  _dbBlockedAvisado = true;
+  // Con retraso a propósito: la sección que estaba cargando también avisa ("no se
+  // pudo cargar la lista…") y comparten el mismo #toast. El último gana, y el que
+  // tiene que quedarse es el que dice qué hacer.
+  setTimeout(() => toast('Sendero sigue abierto en otra ventana con una versión '
+    + 'anterior: ciérrala y recarga esta página (o abre /actualizar)'), 900);
+}
+
 function _netRefresh(ev) {
+  if (ev && ev.type === 'db-blocked') { _dbBlocked(); return; }
+  // Pegajoso: cualquier otro evento repinta el badge, y mientras la copia local
+  // siga bloqueada el aviso no puede desaparecer (la app no puede leer nada).
+  if (_tieneStore() && Store.dbBlocked()) { _dbBlocked(); return; }
   if (navigator.onLine === false) { _netBadge('sin conexión', 'off'); return; }
   if (ev && ev.type === 'syncing') { _netBadge('sincronizando'); return; }
   const pend = _tieneStore() ? Store.pendingCount() : Promise.resolve(0);
+  /* Los dos callbacks vuelven a mirar el estado: este contador se pide antes de
+     saber que la copia local está bloqueada, y al resolverse (o fallar, que es lo
+     que hace cuando lo está) pisaba el aviso que ya se había pintado. */
+  const _bloqueada = () => _tieneStore() && Store.dbBlocked();
   pend.then(n => {
     if (navigator.onLine === false) return;               // cambió mientras tanto
+    if (_bloqueada()) { _dbBlocked(); return; }
     if (n > 0) _netBadge(`${n} sin enviar`, 'pend');
     else _netBadge('');
-  }).catch(() => _netBadge(''));
+  }).catch(() => { if (_bloqueada()) _dbBlocked(); else _netBadge(''); });
 }
 
 window.addEventListener('online',  () => _netRefresh());

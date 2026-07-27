@@ -46,9 +46,32 @@ const Store = (() => {
 
   /* ── infraestructura IndexedDB ─────────────────────────────────────────── */
 
+  /* Abrir la BD, con las DOS trampas de IndexedDB cubiertas. Sin ellas, subir
+     `DB_VERSION` deja la app colgada en cuanto queda otra ventana abierta con el
+     código anterior — pasó al publicar la 0.9.8 (v3 → v4):
+
+     (a) `onversionchange`: lo recibe ESTA conexión cuando otra ventana quiere
+         migrar la BD. Si no se cierra, el upgrade de la otra no empieza NUNCA.
+     (b) `onblocked`: lo recibimos cuando somos nosotros los que esperamos y otra
+         ventana no ha soltado su conexión. Antes no se escuchaba, así que la
+         promesa no se resolvía ni se rechazaba: cada lectura quedaba pendiente
+         para siempre y la app se veía a medias, sin un error que lo explicara.
+         Peor aún, el `deleteDatabase` de /actualizar se encolaba DETRÁS de ese
+         open() pendiente y tampoco recibía evento alguno, que es por lo que esa
+         página se quedaba en "…" en el paso de la copia local.
+
+     `_opening` cachea la promesa: dos lecturas simultáneas al arrancar no deben
+     lanzar dos open() (y por tanto dos avisos de bloqueo). */
+  let _opening = null;
+  /* Pegajoso: la app no puede leer NADA mientras otra ventana retenga la BD, y el
+     aviso tiene que sobrevivir a cualquier repintado del badge (chrome.js lo
+     consulta con Store.dbBlocked()). */
+  let _blocked = false;
+
   function open() {
     if (_db) return Promise.resolve(_db);
-    return new Promise((resolve, reject) => {
+    if (_opening) return _opening;
+    _opening = new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
@@ -57,10 +80,46 @@ const Store = (() => {
           db.createObjectStore(name, opts);
         }
       };
-      req.onsuccess = () => { _db = req.result; resolve(_db); };
+      req.onblocked = () => {
+        _blocked = true;
+        emit({type: 'db-blocked'});
+        reject(Object.assign(
+          new Error('otra ventana de Sendero tiene la copia local abierta con una '
+                  + 'versión anterior'), {dbBlocked: true}));
+      };
+      req.onsuccess = () => {
+        _db = req.result;
+        _blocked = false;
+        // (a) Otra ventana con código más nuevo pide migrar: soltamos la BD para
+        // no bloquearla. `_db = null` es obligatorio: usar una conexión cerrada
+        // lanzaría InvalidStateError en la siguiente transacción.
+        _db.onversionchange = () => releaseDb();
+        _db.onclose = () => { _db = null; };
+        resolve(_db);
+      };
       req.onerror = () => reject(req.error);
     });
+    // Un fallo no debe quedarse cacheado: el siguiente intento (o el reintento
+    // tras cerrar la otra ventana) tiene que poder abrir de nuevo.
+    _opening.catch(() => {}).then(() => { _opening = null; });
+    return _opening;
   }
+
+  /* Suelta la conexión (por `versionchange` o porque /actualizar la pide para
+     poder borrar la BD). Idempotente. */
+  function releaseDb() {
+    if (!_db) return;
+    try { _db.close(); } catch (e) {}
+    _db = null;
+  }
+
+  /* /actualizar corre en su propia página y no puede cerrar NUESTRA conexión:
+     nos lo pide por aquí antes de llamar a deleteDatabase(). Sin esto, borrar la
+     copia local con la app abierta en otra pestaña se queda bloqueado. */
+  try {
+    const _bc = new BroadcastChannel('sendero-db');
+    _bc.onmessage = ev => { if (ev && ev.data === 'release') releaseDb(); };
+  } catch (e) { /* navegador sin BroadcastChannel: /actualizar avisa y ya */ }
 
   function tx(names, mode, fn) {
     return open().then(db => new Promise((resolve, reject) => {
@@ -438,7 +497,7 @@ const Store = (() => {
   }
 
   return {
-    open, meta, setMeta, onChange, isOnline,
+    open, meta, setMeta, onChange, isOnline, dbBlocked: () => _blocked,
     syncNow, checkState, verify, diffManifest,
     routes, planned, route, plan, routeRow, planRow, putDetail, patchPlanRow,
     prefetchAll, usage, clearLocal,

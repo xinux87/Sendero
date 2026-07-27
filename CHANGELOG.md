@@ -5,6 +5,26 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.9] — 2026-07-27
+
+### Corregido
+- **La app se quedaba a medias tras actualizar, y `/actualizar` no terminaba.** Si quedaba
+  otra ventana de Sendero abierta con la versión anterior (típico con la app instalada), esa
+  ventana retenía la copia local y la ventana actualizada **no podía abrirla nunca**:
+  listados vacíos, sin ningún error que lo explicara. Y la página `/actualizar` se quedaba
+  clavada en «Copia local de rutas y planes …» sin llegar al final. Salió al publicar la
+  0.9.8, que subió el formato del almacén local. Tres arreglos:
+  - Al pedir otra ventana una migración, esta **suelta la copia local** en vez de
+    bloquearla (`versionchange`), así que ya no hace falta cerrar nada a mano.
+  - Si es esta la que espera, ahora **lo dice**: chapa «otra ventana» en la cabecera y un
+    aviso explicando que hay que cerrar la otra ventana y recargar, en lugar de una pantalla
+    incompleta.
+  - `/actualizar` **siempre termina**: pide a las demás ventanas que suelten la copia local
+    antes de borrarla, tiene un tope de tiempo por paso y, si de verdad no puede, lo dice
+    con un botón de reintentar. Antes, además, podía decir «borrada» sin haberla borrado.
+- La suite `tests/e2e_spa.py` monta ese escenario (135 comprobaciones): sin el arreglo,
+  falla.
+
 ## [0.9.8] — 2026-07-27
 
 ### Añadido

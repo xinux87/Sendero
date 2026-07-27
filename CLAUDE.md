@@ -348,7 +348,7 @@ archivo, nunca en `mount()`.
 | GET | `/app-shell` | `shell.html` **sin** `bootstrap_json`. Lo precachea el Service Worker y es lo que se sirve al navegar sin conexión a una vista que el shell aloja |
 | GET | `/sw.js` | `static/sw.js` con `self.APP_VERSION = "X.Y.Z"` inyectada delante (`Cache-Control: no-cache`, `Service-Worker-Allowed: /`) |
 | GET | `/manifest.webmanifest` | manifiesto de la PWA (`application/manifest+json`). El `<link>` de `base.html` lo pide con `crossorigin="use-credentials"` (ver Quirks: proxy con autenticación) |
-| GET | `/actualizar` | página de reparación: desregistra el Service Worker, borra sus cachés, la IndexedDB del Store y las preferencias de sesión, y ofrece volver a la app. `Cache-Control: no-store`, el SW **no la intercepta** y su JS va inline (un `<script src>` podría venir de la caché vieja, que es el problema que arregla). Enlazada desde Ajustes → Sin conexión |
+| GET | `/actualizar` | página de reparación: desregistra el Service Worker, borra sus cachés, la IndexedDB del Store y las preferencias de sesión, y ofrece volver a la app. Antes de borrar la copia local pide a las demás ventanas que la suelten (`BroadcastChannel('sendero-db')`, lo escucha `store.js`) y **acota cada paso en el tiempo**: si otra ventana la retiene, lo dice y ofrece reintentar en vez de quedarse colgada (ver "Bugs corregidos"). `Cache-Control: no-store`, el SW **no la intercepta** y su JS va inline (un `<script src>` podría venir de la caché vieja, que es el problema que arregla). Enlazada desde Ajustes → Sin conexión |
 | GET | `/api/routes` | lista paginada (incluye `thumb_file`); sin `limit` devuelve todas (es barata, ~130 KB/500 rutas) |
 | GET | `/api/routes/geojson` | FeatureCollection de líneas decimadas (props: id, name, activity, year, km). Acepta `?bbox=minLon,minLat,maxLon,maxLat`; sin él devuelve todas (no lo usa el dashboard salvo fallback) |
 | POST | `/api/routes` | crea ruta desde GPX o FIT; genera thumb. Dedup (ver sección): 409 exacta (hash) o blanda (firma); `?auto=1` importa la blanda marcada (`dup_suspect_of`) en vez de bloquear; `?force=1` la importa limpia (el usuario ya la aceptó en la web) |
@@ -1032,6 +1032,26 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 
 ## Bugs corregidos (no reintroducir)
 
+- **Subir `DB_VERSION` colgaba la app y dejaba `/actualizar` a medias** (0.9.8 → 0.9.9).
+  IndexedDB no deja migrar una BD mientras otra conexión la tenga abierta con la versión
+  anterior, y `store.js` no cubría **ninguno** de los dos lados de eso:
+  (a) no escuchaba `versionchange`, así que una ventana con código viejo bloqueaba la
+  migración de la nueva para siempre; (b) no escuchaba `onblocked`, así que la promesa de
+  `open()` **no se resolvía ni se rechazaba** — cada lectura quedaba pendiente y la app se
+  veía a medias, sin error, que es el síntoma clásico de "código viejo pegado" y por eso se
+  diagnostica mal. El remate: el `deleteDatabase()` de `/actualizar` se encolaba DETRÁS de
+  ese `open()` bloqueado y **tampoco recibía evento alguno** (ni `success` ni `blocked`), de
+  modo que la página se quedaba en «Copia local de rutas y planes …» sin terminar; y en el
+  caso más benigno (misma versión, app abierta en otra pestaña) resolvía en `onblocked` y
+  cantaba «borrada» sin haber borrado nada.
+  Hoy: `_db.onversionchange` suelta la conexión, `onblocked` rechaza con `dbBlocked` y
+  avisa (`emit({type:'db-blocked'})` → chapa «otra ventana» + toast en `chrome.js`, pegajoso
+  vía `Store.dbBlocked()` porque el `pendingCount()` en vuelo pisaba el badge), `/actualizar`
+  pide `release` por `BroadcastChannel('sendero-db')` antes de borrar y **acota cada paso en
+  el tiempo**. Lo cubre el bloque 17 de `tests/e2e_spa.py` (comprobado que FALLA si se
+  revierte). Si vuelves a subir `DB_VERSION`, no toques nada de esto sin volver a pasar ese
+  bloque.
+
 - **Re-detección de actividad borraba la elegida a mano y falseaba los umbrales GPS**
   — `_reanalyse_and_update` (rescan + todos los guardados del editor) recalculaba
   `activity_type` desde el nombre y el `<type>` del GPX; con nombre tipo fecha y un
@@ -1177,7 +1197,11 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
     **o `/api/planned`**, sube `DB_VERSION` en `static/js/core/store.js`: su
     `onupgradeneeded` vacía los almacenes de IndexedDB y los clientes se rehacen la copia.
     (Va por 4: el 3 fue el resumen de `gps_issues`/`n_photos` del listado de rutas y el 4,
-    `completed_at`/`completed_route_public` en el de planes.) Es la ÚNICA caché de datos
+    `completed_at`/`completed_route_public` en el de planes.) **Subirla no es gratis**: una
+    ventana abierta con el código anterior retiene la BD y bloquea la migración, así que
+    `store.js` tiene que seguir soltando la conexión en `versionchange` y avisando en
+    `onblocked` — ver "Bugs corregidos" y el bloque 17 de `tests/e2e_spa.py`.
+    El almacén del Store es la ÚNICA caché de datos
     que queda (el `sessionStorage` con TTL de 10 min, `sendero_routes_v4`, murió con la
     migración de "Mis Rutas" al Store; en `sessionStorage` solo quedan los filtros de la
     lista, que son preferencias). Añadir `thumb_file` sin invalidar causó en su día que se
@@ -1413,12 +1437,17 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tocaste el CSS del modal Immich (`static/css/detalle.css`): comprueba que
   `#sec-detalle .overlay.hidden` sigue ocultando el modal al cargar la ruta.
 - Con Playwright disponible, la comprobación de verdad es `python tests/e2e_spa.py`
-  (127 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
+  (135 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
   Worker, modo sin conexión y cola de escrituras). Necesita un servidor con
   `SENDERO_DATA` **de pruebas** y `python tests/e2e_seed.py` para sembrarlo.
 - Si tocaste `/actualizar` o el Service Worker: comprueba que la página sigue llegando de
   red (el SW no debe interceptarla) y que deja SW, cachés, IndexedDB y sessionStorage a
-  cero; y que al volver a la app se rehacen los cuatro.
+  cero; y que al volver a la app se rehacen los cuatro. **Y que termina siempre**: con la app
+  abierta en otra pestaña debe borrar de verdad (no decir «borrada» sin borrar), y con una
+  ventana que retenga una versión anterior del almacén debe decirlo y ofrecer reintentar
+  (bloque 17 de `tests/e2e_spa.py`).
+- Si subiste `DB_VERSION` en `store.js`: pasa el bloque 17 de `tests/e2e_spa.py`. Migrar con
+  otra ventana abierta es lo que colgaba la app en la 0.9.8 (ver "Bugs corregidos").
 - Si tocaste la PWA (`static/sw.js`, `api/pwa.py`, el precache): `node tests/sw_smoke.js`,
   y comprueba que **todas** las URLs de `PRECACHE_URLS` devuelven 200 (un 404 se salta sin
   romper la instalación, pero deja esa pieza sin cachear y la app no arranca sin conexión).

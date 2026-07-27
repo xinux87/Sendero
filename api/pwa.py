@@ -72,6 +72,11 @@ li{padding:8px 0;border-bottom:1px solid rgba(236,229,216,.09);
 li span:last-child{color:#8b9a8f;font-family:ui-monospace,monospace;font-size:12.5px}
 a.btn{display:inline-block;background:#e2492c;color:#fff5ec;text-decoration:none;
   border-radius:999px;padding:11px 20px;font-size:14px}
+a.btn.ghost{background:none;color:#ece5d8;border:1px solid rgba(236,229,216,.16);
+  margin-left:8px}
+.aviso{color:#e3b23c;border:1px solid #e3b23c;border-radius:10px;padding:12px 14px;
+  font-size:13.5px;line-height:1.6}
+.aviso strong{color:#ece5d8}
 .ok{color:#43b97f}.err{color:#e2492c}
 </style></head><body><div class="caja">
 <h1>Actualizar Sendero</h1>
@@ -79,7 +84,9 @@ a.btn{display:inline-block;background:#e2492c;color:#fff5ec;text-decoration:none
 copia local de rutas y planes. No toca nada del servidor: al volver, la app se
 descarga de cero y se sincroniza otra vez.</p>
 <ul id="pasos"></ul>
+<p id="aviso" class="aviso" style="display:none"></p>
 <a class="btn" id="volver" href="/rutas" style="display:none">Abrir Sendero</a>
+<a class="btn ghost" id="reintentar" href="/actualizar" style="display:none">Reintentar</a>
 </div>
 <script>
 /* Inline a propósito: si el navegador se ha quedado con JS viejo en caché, un
@@ -93,7 +100,19 @@ function paso(txt) {
   return (res, mal) => { li.lastElementChild.textContent = res;
                          li.lastElementChild.className = mal ? 'err' : 'ok'; };
 }
+/* NINGÚN paso puede colgar la página. `borrar la copia local` sí podía: si otra
+   ventana tiene la BD abierta (típico con la PWA instalada, o tras subir la
+   versión del almacén), el deleteDatabase se queda esperando y encima puede no
+   recibir ni el evento `blocked` — cuando la petición se encola detrás de un
+   open() que también está bloqueado. Con un tope de tiempo, la página siempre
+   termina y explica qué falta hacer. */
+function conTiempo(promesa, ms) {
+  return Promise.race([promesa,
+    new Promise(res => setTimeout(() => res('__timeout__'), ms))]);
+}
 (async () => {
+  let bloqueada = false;
+
   let p = paso('Service Workers registrados');
   try {
     const regs = await navigator.serviceWorker.getRegistrations();
@@ -110,15 +129,34 @@ function paso(txt) {
 
   p = paso('Copia local de rutas y planes');
   try {
-    await new Promise(res => { const r = indexedDB.deleteDatabase('sendero');
-      r.onsuccess = r.onerror = r.onblocked = () => res(); });
-    p('borrada');
+    // Pedir a las demás ventanas que suelten la BD (lo escucha core/store.js).
+    // Las que sigan con código anterior a la 0.9.9 no atienden, y por eso existe
+    // el tope de tiempo y el aviso.
+    try { new BroadcastChannel('sendero-db').postMessage('release'); } catch (e) {}
+    await new Promise(res => setTimeout(res, 200));
+    const r = await conTiempo(new Promise(res => {
+      const req = indexedDB.deleteDatabase('sendero');
+      req.onsuccess = () => res('borrada');
+      req.onerror   = () => res('error');
+      req.onblocked = () => res('__bloqueada__');
+    }), 4000);
+    if (r === 'borrada') p('borrada');
+    else { bloqueada = true; p('la tiene otra ventana', true); }
   } catch (e) { p('no se pudo', true); }
 
   p = paso('Preferencias de la sesión');
   try { sessionStorage.clear(); localStorage.clear(); p('limpias'); }
   catch (e) { p('no se pudo', true); }
 
+  if (bloqueada) {
+    const av = document.getElementById('aviso');
+    av.innerHTML = 'La copia local no se pudo borrar porque <strong>Sendero sigue '
+      + 'abierto en otra ventana</strong> (o en la app instalada). El código y las '
+      + 'cachés ya están limpios: cierra <strong>todas</strong> las ventanas y la app '
+      + 'de Sendero, y vuelve a abrir esta página.';
+    av.style.display = 'block';
+    document.getElementById('reintentar').style.display = 'inline-block';
+  }
   document.getElementById('volver').style.display = 'inline-block';
 })();
 </script></body></html>"""
