@@ -36,6 +36,10 @@ sincronización delta. Lo que eso significa en la práctica:
 - **Al publicar**: `APP_VERSION` invalida el precache del Service Worker, así que ningún
   cambio de frontend debe salir sin subir la versión (ver "Publicar una versión").
 
+> Lo que queda por hacer, lo que falta por probar y lo que se ha descartado a propósito
+> está en **`WHATS_NEXT.md`**. Míralo antes de proponer trabajo nuevo: la lista de
+> descartados existe para no reabrir discusiones ya cerradas.
+
 ## Comandos
 ```bash
 # desarrollo
@@ -569,9 +573,10 @@ hash leyendo el archivo; solo filas con `content_hash IS NULL`). Al añadir la c
 
 ### Auto-importación Mi Fit / Zepp (`core/mifit/` + `mifit_sync.py` + `api/mifit.py`)
 Descarga los entrenamientos del reloj Amazfit/Zepp/Mi Fit (API de Huami) y los
-importa como rutas. Funciona con el **token pegado a mano**; capturarlo con un clic
-(un servicio-navegador `mifit-auth` con Firefox/noVNC) está pensado pero **sin hacer**,
-y es lo único pendiente de esta pieza.
+importa como rutas. Funciona con el **token pegado a mano**, y así se queda: capturarlo
+con un clic (un servicio-navegador `mifit-auth` con Firefox/noVNC) se llegó a plantear y
+está **descartado** — un navegador entero en un contenedor para copiar una cadena que
+caduca de vez en cuando no compensa. No lo reabras sin motivo nuevo.
 - **`core/mifit/`** — vendorizado de MiFitDataExport (solo GPX-por-token).
   `iter_new_workouts(api, since_trackid)` genera `(trackid, nombre, gpx_str)` de lo
   nuevo con GPS, en orden ascendente; salta los indoor (sin puntos). El GPX nombra el

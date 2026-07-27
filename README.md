@@ -228,7 +228,7 @@ Configuración en **Ajustes → Mi Fit / Zepp**:
 
 Luego **↻ Sincronizar ahora** (trae lo nuevo desde la última vez) o **⟳ Reimportar desde la fecha** (vuelve a revisar el historial desde la fecha elegida). El panel muestra el estado y la **fecha y hora de la última sincronización**. Los entrenamientos indoor sin GPS se ignoran.
 
-> **Nota:** el token de Huami caduca cada cierto tiempo; cuando pase, el panel avisa y basta con pegar uno nuevo. La captura del token con un clic (navegador integrado) está planificada, aún no disponible.
+> **Nota:** el token de Huami caduca cada cierto tiempo; cuando pase, el panel avisa y basta con pegar uno nuevo. Se pega a mano a propósito: montar un navegador dentro del contenedor solo para copiar esa cadena no compensa.
 
 ### Deduplicación (no se repiten rutas)
 
@@ -308,5 +308,6 @@ El endpoint `POST /api/routes` permite automatizar la importación: un script qu
 ---
 
 <p align="center">
-  <sub>Novedades de cada versión en el <a href="CHANGELOG.md">CHANGELOG</a>.</sub>
+  <sub>Novedades de cada versión en el <a href="CHANGELOG.md">CHANGELOG</a> ·
+  lo que viene después, en <a href="WHATS_NEXT.md">WHATS_NEXT</a>.</sub>
 </p>
