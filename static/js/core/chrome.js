@@ -372,11 +372,57 @@ async function openSettings(){
   loadMaps();
   loadMifit();
   loadOffline();
+  mantEstado();
   cfgSection('immich',$('#cfg-nav-immich'));
   $('#cfg-overlay').classList.remove('hidden');
 }
 
 function closeSettings(){ clearInterval(_mifitPoll); $('#cfg-overlay').classList.add('hidden'); }
+
+/* ── Ajustes → Mantenimiento ───────────────────────────────────────────────
+   Enseña la versión que sirve el servidor y la que tiene guardada ESTE
+   navegador. El dato clave es el nombre de la caché del Service Worker
+   (`sendero-shell-<versión>`): si no coincide con la del servidor, o hay un SW
+   "en espera", es que el navegador sigue con código de la versión anterior —
+   justo lo que arregla el botón de arriba. */
+async function mantEstado(){
+  const box = $('#mant-estado');
+  if (!box) return;                       // documentos que no traen esta sección
+  const fila = (k, v, mal) =>
+    `<div style="display:flex;justify-content:space-between;gap:12px">
+       <span>${k}</span><span style="color:${mal ? 'var(--gr-red)' : 'var(--ink)'}">${v}</span></div>`;
+  let srv = '?';
+  try { srv = (await (await fetch('/api/config', {cache: 'no-store'})).json()).version || '?'; }
+  catch (e) { srv = 'sin conexión'; }
+
+  let cacheVer = null, nCaches = 0, teselas = 0, sw = 'no registrado', espera = false;
+  try {
+    const nombres = await caches.keys();
+    nCaches = nombres.length;
+    const shell = nombres.find(n => n.startsWith('sendero-shell-'));
+    if (shell) cacheVer = shell.replace('sendero-shell-', '');
+    if (nombres.includes('sendero-tiles-v1')) {
+      teselas = (await (await caches.open('sendero-tiles-v1')).keys()).length;
+    }
+    const regs = await navigator.serviceWorker.getRegistrations();
+    if (regs.length) {
+      sw = regs[0].active ? 'activo' : 'instalándose';
+      espera = !!regs[0].waiting;
+    }
+  } catch (e) { /* navegador sin Service Worker o sin permisos: se dice lo que haya */ }
+
+  const desfase = cacheVer && cacheVer !== srv;
+  box.innerHTML =
+      fila('Versión en el servidor', srv)
+    + fila('Versión guardada aquí', cacheVer || '—', desfase)
+    + fila('Service Worker', sw + (espera ? ' · hay una versión nueva esperando' : ''), espera)
+    + fila('Cachés del navegador', nCaches)
+    + fila('Teselas de mapa guardadas', teselas)
+    + ((desfase || espera)
+        ? `<div style="margin-top:8px;color:var(--pr-yellow)">Este navegador no está en la
+             versión del servidor: usa el botón de arriba.</div>`
+        : '');
+}
 
 function cfgSection(name,btn){
   document.querySelectorAll('.cfg-nav-item').forEach(b=>b.classList.remove('on'));

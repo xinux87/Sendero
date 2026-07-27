@@ -1215,8 +1215,10 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   anterior; y con una PWA instalada el Service Worker no se releva mientras quede una
   ventana viva. Síntoma: "no cargan las opciones", botones que no responden, secciones a
   medias — sin ningún error claro en el servidor. Salida: **`/actualizar`** (enlazado en
-  Ajustes → Sin conexión), que borra SW, cachés, IndexedDB y sesión; o cerrar del todo la
-  PWA. Antes de sospechar del código, comprueba la misma URL en una ventana de incógnito:
+  Ajustes → **Mantenimiento**), que borra SW, cachés, IndexedDB y sesión; o cerrar del todo
+  la PWA. Esa sección del modal muestra además la versión que sirve el servidor frente a la
+  que tiene guardada el navegador (`mantEstado()` en `chrome.js`, que la deduce del nombre
+  de la caché `sendero-shell-<versión>`): si no coinciden, es esto. Antes de sospechar del código, comprueba la misma URL en una ventana de incógnito:
   si ahí funciona, es esto.
 - **Detrás de un proxy con autenticación** (Pangolin, Authelia, oauth2-proxy…), el
   `<link rel="manifest">` de `base.html` NECESITA `crossorigin="use-credentials"`. Es el

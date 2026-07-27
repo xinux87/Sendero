@@ -425,6 +425,8 @@ header .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;marg
                 onclick="cfgSection('mifit',this)">Mi Fit / Zepp</button>
         <button id="cfg-nav-offline" class="cfg-nav-item"
                 onclick="cfgSection('offline',this)">Sin conexión</button>
+        <button id="cfg-nav-mantenimiento" class="cfg-nav-item"
+                onclick="cfgSection('mantenimiento',this)">Mantenimiento</button>
       </nav>
       <div class="cfg-sidebar-ver mono">Sendero v{{ app_version }}</div>
     </div>
@@ -656,21 +658,50 @@ header .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;marg
         </div>
         <button class="btn ghost sm" onclick="offClear()"
                 style="border-color:var(--gr-red);color:var(--gr-red)">Vaciar copia local</button>
-
-        <hr class="cfg-actions-sep">
-        <div class="cfg-subhead"><span class="n">6</span> Forzar la actualización de la app</div>
-        <div class="cfg-hint" style="margin-bottom:10px">
-          Si tras publicar una versión la app se comporta raro (botones que no responden,
-          pantallas a medias), puede que el navegador se haya quedado con el código de la
-          versión anterior. Esto abre una página que <strong style="color:var(--ink)">borra el
-          código guardado y la copia local</strong> y vuelve a descargar todo. Es la salida
-          sin tener que buscar cómo se borran los datos del sitio en cada navegador.
+        <div class="cfg-hint" style="margin-top:10px">
+          ¿La app se ve rara o a medias después de una actualización? Eso no se arregla aquí:
+          está en <strong style="color:var(--ink)">Ajustes → Mantenimiento</strong>.
         </div>
-        {# Enlace normal, no fetch: la página tiene que llegar de red y ejecutarse fuera de
-           este documento. Va en el HTML (no en el JS) a propósito, para que siga estando
-           aunque el navegador tenga el JS viejo en caché — que es justo el caso que arregla. #}
-        <a class="btn ghost sm" href="/actualizar"
-           style="text-decoration:none">↻ Actualizar la app en este dispositivo</a>
+      </div>
+
+      <!-- ── MANTENIMIENTO ─────────────────────────────────────────────────
+           El solucionador de problemas de caché. Sección propia y no un apartado
+           dentro de "Sin conexión" porque es lo que se busca con prisa cuando la
+           app se ve rota, y ahí abajo no lo encontraba nadie. -->
+      <div id="cfg-sec-mantenimiento" class="cfg-sec-content hidden">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 20px;line-height:1.6">
+          Sendero guarda su propio código en el navegador para poder funcionar sin conexión.
+          El efecto secundario es que, al publicar una versión nueva, el navegador puede
+          quedarse con parte de la anterior.
+        </p>
+
+        <div class="cfg-subhead"><span class="n">1</span> La app se ve rara tras actualizar</div>
+        <div class="cfg-hint" style="margin-bottom:10px">
+          Síntomas típicos: <strong style="color:var(--ink)">botones que no responden, opciones
+          que no cargan o pantallas a medias</strong>, sin ningún error aparente. Para
+          confirmarlo, abre la misma dirección en una <strong style="color:var(--ink)">ventana
+          de incógnito</strong>: si ahí funciona bien, es el código que este navegador tenía
+          guardado, no el servidor.
+        </div>
+        <div class="cfg-hint" style="margin-bottom:12px">
+          El botón abre una página que borra el código guardado, sus cachés, la copia local de
+          rutas y planes y las preferencias de esta sesión, y vuelve a descargarlo todo.
+          <strong style="color:var(--ink)">No toca nada del servidor</strong>: tus rutas, fotos
+          y ajustes siguen intactos. Si tienes Sendero instalada como app, hazlo desde dentro
+          de la app (cerrar la ventana no basta).
+        </div>
+        {# Enlace normal, no fetch ni onclick: la página tiene que llegar de red y ejecutarse
+           fuera de este documento. Y va en el HTML, no en el JS, a propósito: así sigue
+           estando aunque el navegador tenga el JS viejo en caché, que es el caso que arregla. #}
+        <a class="btn" href="/actualizar" style="text-decoration:none;margin-bottom:24px">
+          ↻ Actualizar la app en este dispositivo</a>
+
+        <div class="cfg-subhead" style="margin-top:28px"><span class="n">2</span> Estado de esta instalación</div>
+        <div class="cfg-hint" style="margin-bottom:10px">
+          Lo que hay ahora mismo en <em>este</em> navegador. Si la versión de la app no coincide
+          con la que acabas de publicar, es justo el caso de arriba.
+        </div>
+        <div id="mant-estado" class="cfg-hint mono" style="line-height:1.9">Cargando…</div>
       </div>
 
       <!-- sección Mi Fit / Zepp -->

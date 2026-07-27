@@ -8,8 +8,13 @@ panel de Ajustes y en `GET /api/config`.
 ## [0.9.1] — 2026-07-26
 
 ### Añadido
-- **Página de reparación `/actualizar`**, enlazada desde Ajustes → Sin conexión («Actualizar
-  la app en este dispositivo»). Desregistra el Service Worker, borra sus cachés, la copia
+- **Sección «Mantenimiento» en Ajustes**, con el solucionador de problemas de caché: explica
+  el síntoma (botones que no responden, opciones que no cargan), cómo confirmarlo en una
+  ventana de incógnito, el botón que lo arregla, y el **estado de este navegador** — versión
+  que sirve el servidor frente a la que tiene guardada el dispositivo, estado del Service
+  Worker y cachés. Si las versiones no coinciden, lo dice en ámbar.
+- **Página de reparación `/actualizar`**, a la que lleva ese botón («Actualizar la app en
+  este dispositivo»). Desregistra el Service Worker, borra sus cachés, la copia
   local (IndexedDB) y las preferencias de sesión, y ofrece volver a la app, que se descarga
   de cero. Existe porque el peor fallo de esta arquitectura es quedarse con el código de la
   versión anterior pegado en el navegador —el síntoma es "no cargan las opciones", sin

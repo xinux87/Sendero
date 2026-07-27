@@ -146,7 +146,7 @@ El precio de que la app funcione sin conexión es que el navegador guarda su có
 
 La forma rápida de saber si es eso: **abre la misma dirección en una ventana de incógnito**. Si ahí funciona bien, no es la app ni el servidor — es lo que tu navegador tenía guardado.
 
-Para arreglarlo, abre **`/actualizar`** (por ejemplo `https://tu-sendero/actualizar`, también en **Ajustes → Sin conexión → «Actualizar la app en este dispositivo»**). Esa página borra el código guardado, sus cachés y la copia local de rutas y planes, y te deja volver a la app, que se descarga de cero y se sincroniza otra vez. **No toca nada del servidor**: tus rutas, fotos y ajustes siguen intactos.
+Para arreglarlo, abre **`/actualizar`** (por ejemplo `https://tu-sendero/actualizar`, también en **Ajustes → Mantenimiento → «Actualizar la app en este dispositivo»**). Esa página borra el código guardado, sus cachés y la copia local de rutas y planes, y te deja volver a la app, que se descarga de cero y se sincroniza otra vez. En **Ajustes → Mantenimiento** tienes además el estado de este navegador: qué versión sirve el servidor y cuál tiene guardada tu dispositivo, que es lo que delata el problema. **No toca nada del servidor**: tus rutas, fotos y ajustes siguen intactos.
 
 Si tienes Sendero **instalada como app**, cerrar la ventana no basta: usa `/actualizar` desde dentro de la app o desinstálala y vuelve a instalarla.
 
