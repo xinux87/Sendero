@@ -5,6 +5,36 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.4] — 2026-07-27
+
+### Cambiado
+- **El editor de rutas adopta el rediseño**, con lo que ya son las seis vistas. Era la
+  pantalla más densa de la app y la que más ganaba con los paneles nuevos: los cinco
+  bloques (Detalles, Estadísticas, Operaciones, Avisos GPS, Historial) pasan a `.panel`
+  con `.panel-title`, las cifras a Oswald y los datos a mono. Las unidades suben al título
+  del panel («Perfil de elevación · m»), como en el detalle de ruta.
+- Las gráficas del editor usan el lenguaje del detalle: área con el degradado del color de
+  la actividad, elevación en naranja, velocidad en azul, rejilla tenue, ejes en mono y sin
+  título de eje. El eje Y pasa por `fmtNum` (1 250, no 1,250).
+- «Corregir todo» pasa de rojo sólido a ámbar contorneado: la acción primaria del editor es
+  «Guardar cambios» y las dos no deben competir.
+- La barra lateral se reparte en dos columnas entre 900 y 1199 px, en vez de apilar cinco
+  paneles en una tira muy larga.
+- Nuevo token `--ok-green` en `base.html` para el verde de «resuelto». Lo usaban el editor y
+  el dashboard como hex suelto; coincide en valor con el color de la actividad «caminata»,
+  pero es otro concepto y se documenta como tal.
+
+### Corregido
+- **Seis `onclick=` del editor no llamaban a nada** porque apuntaban a funciones internas
+  del IIFE que nunca se exportaron: «⤢ Todo» del zoom, «Corregir» de cada aviso GPS,
+  «Restaurar» del historial de versiones, y «Renombrar»/«Eliminar» del popup de un waypoint.
+  Fallaban en silencio, que es exactamente cómo se rompe una sección sin build step.
+- `resetState()` intentaba cerrar los paneles de simplificar y de picos de elevación por
+  unos ids que no existen (`simplify-panel`/`spikes-panel` en vez de `simp-panel`/
+  `spike-panel`), así que quedaban abiertos al reiniciar el estado.
+- Colocar los manejadores A/B soltaba cinco `TypeError` de MapLibre en la consola: el marker
+  se añadía al mapa antes de darle posición. Ahora `setLngLat()` va antes de `addTo()`.
+
 ## [0.9.3] — 2026-07-27
 
 ### Cambiado

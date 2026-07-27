@@ -177,6 +177,9 @@
 
   function fmt(n,dec=0){return n.toLocaleString('es-ES',{maximumFractionDigits:dec});}
 
+  /* Tarjetas al estilo del rediseño: etiqueta mono en versalitas ARRIBA y la
+     cifra debajo en Oswald. La primera lleva el acento de la actividad (borde
+     izquierdo de su color + cifra en ámbar), como la banda del detalle. */
   function renderStats(){
     const s = currentStats();
     const dl = baseStats ? s.dist - baseStats.dist : 0;
@@ -185,10 +188,10 @@
     const dn = baseStats ? s.n - baseStats.n : 0;
     const deltaN = dn !== 0 ? `<div class="delta">${dn>0?'+':'−'}${fmt(Math.abs(dn))} pts</div>` : '';
     document.getElementById('ed-stats').innerHTML = `
-      <div class="ed-stat"><div class="v">${fmt(s.dist/1000,2)} <small>km</small></div><div class="l">Distancia</div>${delta}</div>
-      <div class="ed-stat"><div class="v">${fmt(s.n)} <small>pts</small></div><div class="l">Puntos</div>${deltaN}</div>
-      <div class="ed-stat"><div class="v">+${fmt(s.asc)} <small>m</small></div><div class="l">Desnivel +</div></div>
-      <div class="ed-stat"><div class="v">−${fmt(s.desc)} <small>m</small></div><div class="l">Desnivel −</div></div>`;
+      <div class="ed-stat acc" style="border-left-color:${lineColor()}"><div class="l">Distancia</div><div class="v">${fmt(s.dist/1000,2)} <small>km</small></div>${delta}</div>
+      <div class="ed-stat"><div class="l">Puntos</div><div class="v">${fmt(s.n)} <small>pts</small></div>${deltaN}</div>
+      <div class="ed-stat"><div class="l">Desnivel +</div><div class="v">+${fmt(s.asc)} <small>m</small></div></div>
+      <div class="ed-stat"><div class="l">Desnivel −</div><div class="v">−${fmt(s.desc)} <small>m</small></div></div>`;
   }
 
   function applyState(fit=false){
@@ -441,7 +444,7 @@
     document.getElementById('mtab-verts').classList.toggle('on',m==='verts');
     document.getElementById('ops-select').style.display=m==='select'?'':'none';
     document.getElementById('mode-hint').innerHTML=m==='select'
-      ?'Haz click en la línea del mapa para colocar los manejadores <b style="color:#e3b23c">A</b> y <b style="color:#e2492c">B</b>, o arrastra sobre el perfil de elevación. Los manejadores se pueden arrastrar por el track.'
+      ?'Haz click en la línea del mapa para colocar los manejadores <b class="hnd-a">A</b> y <b class="hnd-b">B</b>, o arrastra sobre el perfil de elevación. Los manejadores se pueden arrastrar por el track.'
       :'Acércate al track (los puntos aparecen al hacer zoom). <b>Arrastra</b> un punto para moverlo, <b>Alt+click</b> lo elimina, <b>click en la línea</b> inserta un punto nuevo, <b>Shift+click</b> en el mapa añade un waypoint ⚑.';
     updateVerts();
   }
@@ -474,13 +477,15 @@
 
   function setSel(a,b){
     selA=a;selB=b;
+    /* setLngLat ANTES de addTo: un Marker recién creado no tiene posición, y
+       addTo() la lee de inmediato (TypeError 'lng' de MapLibre en consola). */
     if(selA!=null){
-      if(!handleA){handleA=makeHandle('handle-a');handleA.addTo(map);}
-      handleA.setLngLat(cur[selA]);
+      if(!handleA){handleA=makeHandle('handle-a');handleA.setLngLat(cur[selA]).addTo(map);}
+      else handleA.setLngLat(cur[selA]);
     } else if(handleA){handleA.remove();handleA=null;}
     if(selB!=null){
-      if(!handleB){handleB=makeHandle('handle-b');handleB.addTo(map);}
-      handleB.setLngLat(cur[selB]);
+      if(!handleB){handleB=makeHandle('handle-b');handleB.setLngLat(cur[selB]).addTo(map);}
+      else handleB.setLngLat(cur[selB]);
     } else if(handleB){handleB.remove();handleB=null;}
     paintSel();updateButtons();
   }
@@ -515,7 +520,7 @@
     const ctx=c.ctx,area=c.chartArea;
     ctx.save();
     ctx.beginPath();ctx.rect(area.left,area.top,area.right-area.left,area.bottom-area.top);ctx.clip();
-    ctx.fillStyle='rgba(232,196,74,.18)';
+    ctx.fillStyle='rgba(227,178,60,.18)';
     ctx.fillRect(Math.min(x1,x2),area.top,Math.abs(x2-x1),area.bottom-area.top);
     ctx.strokeStyle='#e3b23c';ctx.lineWidth=1.5;
     [x1,x2].forEach(x=>{ctx.beginPath();ctx.moveTo(x,area.top);ctx.lineTo(x,area.bottom);ctx.stroke();});
@@ -568,6 +573,8 @@
 
   // Zoom por pasos alrededor del centro de la ventana visible: sustituto táctil
   // de la rueda (botones .chart-zoom, visibles solo en @media(hover:none)).
+  function edZoomReset(){viewMin=null;viewMax=null;applyZoom();}
+
   function edZoomStep(f){
     const [mn,mx]=xRange(), total=totalKm();
     const center=(mn+mx)/2;
@@ -595,6 +602,35 @@
     return data;
   }
 
+  /* Ejes comunes a las dos gráficas, con el mismo aspecto que las del detalle:
+     rejilla tenue, marcas en mono y SIN títulos de eje — la unidad la dice el
+     título del panel («Perfil de elevación · m», «Velocidad · km/h»). */
+  const AXIS_COLOR = '#7f9184';          // = --muted-dim
+  const GRID_COLOR = 'rgba(236,229,216,.07)';
+  /* Área bajo la curva en degradado hacia transparente, igual que el perfil del
+     detalle (_areaGradient en sec/detalle.js). En el primer render chartArea aún
+     no existe: Chart.js re-evalúa la opción al actualizar. */
+  function _areaGradient(chart, hex){
+    const {ctx, chartArea} = chart;
+    if(!chartArea) return 'transparent';
+    const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    g.addColorStop(0, hex + '55');
+    g.addColorStop(1, hex + '00');
+    return g;
+  }
+  function _scales(){
+    const tick = {color:AXIS_COLOR,font:{family:"'IBM Plex Mono',monospace",size:10}};
+    // Mismo trato que en `detalle.js`: el eje Y pasa por fmtNum (1 250, no
+    // 1,250), y sin marcas ni borde de eje — la unidad la dice el título del panel.
+    return {
+      x:{type:'linear',min:xRange()[0],max:xRange()[1],
+         ticks:{...tick,maxTicksLimit:8},grid:{color:GRID_COLOR,drawTicks:false},
+         border:{display:false}},
+      y:{ticks:{...tick,callback:v => fmtNum(v)},
+         grid:{color:GRID_COLOR,drawTicks:false},border:{display:false}}
+    };
+  }
+
   function renderChart(){
     const panel=document.getElementById('profile-panel');
     if(!P.ele){panel.style.display='none';return;}
@@ -603,15 +639,12 @@
     const ctx=document.getElementById('edelev');
     if(chart)chart.destroy();
     chart=new Chart(ctx,{type:'line',plugins:[bandPlugin,issueBandsPlugin],
-      data:{datasets:[{data,fill:true,borderColor:'#e2492c',
-        backgroundColor:'rgba(210,74,58,.15)',pointRadius:0,borderWidth:2,tension:.3}]},
+      data:{datasets:[{data,fill:true,borderColor:'#f0b070',
+        backgroundColor:c=>_areaGradient(c.chart,lineColor()),
+        pointRadius:0,borderWidth:2,tension:.3}]},
       options:{animation:false,maintainAspectRatio:false,
         plugins:{legend:{display:false},tooltip:{enabled:false}},
-        scales:{
-          x:{type:'linear',min:xRange()[0],max:xRange()[1],
-             title:{display:true,text:'km',color:'#8b9a8f'},ticks:{color:'#8b9a8f',maxTicksLimit:8},grid:{color:'rgba(236,229,216,.07)'}},
-          y:{title:{display:true,text:'m',color:'#8b9a8f'},ticks:{color:'#8b9a8f'},grid:{color:'rgba(236,229,216,.07)'}}
-        }}});
+        scales:_scales()}});
     bindChartDrag(ctx, () => chart);
     bindChartZoom(ctx, () => chart);
   }
@@ -661,15 +694,12 @@
     const ctx = document.getElementById('edspeed');
     if(speedChart) speedChart.destroy();
     speedChart = new Chart(ctx,{type:'line',plugins:[bandPlugin,issueBandsPlugin],
-      data:{datasets:[{data,fill:true,borderColor:'#3a9ed8',
-        backgroundColor:'rgba(58,158,216,.12)',pointRadius:0,borderWidth:1.5,tension:.3}]},
+      data:{datasets:[{data,fill:true,borderColor:'#3d9be9',
+        backgroundColor:c=>_areaGradient(c.chart,'#3d9be9'),
+        pointRadius:0,borderWidth:1.5,tension:.3}]},
       options:{animation:false,maintainAspectRatio:false,
         plugins:{legend:{display:false},tooltip:{enabled:false}},
-        scales:{
-          x:{type:'linear',min:xRange()[0],max:xRange()[1],
-             title:{display:true,text:'km',color:'#8b9a8f'},ticks:{color:'#8b9a8f',maxTicksLimit:8},grid:{color:'rgba(236,229,216,.07)'}},
-          y:{title:{display:true,text:'km/h',color:'#8b9a8f'},ticks:{color:'#8b9a8f'},grid:{color:'rgba(236,229,216,.07)'}}
-        }}});
+        scales:_scales()}});
     bindChartDrag(ctx, () => speedChart);
     bindChartZoom(ctx, () => speedChart);
   }
@@ -1078,8 +1108,8 @@
         .setLngLat([w.lon,w.lat])
         .setPopup(new maplibregl.Popup({offset:18}).setHTML(
           `<b>${esc(w.name)||'(sin nombre)'}</b><br>
-           <button class="btn ghost sm" style="margin-top:6px" onclick="wptRename(${k})">Renombrar</button>
-           <button class="btn ghost sm" style="margin-top:6px;border-color:var(--gr-red);color:var(--gr-red)" onclick="wptDel(${k})">Eliminar</button>`))
+           <button class="btn ghost sm" style="margin-top:6px" onclick="SEC.editor.wptRename(${k})">Renombrar</button>
+           <button class="btn ghost sm" style="margin-top:6px;border-color:var(--gr-red);color:var(--gr-red)" onclick="SEC.editor.wptDel(${k})">Eliminar</button>`))
         .addTo(map);
       mk.on('dragend',()=>{
         const p=mk.getLngLat();
@@ -1258,7 +1288,7 @@
           <div class="det">máx ${it.value_max} ${unit} (umbral ${it.threshold})</div>
         </div>
         <span class="fixed-tag">✔ corregido</span>
-        <button class="btn ghost sm" onclick="fixIssue(${k})">Corregir</button>`;
+        <button class="btn ghost sm" onclick="SEC.editor.fixIssue(${k})">Corregir</button>`;
       list.appendChild(row);
     });
   }
@@ -1477,7 +1507,7 @@
     try{d=await(await fetch(`/api/routes/${R.public_id}/versions`)).json();}catch(e){return;}
     const box=document.getElementById('ver-list');
     if(!d.items.length){
-      box.innerHTML='<div style="color:var(--muted);font-size:12px">Sin ediciones todavía. Al guardar se creará el historial.</div>';
+      box.innerHTML='<div class="ed-empty">Sin ediciones todavía. Al guardar se creará el historial.</div>';
       return;
     }
     box.innerHTML='';
@@ -1494,7 +1524,7 @@
         </div>
         <div class="acts">
           <button class="btn ghost sm" title="Descargar" onclick="location.href='/api/routes/${R.public_id}/versions/${v.version_n}/gpx'">↓</button>
-          ${isCur?'':`<button class="btn ghost sm" onclick="restoreVersion(${v.version_n})">Restaurar</button>`}
+          ${isCur?'':`<button class="btn ghost sm" onclick="SEC.editor.restoreVersion(${v.version_n})">Restaurar</button>`}
         </div>`;
       box.appendChild(row);
     });
@@ -1544,7 +1574,7 @@
     mode = 'select';
     leaving = false;
     // Todos los paneles de herramientas, cerrados
-    ['simplify-panel', 'spikes-panel', 'speedfix-panel', 'shift-panel', 'merge-panel']
+    ['simp-panel', 'spike-panel', 'speedfix-panel', 'shift-panel', 'merge-panel']
       .forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     const sm = document.getElementById('save-modal');
     if (sm) sm.classList.add('hidden');
@@ -1636,8 +1666,10 @@
     doMerge,
     doSave,
     doSplit,
+    edZoomReset,
     edZoomStep,
     fixAllIssues,
+    fixIssue,
     goBack,
     opDeleteRange,
     opReverse,
@@ -1645,6 +1677,7 @@
     opTrimStart,
     openSaveModal,
     redo,
+    restoreVersion,
     saveDetails,
     setMode,
     simpPreview,
@@ -1655,6 +1688,8 @@
     toggleSimplify,
     toggleSpeedFix,
     toggleSpikes,
-    undo
+    undo,
+    wptDel,
+    wptRename
   };
 })();

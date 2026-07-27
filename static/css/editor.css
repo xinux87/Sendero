@@ -1,111 +1,228 @@
-/* Sección `editor`. Extraído de templates/editor.html (roadmap §2-§3).
-   Escopado bajo #sec-editor: .panel, .tool, .chart-box y compañía chocarían con
-   las otras secciones ahora que comparten documento. Lo común a todos los mapas
-   (overrides de MapLibre) y los loaders flotantes viven en base.html. */
-#sec-editor .ed-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-#sec-editor .ed-title{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
-#sec-editor .ed-title h1{font-size:28px}
-#sec-editor .ver-badge{font-family:var(--mono);font-size:13px;color:var(--pr-yellow);
-  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px 10px}
-#sec-editor .ed-grid{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
-@media(max-width:900px){.ed-grid{grid-template-columns:1fr}}
-#sec-editor #edmap{height:55vh;min-height:340px;border-radius:11px;border:1px solid var(--line);overflow:hidden}
-#sec-editor .ed-panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px}
-#sec-editor .ed-panel h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;
-  color:var(--muted);margin-bottom:10px}
-#sec-editor .ed-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-#sec-editor .ed-stat .v{font-family:var(--mono);font-size:18px;font-weight:700}
-#sec-editor .ed-stat .v small{font-size:11px;color:var(--muted)}
-#sec-editor .ed-stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-#sec-editor .ed-stat .delta{font-family:var(--mono);font-size:11px;color:var(--pr-yellow)}
+/* Sección `editor` — rediseño con el mismo lenguaje que detalle / rutas /
+   dashboard: paneles `--panel` + borde `--line` + radio 12, título de panel en
+   `.panel-title` (mono, versalitas, salvia), cifras en Oswald (`--display`) y
+   datos y etiquetas en mono (`--mono`).
+
+   Escopado bajo #sec-editor: .panel, .stat, .modal, .tool-panel y compañía
+   existen también en otras vistas, y en la SPA las 6 secciones comparten
+   documento. Lo común a todos los mapas (overrides de MapLibre), los loaders
+   flotantes, .btn y .panel-title viven en base.html.
+
+   Sin hex sueltos: el verde de "corregido" es --ok-green (base.html), que
+   comparte con los deltas al alza del dashboard. */
+
+/* ── cabecera ──────────────────────────────────────────────────────────────── */
+#sec-editor .ed-head{display:flex;justify-content:space-between;align-items:flex-end;
+  gap:16px;flex-wrap:wrap;margin:26px 0 16px}
+#sec-editor .ed-head-l{display:flex;align-items:center;gap:14px;min-width:0}
+#sec-editor .ed-title{min-width:0}
+#sec-editor .ed-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#sec-editor .ed-title h1{font-size:26px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.05em;line-height:1.1;margin:0}
+#sec-editor .ed-sub{font-family:var(--mono);font-size:11px;color:var(--muted-dim);
+  text-transform:uppercase;letter-spacing:.08em;margin-top:5px}
+#sec-editor .ver-badge{font-family:var(--mono);font-size:11px;font-weight:500;
+  letter-spacing:.1em;color:var(--pr-yellow);background:var(--panel);
+  border:1px solid var(--line-strong);border-radius:999px;padding:3px 11px}
+#sec-editor .ed-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* ── rejilla: lienzo | columna de paneles ──────────────────────────────────── */
+#sec-editor .ed-grid{display:grid;grid-template-columns:1fr 330px;gap:16px;align-items:start}
+#sec-editor .ed-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+#sec-editor .ed-map-wrap{border-radius:12px;border:1px solid var(--line);overflow:hidden}
+#sec-editor #edmap{height:55vh;min-height:340px}
+
+/* ── paneles ───────────────────────────────────────────────────────────────── */
+#sec-editor .panel{background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:14px 16px}
+#sec-editor .panel-head{display:flex;align-items:baseline;justify-content:space-between;
+  gap:12px;margin-bottom:10px}
+#sec-editor .panel-sub{font-size:10.5px;color:var(--muted-dim);text-align:right;
+  line-height:1.5;max-width:62%}
+#sec-editor .ed-empty{color:var(--muted);font-size:12.5px}
+#sec-editor .ed-wide{width:100%}
+#sec-editor .btn[disabled]{opacity:.35;cursor:not-allowed}
+
+/* ── estadísticas: cifra en Oswald, etiqueta mono encima (como .stat del
+      detalle y .kpi del dashboard) ──────────────────────────────────────────── */
+#sec-editor .ed-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#sec-editor .ed-stat{background:var(--panel-2);border:1px solid var(--line);
+  border-radius:10px;padding:10px 12px;min-width:0}
+#sec-editor .ed-stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted-dim);margin-bottom:5px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+#sec-editor .ed-stat .v{font-family:var(--display);font-weight:500;font-size:22px;
+  line-height:1;white-space:nowrap}
+#sec-editor .ed-stat .v small{font-size:11px;color:var(--muted);font-family:var(--display)}
+/* La primera tarjeta lleva el acento de la actividad (el color lo pone el JS,
+   que es quien sabe de qué actividad es ESTA ruta), como en el detalle. */
+#sec-editor .ed-stat.acc{border-left-width:3px;border-left-style:solid}
+#sec-editor .ed-stat.acc .v{color:var(--pr-yellow)}
+#sec-editor .ed-stat .delta{font-family:var(--mono);font-size:10.5px;color:var(--pr-yellow);
+  margin-top:5px}
+
+/* ── detalles (nombre / dispositivo) ───────────────────────────────────────── */
+#sec-editor .det-fld{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+#sec-editor .det-fld label{font-family:var(--mono);font-size:9.5px;color:var(--muted-dim);
+  text-transform:uppercase;letter-spacing:.14em}
+#sec-editor .det-fld input,
+#sec-editor .ed-input{width:100%;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--line-strong);border-radius:8px;padding:8px 11px;
+  font-family:inherit;font-size:13px;box-sizing:border-box}
+#sec-editor .det-fld input:focus,
+#sec-editor .ed-input:focus{outline:none;border-color:var(--pr-yellow)}
+#sec-editor .ed-input+.ed-input{margin-top:6px}
+
+/* ── operaciones ───────────────────────────────────────────────────────────── */
 #sec-editor .ed-ops{display:flex;flex-direction:column;gap:7px}
 #sec-editor .ed-ops .btn{width:100%;text-align:left;justify-content:flex-start}
-#sec-editor .btn[disabled]{opacity:.35;cursor:not-allowed}
-#sec-editor .mode-tabs{display:flex;gap:0;margin-bottom:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-#sec-editor .mtab{flex:1;background:transparent;border:0;color:var(--muted);padding:7px 4px;font-size:12px;
-  font-weight:700;cursor:pointer;font-family:inherit;text-transform:uppercase;letter-spacing:.04em}
+/* Segmentado de modo: píldora con el activo en ámbar sólido, como las píldoras
+   seleccionadas de "Mis Rutas". */
+#sec-editor .mode-tabs{display:flex;margin-bottom:12px;border:1px solid var(--line-strong);
+  border-radius:999px;overflow:hidden}
+#sec-editor .mtab{flex:1;background:transparent;border:0;color:var(--muted);
+  padding:8px 4px;font-family:var(--mono);font-size:10.5px;font-weight:500;cursor:pointer;
+  text-transform:uppercase;letter-spacing:.1em;transition:color .15s,background .15s}
+#sec-editor .mtab:hover{color:var(--ink)}
 #sec-editor .mtab.on{background:var(--pr-yellow);color:var(--bg)}
-#sec-editor .tool-panel{margin-top:8px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
-#sec-editor .tool-panel input[type=range]{width:100%}
-#sec-editor .tool-info{font-size:12px;color:var(--ink);font-family:var(--mono);margin:6px 0}
-#sec-editor .ed-profile{background:var(--panel);border:1px solid var(--line);border-radius:11px;
-  padding:14px;margin-top:14px}
+#sec-editor .sel-hint{font-size:11px;color:var(--muted);margin-top:9px;line-height:1.55}
+#sec-editor .tool-panel .sel-hint{margin-top:7px}
+/* Los manejadores A y B se nombran con su color en el texto de ayuda. */
+#sec-editor .hnd-a{color:var(--pr-yellow);font-weight:500}
+#sec-editor .hnd-b{color:var(--gr-red);font-weight:500}
+
+/* ── herramientas ──────────────────────────────────────────────────────────── */
+#sec-editor .ed-tools{border-top:1px solid var(--line);margin-top:14px;padding-top:12px;
+  display:flex;flex-direction:column;gap:7px}
+#sec-editor .ed-tools-title{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted-faint);margin-bottom:2px}
+#sec-editor .ed-tool-btn{width:100%;text-align:left;justify-content:flex-start}
+#sec-editor .tool-panel{margin:2px 0 4px;padding:11px 12px;background:var(--bg);
+  border:1px solid var(--line);border-radius:10px}
+#sec-editor .tool-panel input[type=range]{width:100%;accent-color:var(--pr-yellow)}
+#sec-editor .tool-info{font-size:11.5px;color:var(--ink);font-family:var(--mono);margin:7px 0}
+#sec-editor .tool-foot{display:flex;gap:7px;margin-top:8px}
+
+/* ── perfil / velocidad ────────────────────────────────────────────────────── */
+/* Altura explícita: los charts van con maintainAspectRatio:false. */
+#sec-editor .ed-chart-box{position:relative;height:230px}
+#sec-editor #speed-panel .ed-chart-box{height:150px}
 #sec-editor #edelev{cursor:crosshair;touch-action:none}
-#sec-editor .ver-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px}
+#sec-editor #edspeed{touch-action:none}
+/* zoom por botones: sustituto táctil de la rueda (solo se muestra sin ratón) */
+#sec-editor .chart-zoom{display:none;gap:6px;margin-bottom:8px}
+
+/* ── historial de versiones ────────────────────────────────────────────────── */
+#sec-editor #ver-list{max-height:300px;overflow-y:auto}
+#sec-editor .ver-row{display:flex;align-items:center;gap:10px;padding:9px 0;
+  border-bottom:1px solid rgba(236,229,216,.07);font-size:12.5px}
 #sec-editor .ver-row:last-child{border-bottom:0}
-#sec-editor .ver-row .vn{font-family:var(--mono);font-weight:700;color:var(--pr-yellow);white-space:nowrap}
+#sec-editor .ver-row .vn{font-family:var(--mono);font-size:11.5px;font-weight:500;
+  color:var(--pr-yellow);white-space:nowrap;letter-spacing:.06em}
 #sec-editor .ver-row .meta{flex:1;min-width:0}
 #sec-editor .ver-row .meta .sum{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#sec-editor .ver-row .meta .st{color:var(--muted);font-family:var(--mono);font-size:11px}
-#sec-editor .ver-row .acts{display:flex;gap:4px}
+/* nowrap + elipsis: en la columna de 330 px «6,66 km · +44 m · 27 jul» se partía
+   en dos líneas y descuadraba la fila. */
+#sec-editor .ver-row .meta .st{color:var(--muted-dim);font-family:var(--mono);font-size:10px;
+  margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sec-editor .ver-row .acts{display:flex;gap:4px;flex:none}
 #sec-editor .ver-row .acts .btn{padding:3px 8px;font-size:11px}
-/* scrollbar del historial con la paleta (como .imgrid en sendero.html) */
-#sec-editor #ver-list::-webkit-scrollbar{width:6px}
-#sec-editor #ver-list::-webkit-scrollbar-track{background:var(--bg);border-radius:3px}
-#sec-editor #ver-list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
-#sec-editor #ver-list::-webkit-scrollbar-thumb:hover{background:var(--muted)}
-#sec-editor #ver-list{scrollbar-width:thin;scrollbar-color:var(--line) var(--bg)}
+
+/* ── avisos GPS ────────────────────────────────────────────────────────────── */
+#sec-editor #issues-list{max-height:320px;overflow-y:auto}
+#sec-editor .issue-row{display:flex;align-items:center;gap:9px;padding:8px 0;
+  border-bottom:1px solid rgba(236,229,216,.07);font-size:12.5px}
+#sec-editor .issue-row:last-child{border-bottom:0}
+#sec-editor .issue-row .ico{font-size:14px;line-height:1}
+#sec-editor .issue-row .meta{flex:1;min-width:0}
+#sec-editor .issue-row .meta .rng{font-family:var(--mono);font-size:12px}
+#sec-editor .issue-row .meta .det{color:var(--muted-dim);font-family:var(--mono);
+  font-size:10.5px;margin-top:2px}
+/* severity 'high' en ámbar, como .warn.crit del detalle (el resto queda neutro) */
+#sec-editor .issue-row.high .meta .rng{color:var(--pr-yellow)}
+#sec-editor .issue-row .btn{padding:3px 9px;font-size:11px}
+#sec-editor .issue-row.active{background:rgba(227,178,60,.10);box-shadow:inset 3px 0 0 var(--pr-yellow)}
+#sec-editor .issue-row.active .btn{opacity:.6}
+#sec-editor .issue-row.done{opacity:.5}
+#sec-editor .issue-row.done .meta .rng, #sec-editor .issue-row.done .meta .det{text-decoration:line-through}
+#sec-editor .issue-row.done .btn{display:none}
+#sec-editor .issue-row .fixed-tag{display:none;font-family:var(--mono);font-size:10px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--ok-green)}
+#sec-editor .issue-row.done .fixed-tag{display:inline}
+/* "Corregir todo" en ámbar (color de aviso), no en el rojo de acción primaria:
+   la acción primaria del editor es «Guardar cambios» y no deben competir. */
+#sec-editor .ed-fixall{border-color:var(--pr-yellow);color:var(--pr-yellow)}
+#sec-editor .ed-fixall:hover{background:rgba(227,178,60,.12);border-color:var(--pr-yellow)}
+#sec-editor .issues-status{font-size:11.5px;color:var(--ok-green);background:rgba(67,185,127,.10);
+  border:1px solid rgba(67,185,127,.3);border-radius:9px;padding:8px 10px;margin:10px 0 0}
+#sec-editor #issues-list:not(:empty){margin-top:10px}
+
+/* barras de scroll con la paleta (historial y avisos) */
+#sec-editor #ver-list::-webkit-scrollbar,
 #sec-editor #issues-list::-webkit-scrollbar{width:6px}
+#sec-editor #ver-list::-webkit-scrollbar-track,
 #sec-editor #issues-list::-webkit-scrollbar-track{background:var(--bg);border-radius:3px}
-#sec-editor #issues-list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+#sec-editor #ver-list::-webkit-scrollbar-thumb,
+#sec-editor #issues-list::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:3px}
+#sec-editor #ver-list::-webkit-scrollbar-thumb:hover,
 #sec-editor #issues-list::-webkit-scrollbar-thumb:hover{background:var(--muted)}
-#sec-editor #issues-list{scrollbar-width:thin;scrollbar-color:var(--line) var(--bg)}
-#sec-editor .sel-hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
-#sec-editor .handle-a, #sec-editor .handle-b{width:20px;height:20px;border-radius:50%;border:3px solid var(--bg);
-  box-shadow:0 2px 6px rgba(0,0,0,.7);cursor:grab}
+#sec-editor #ver-list,
+#sec-editor #issues-list{scrollbar-width:thin;scrollbar-color:var(--line-strong) var(--bg)}
+
+/* ── marcadores del mapa ───────────────────────────────────────────────────── */
+#sec-editor .handle-a, #sec-editor .handle-b{width:20px;height:20px;border-radius:50%;
+  border:3px solid var(--bg);box-shadow:0 2px 6px rgba(0,0,0,.7);cursor:grab}
 #sec-editor .handle-a{background:var(--pr-yellow)}
 #sec-editor .handle-b{background:var(--gr-red)}
 #sec-editor .wpt-marker{font-size:22px;line-height:1;cursor:pointer;
   text-shadow:0 1px 3px rgba(0,0,0,.8);user-select:none}
-#sec-editor .issue-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px}
-#sec-editor .issue-row:last-child{border-bottom:0}
-#sec-editor .issue-row .ico{font-size:15px}
-#sec-editor .issue-row .meta{flex:1;min-width:0}
-#sec-editor .issue-row .meta .rng{font-family:var(--mono)}
-#sec-editor .issue-row .meta .det{color:var(--muted);font-size:11px}
-#sec-editor .issue-row.high .ico{filter:drop-shadow(0 0 3px var(--gr-red))}
-#sec-editor .issue-row .btn{padding:3px 8px;font-size:11px}
-#sec-editor .issue-row.active{background:rgba(232,196,74,.10);box-shadow:inset 3px 0 0 var(--pr-yellow)}
-#sec-editor .issue-row.active .btn{opacity:.6}
-#sec-editor .issue-row.active .meta .rng{color:var(--pr-yellow)}
-#sec-editor .issue-row.done{opacity:.5}
-#sec-editor .issue-row.done .meta .rng, #sec-editor .issue-row.done .meta .det{text-decoration:line-through}
-#sec-editor .issue-row.done .btn{display:none}
-#sec-editor .issue-row .fixed-tag{display:none;font-size:11px;color:#5fb87a;font-weight:600}
-#sec-editor .issue-row.done .fixed-tag{display:inline}
-#sec-editor .issues-status{font-size:12px;color:#5fb87a;background:rgba(95,184,122,.10);
-  border:1px solid rgba(95,184,122,.3);border-radius:8px;padding:7px 9px;margin-bottom:8px}
-#sec-editor .overlay{position:fixed;inset:0;background:rgba(8,14,11,.78);display:flex;align-items:center;
-  justify-content:center;padding:16px;z-index:1000}
-#sec-editor .overlay.hidden{display:none}
-#sec-editor .modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:100%;
-  max-width:480px;padding:18px}
-#sec-editor .modal h2{font-size:20px;margin-bottom:12px}
-#sec-editor .modal input[type=text]{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);
-  border-radius:8px;padding:10px 12px;font-family:inherit;font-size:14px;margin-bottom:14px}
-#sec-editor .modal-foot{display:flex;justify-content:flex-end;gap:10px}
-#sec-editor .det-fld{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
-#sec-editor .det-fld label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-#sec-editor .det-fld input{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);
-  border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13px;box-sizing:border-box}
-#sec-editor .det-fld input:focus{outline:none;border-color:var(--pr-yellow)}
-#sec-editor #ed-loading{padding:40px;text-align:center;color:var(--muted)}
-#sec-editor .maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
-#sec-editor .maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
 
-/* ── responsive móvil ──────────────────────────────────────────────────── */
-/* contenedores de gráfica con altura explícita (los charts usan
-   maintainAspectRatio:false; sin esto en móvil quedarían enanas) */
-#sec-editor .ed-chart-box{position:relative;height:250px}
-#sec-editor #speed-panel .ed-chart-box{height:200px}
-/* zoom por botones: sustituto táctil de la rueda (solo se muestra sin ratón) */
-#sec-editor .chart-zoom{display:none;gap:6px;margin-bottom:8px}
+/* ── modal de guardado ─────────────────────────────────────────────────────── */
+/* Como en el detalle: .overlay.hidden va INMEDIATAMENTE detrás de .overlay y con
+   especificidad doble; si se separan, el modal aparece solo al montar. */
+#sec-editor .overlay{position:fixed;inset:0;background:rgba(7,12,9,.82);display:flex;
+  align-items:center;justify-content:center;padding:16px;z-index:1000}
+#sec-editor .overlay.hidden{display:none}
+#sec-editor .modal{background:var(--panel);border:1px solid var(--line-strong);
+  border-radius:13px;width:100%;max-width:480px;padding:18px}
+#sec-editor .modal-head{display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:8px}
+#sec-editor .modal-head h2{font-size:22px;text-transform:uppercase;letter-spacing:.03em}
+#sec-editor .modal-note{color:var(--muted);font-size:12.5px;margin-bottom:12px;line-height:1.5}
+#sec-editor .modal input[type=text]{width:100%;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--line-strong);border-radius:8px;padding:10px 12px;
+  font-family:inherit;font-size:14px}
+#sec-editor .modal input[type=text]:focus{outline:none;border-color:var(--pr-yellow)}
+#sec-editor .modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:14px;
+  padding-top:14px;border-top:1px solid var(--line)}
+
+#sec-editor #ed-loading{padding:48px;text-align:center;color:var(--muted);
+  font-family:var(--mono);font-size:12.5px}
+
+/* ── responsive ────────────────────────────────────────────────────────────── */
+@media(max-width:1199px){
+  #sec-editor .ed-grid{grid-template-columns:1fr}
+  #sec-editor #edmap{height:46vh;min-height:320px}
+  /* En una sola columna los paneles laterales se reparten en dos, que si no
+     quedan cinco tarjetas larguísimas una debajo de otra. */
+  #sec-editor .ed-col-side{display:grid;grid-template-columns:1fr 1fr;gap:16px;
+    align-items:start}
+}
+@media(max-width:900px){
+  #sec-editor .ed-col-side{grid-template-columns:1fr}
+}
 @media(max-width:600px){
+  #sec-editor .ed-head{margin:16px 0 12px;align-items:flex-start}
   #sec-editor .ed-title h1{font-size:20px}
+  #sec-editor .ed-sub{display:none}
+  #sec-editor .ed-actions{width:100%}
+  #sec-editor .ed-actions .btn{flex:1}
   #sec-editor #edmap{height:50vh;height:50dvh;min-height:300px}
   #sec-editor .ed-chart-box{height:170px}
-  #sec-editor #speed-panel .ed-chart-box{height:150px}
-  #sec-editor .ed-profile{padding:10px}
+  #sec-editor #speed-panel .ed-chart-box{height:130px}
+  #sec-editor .panel{padding:12px 14px}
+  #sec-editor .panel-head{flex-direction:column;align-items:flex-start;gap:2px}
+  #sec-editor .panel-sub{text-align:left;max-width:100%}
 }
 @media(hover:none) and (pointer:coarse){
   #sec-editor .chart-zoom{display:flex}

@@ -207,13 +207,12 @@ El router (`static/js/core/router.js`) monta la sección según `location.pathna
 así que **navegar entre vistas no pide ningún documento**: solo el JSON que haga
 falta, y a menudo ni eso (lo tiene el Store).
 
-**Cinco de las seis vistas siguen el rediseño**, con la opción **2a** en pantalla
-grande y la **2d** en móvil: `detalle`, `rutas` y `dashboard` desde la v0.9.0, y
-`planes` + `plan` desde la v0.9.3. La única que falta es `editor`, que hereda la
-paleta y la tipografía porque lo que cambió fue el **valor** de las variables de
-`base.html`, no su nombre. El patrón a seguir es el de las otras: panel `--panel`
-+ borde `--line` + radio 12, título de panel en `.panel-title`, cifras en Oswald,
-datos en mono.
+**Las seis vistas siguen el rediseño**, con la opción **2a** en pantalla grande y
+la **2d** en móvil: `detalle`, `rutas` y `dashboard` desde la v0.9.0, `planes` +
+`plan` desde la v0.9.3 y `editor` desde la v0.9.4. El patrón, si añades una
+séptima: panel `--panel` + borde `--line` + radio 12, título de panel en
+`.panel-title`, cifras en Oswald, datos en mono, y las unidades en el título del
+panel en vez de en el eje de la gráfica.
 
 > **La carpeta `redesign/` ya no existe** (ni en disco ni en git; era local y se
 > perdió). Las referencias que quedaban a `redesign/README.md` y

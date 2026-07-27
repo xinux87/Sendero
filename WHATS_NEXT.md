@@ -11,21 +11,6 @@ Al terminar cualquiera de estos puntos: bórralo de aquí y cuéntalo en `CHANGE
 
 ## Para hacer
 
-### 2. Rediseñar el editor de rutas
-**Por qué**: es la pantalla más densa de la app y la que más gana con los paneles nuevos. El
-propio prototipo lo ofrecía como continuación natural del handoff.
-
-**Cómo**: mismo patrón que arriba. Los bloques ya están separados (Detalles, Estadísticas,
-Operaciones, Avisos GPS, Historial), así que es sobre todo re-encajarlos en `.panel` y pasar
-las cifras a Oswald y los datos a mono.
-
-**Ojo**: el editor es la vista con más estado y la única que no funciona sin conexión. No
-toques la paridad `doOp()` ↔ `apply_ops()` ni el aviso de salir con cambios sin guardar
-(listener en fase de captura). `node tests/speedfix_smoke.js` y la parte de editor de
-`tests/e2e_spa.py` tienen que seguir pasando.
-
----
-
 ### 3. Más contexto en la tarjeta del listado: avisos de GPS y número de fotos
 **Qué**: hoy la tarjeta de «Mis Rutas» solo avisa de posibles duplicadas.
 - **Avisos de GPS**: los `gps_issues` solo se ven al abrir la ruta, así que una con un salto
