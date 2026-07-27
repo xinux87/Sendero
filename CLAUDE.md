@@ -21,8 +21,9 @@ sincronización delta. Lo que eso significa en la práctica:
 - **Funciona sin conexión**: abrir la app en cualquier vista (shell y código
   precacheados), los listados de rutas y planes, el dashboard (con las últimas
   estadísticas guardadas, avisando), el detalle de rutas y planes ya sincronizados, el
-  mapa base si hay un `.pmtiles` en `data/tiles/`, y editar nombre/notas/actividad (se
-  encolan y se envían al volver la red).
+  mapa de «Mis Planes» con las trazas de cada plan (guardadas en el Store), el
+  mapa base si hay un `.pmtiles` en `data/tiles/`, y editar nombre/notas/actividad y
+  **marcar un plan como realizado** (se encolan y se envían al volver la red).
 - **NO funciona sin conexión, a propósito**: el **editor** (opera sobre el estado
   guardado en el servidor y cada guardado lleva `base_version`; encolar eso sería
   inventarse decisiones del servidor), subir rutas o fotos, Immich, reescanear y borrar.
@@ -45,7 +46,8 @@ sincronización delta. Lo que eso significa en la práctica:
 # desarrollo
 pip install -r requirements-dev.txt   # incluye requirements.txt + pytest
 python app.py                      # http://localhost:8080, init_db() automático
-python -m pytest                   # tests unitarios (tests/): editing, parsers, FIT, gps_analysis, columnas del listado
+python -m pytest                   # 99 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
+                                   #   dedup, geocode, sync y las columnas de los dos listados
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
 node tests/sec_smoke.js            # sec/detalle.js carga contra los ids reales del markup
 node tests/tiles_smoke.js          # geometría del corredor de teselas (§6.2)
@@ -150,7 +152,9 @@ api/
   routes.py     — CRUD de rutas + rescan + thumb + stats
   editor.py     — editor de rutas: página, /points, guardado por ops, versiones
   photos.py     — subida y borrado de fotos locales; proxy de fotos Immich
-  planned.py    — CRUD de rutas planificadas
+  planned.py    — CRUD de rutas planificadas, /api/planned/geojson (las trazas para
+                  el mapa de la sección) y el estado de "realizada" del PATCH
+                  (completed_at + completed_route → completed_route_id)
   immich_api.py — candidatos Immich, selección, proxy de miniaturas
   settings.py   — lectura/escritura de ajustes (Immich, tipos GPX personalizados) y
                   /api/storage (tamaño de /data por carpeta, con un stat por archivo)
@@ -289,7 +293,7 @@ static/css/        el CSS de cada sección migrada, escopado bajo #sec-<sec>
 templates/sec/     el markup de cada sección migrada
 ```
 
-**Son `<script>` clásicos, no módulos ES**: hay 121 atributos `onclick=` en las
+**Son `<script>` clásicos, no módulos ES**: hay 123 atributos `onclick=` en las
 plantillas y un módulo ES no expone nada al ámbito global, así que se romperían
 todos. Por eso cada sección va en su IIFE y publica lo que la plantilla necesita en
 `window.SEC.<sec>` (los `onclick=` llaman `SEC.plan.saveNotes()` etc.).
@@ -319,8 +323,11 @@ archivo, nunca en `mount()`.
   del dashboard, porque el caché de stats en `settings` solo guarda el nombre.
 - Tarjeta en "Mis Rutas" → `openRoute(r.public_id)` (guarda el encuadre del mapa en
   memoria del módulo y navega con `go()`; al volver, `initMap()` lo restaura)
-- Tarjeta en "Mis Planes" → `location.href = '/Plan/' + p.public_id`
-- Cambio de sección (Dashboard ↔ Mis Rutas ↔ Mis Planes) → SPA con `_showSec(name)`
+- Tarjeta en "Mis Planes" → `go('/Plan/' + p.public_id)`; y lo mismo el click en la traza
+  del mapa de la sección (capa `pl-lines-hit`)
+- Cambio de sección (Dashboard ↔ Mis Rutas ↔ Mis Planes) → SPA por el router
+  (`Router.go()`, o el `data-nav` de la tab bar). El `_showSec()` de la app multipágina
+  ya no existe: solo se le cita en un comentario de `router.js` como origen del patrón
 - Dentro del shell nuevo: `Router.go(url)` / `window.go(url)`, o un `data-nav="/url"`
   en cualquier elemento (el router delega el click); si la vista destino no está en
   el documento, cae a `location.href` sola
@@ -885,8 +892,10 @@ click no exija acertar 2 px; color por `activityLineColor()`).
 - **Sin conexión siguen viéndose**: se guardan en el Store con
   `Store.setMeta('planned_lines', …)` y se pintan antes de pedir la red, como los récords
   del dashboard. Si la petición falla, quedan las guardadas (o solo los marcadores).
-- `lineFC()` filtra por los `public_id` que el listado tiene ahora mismo, para que la
-  traza de un plan borrado no se quede pintada hasta que responda la petición.
+- `lineFC()` filtra por `visiblePlans()`: los `public_id` que el listado tiene ahora mismo
+  (para que la traza de un plan borrado no se quede pintada hasta que responda la petición)
+  y que pasan el filtro por estado. Los marcadores hacen lo propio en `syncMarkers()` y el
+  encuadre en `fitPlans()` — el filtro tiene una sola fuente, ver la sección siguiente.
 - Al entrar/salir de la capa offline hay que **volver a añadir las capas** (regla 15):
   `applyBasemap` reconstruye el estilo. Los marcadores se recrean (son DOM) y
   `addLineLayers()` vuelve a crear fuente y capas en `map.once('sendero:basemap', …)`.
@@ -1164,9 +1173,11 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
     de input de usuario. No lo escapes dos veces. En el shell va dentro de un
     `<script type="application/json">`, que el navegador no ejecuta, y lo lee `JSON.parse`.
 
-11. **Caché de rutas en el cliente** — si cambias los campos que devuelve `/api/routes`,
-    sube `DB_VERSION` en `static/js/core/store.js`: su `onupgradeneeded` vacía los
-    almacenes de IndexedDB y los clientes se rehacen la copia. Es la ÚNICA caché de datos
+11. **Caché de rutas en el cliente** — si cambias los campos que devuelve `/api/routes`
+    **o `/api/planned`**, sube `DB_VERSION` en `static/js/core/store.js`: su
+    `onupgradeneeded` vacía los almacenes de IndexedDB y los clientes se rehacen la copia.
+    (Va por 4: el 3 fue el resumen de `gps_issues`/`n_photos` del listado de rutas y el 4,
+    `completed_at`/`completed_route_public` en el de planes.) Es la ÚNICA caché de datos
     que queda (el `sessionStorage` con TTL de 10 min, `sendero_routes_v4`, murió con la
     migración de "Mis Rutas" al Store; en `sessionStorage` solo quedan los filtros de la
     lista, que son preferencias). Añadir `thumb_file` sin invalidar causó en su día que se
@@ -1402,7 +1413,7 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tocaste el CSS del modal Immich (`static/css/detalle.css`): comprueba que
   `#sec-detalle .overlay.hidden` sigue ocultando el modal al cargar la ruta.
 - Con Playwright disponible, la comprobación de verdad es `python tests/e2e_spa.py`
-  (~115 asserts en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
+  (127 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
   Worker, modo sin conexión y cola de escrituras). Necesita un servidor con
   `SENDERO_DATA` **de pruebas** y `python tests/e2e_seed.py` para sembrarlo.
 - Si tocaste `/actualizar` o el Service Worker: comprueba que la página sigue llegando de
@@ -1475,6 +1486,12 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   respetando los filtros de actividad/fecha vía `applyLineFilter()`, o se te ha colado un
   caso que las muestra sin filtrar? ¿sigue usando `fitMap(true)` en el primer encuadre
   (sin animación de vuelo)?
+- Si tocaste `sec/planes.js`: ¿el filtro por estado sigue afectando a la lista **y** al mapa
+  (una sola fuente, `visiblePlans()`)? ¿`syncMarkers()` sigue QUITANDO el marcador del plan
+  que el filtro deja fuera? ¿marcar como realizada sin conexión sigue encolándose, avisando
+  y sobreviviendo a un `unmount()`+`mount()` (la copia local la escribe
+  `Store.patchPlanRow`)? ¿la lista vacía por el filtro sigue distinguiéndose de la lista
+  vacía de verdad?
 - Si tocaste `renderElev/renderSpeed/renderHR` o el mapa en `sec/detalle.js`: ¿el hover
   sincronizado sigue funcionando en las 4 direcciones (mapa→gráficos y cada gráfico→resto)?
   Si añades un `Chart` nuevo, usa `ctx.onmouseleave=...` (asignación directa, no

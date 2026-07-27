@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.9.2-2e7d32?style=for-the-badge" alt="Versión 0.9.2">
+  <img src="https://img.shields.io/badge/versión-0.9.8-2e7d32?style=for-the-badge" alt="Versión 0.9.8">
   <img src="https://img.shields.io/badge/100%25-autoalojado-17241c?style=for-the-badge" alt="100% autoalojado">
   <img src="https://img.shields.io/badge/Docker-xinux87%2Fsendero-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Hub: xinux87/sendero">
   <img src="https://img.shields.io/badge/Flask%20+%20SQLite-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Flask + SQLite">
@@ -32,7 +32,7 @@ En resumen, Sendero te permite:
 - 📷 **Fotos por ruta** — locales o desde Immich; las que llevan GPS en el EXIF se sitúan solas sobre el mapa.
 - ✏️ **Editor de tracks** — recortar, invertir, editar vértices, simplificar, corregir picos, dividir y unir rutas, con versionado.
 - ⚠️ **Avisos de GPS** — detecta tramos con velocidad, desnivel o altitud imposibles y los corrige.
-- 🎯 **Planificación** — sube los GPX de rutas que quieres hacer y tenlas en una lista aparte.
+- 🎯 **Planificación** — sube los GPX de rutas que quieres hacer, míralas dibujadas en el mapa y **márcalas como realizadas** enlazando la salida con la que las cumpliste.
 - 🔄 **Importación automática** — deja caer los GPX en una carpeta vigilada y aparecen solos.
 - ⌚ **Sincronización con Mi Fit / Zepp** — baja los entrenamientos de tu reloj Amazfit/Zepp directamente de la cuenta Huami, sin exportar a mano.
 - 🧹 **Sin rutas duplicadas** — detecta reimportaciones del mismo archivo o del mismo entrenamiento y evita repetirlas.
@@ -119,6 +119,14 @@ Un editor de tracks completo con versionado *append-only*: cada guardado crea un
 
 ¿Una ruta que quieres hacer? Sube su GPX a **Mis Planes** y quedará en una lista separada de tus salidas ya realizadas, con su mapa, estadísticas, notas y descarga del GPX. Desde ahí también puedes **dibujar una ruta nueva** en un planificador externo configurable (por defecto [brouter-web](https://brouter.de/brouter-web)).
 
+> **Lo que encuentras aquí:**
+> - **Mapa con la traza de cada plan**, dibujada con el color de su actividad y pulsable para abrir el plan (además del marcador en el punto de salida). Con el resumen de la colección arriba: número de planes, distancia y desnivel + acumulados.
+> - **✓ Marcar realizada** en cada tarjeta: te pregunta **qué ruta la cumplió** —arriba las que empiezan a menos de 3 km del plan, y buscador para el resto— o puedes marcarla sin asociar ninguna. La tarjeta queda apagada, con la chapa **«✔ Realizada»** y su fecha, y enlaza a esa ruta; **Desmarcar** la devuelve a pendiente.
+> - **Filtro Pendientes · Realizadas · Todas** con el recuento de cada estado. Arranca en *Pendientes* —la vista es la lista de lo que te queda por hacer— y filtra también el mapa.
+> - **⬇ Mapa sin conexión** en la ficha del plan, para llevártelo al monte antes de salir de casa.
+>
+> Marcar y desmarcar **funciona sin conexión**: el cambio se guarda con la fecha del día en que lo marcaste y se envía al recuperar la red.
+
 ## Sin conexión (y como app instalable)
 
 Sendero es una **PWA**: desde el navegador puedes instalarla en el móvil o el escritorio y queda con su icono, sin barra de direcciones. Y guarda en el dispositivo la lista de rutas y planes y el detalle de las que abres, de modo que **sigue funcionando sin red y con el servidor apagado**.
@@ -127,7 +135,7 @@ Sin conexión puedes:
 
 - Abrir la app en **cualquier pantalla** — dashboard, Mis Rutas, Mis Planes y las fichas.
 - Consultar el **detalle** de las rutas y planes que ya se hayan sincronizado, con sus perfiles y sus fotos.
-- **Editar** nombre, notas y tipo de actividad: los cambios se guardan y se envían solos al recuperar la red (la cabecera muestra cuántos quedan sin enviar).
+- **Editar** nombre, notas y tipo de actividad, y **marcar un plan como realizado**: los cambios se guardan y se envían solos al recuperar la red (la cabecera muestra cuántos quedan sin enviar).
 - Ver el **mapa**, si antes has pulsado **«⬇ Mapa sin conexión»** en la ficha de esa ruta o plan. Ese botón guarda solo la franja de teselas por la que pasa el track —entre 250 y 380 para 40 km, unos 6-9 MB según lo recta que vaya la ruta—, no una región entera. Es lo que hace que el mapa se vea en el monte.
 
 Sí necesitan conexión, y avisan en vez de fallar en silencio: subir rutas o fotos, el editor, Immich, reescanear y borrar.
@@ -282,8 +290,12 @@ En las URLs, `{id}` es el **identificador público** de la ruta o el plan (una c
 | `POST` | `/api/settings` | guardar ajustes (misma función que el modal Ajustes) |
 | `GET`  | `/api/routes/{id}/immich/candidates` | fotos de Immich en la ventana del track |
 | `POST` | `/api/routes/{id}/immich/select` | asocia los assets de Immich elegidos |
-| `GET`  | `/api/planned` | lista de rutas planificadas |
+| `GET`  | `/api/planned` | lista de rutas planificadas (incluye el estado de realizada) |
 | `POST` | `/api/planned` | añade una ruta planificada (campo `gpx`) |
+| `GET`  | `/api/planned/geojson` | trazas de todos los planes, para el mapa de «Mis Planes» |
+| `PATCH`| `/api/planned/{id}` | renombrar / notas / actividad y **marcar realizada**: `{"completed_at": "2026-07-27T18:30:00", "completed_route": "<id de la ruta>"}`; con los dos a `null` se desmarca |
+| `DELETE`| `/api/planned/{id}` | borrar plan |
+| `GET`  | `/api/planned/{id}/gpx` | descargar el GPX del plan |
 | `GET`/`POST` | `/api/mifit/settings` | ajustes de Mi Fit/Zepp (token, región, intervalo, fecha) |
 | `POST` | `/api/mifit/sync` | lanza una sincronización con Mi Fit (`{reset:true}` para reimportar) |
 | `GET`  | `/api/mifit/status` | estado y fecha de la última sincronización |
