@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.9.9-2e7d32?style=for-the-badge" alt="Versión 0.9.9">
+  <img src="https://img.shields.io/badge/versión-0.9.10-2e7d32?style=for-the-badge" alt="Versión 0.9.10">
   <img src="https://img.shields.io/badge/100%25-autoalojado-17241c?style=for-the-badge" alt="100% autoalojado">
   <img src="https://img.shields.io/badge/Docker-xinux87%2Fsendero-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Hub: xinux87/sendero">
   <img src="https://img.shields.io/badge/Flask%20+%20SQLite-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Flask + SQLite">
@@ -28,6 +28,7 @@ En resumen, Sendero te permite:
 
 - 📊 **Dashboard con resumen global** — totales, mapa de todas tus rutas, desglose por actividad y por año, y récords personales.
 - 🗺️ **Visualizar cada ruta** en mapa topográfico o satélite con perfil de elevación, velocidad y frecuencia cardíaca.
+- 📍 **«Mi ubicación» en todos los mapas** — un botón centra el mapa donde estás y te sigue, para ver sobre el terreno dónde te encuentras respecto a la ruta o al plan (funciona sin conexión: la ubicación la da tu dispositivo).
 - 📈 **Estadísticas automáticas** — distancia, desnivel +/−, tiempo en movimiento, velocidad media, altitud máx/mín, FC media/máx.
 - 📷 **Fotos por ruta** — locales o desde Immich; las que llevan GPS en el EXIF se sitúan solas sobre el mapa.
 - ✏️ **Editor de tracks** — recortar, invertir, editar vértices, simplificar, corregir picos, dividir y unir rutas, con versionado.
@@ -138,7 +139,11 @@ Sin conexión puedes:
 - **Editar** nombre, notas y tipo de actividad, y **marcar un plan como realizado**: los cambios se guardan y se envían solos al recuperar la red (la cabecera muestra cuántos quedan sin enviar).
 - Ver el **mapa**, si antes has pulsado **«⬇ Mapa sin conexión»** en la ficha de esa ruta o plan. Ese botón guarda solo la franja de teselas por la que pasa el track —entre 250 y 380 para 40 km, unos 6-9 MB según lo recta que vaya la ruta—, no una región entera. Es lo que hace que el mapa se vea en el monte.
 
+- Pulsar **«Mi ubicación»** y verte sobre ese mapa: la posición la da el GPS del dispositivo, no el servidor. Es la combinación útil en el monte: la traza guardada, las teselas descargadas y tu punto encima.
+
 Sí necesitan conexión, y avisan en vez de fallar en silencio: subir rutas o fotos, el editor, Immich, reescanear y borrar.
+
+> **La ubicación necesita HTTPS.** Es una regla del navegador, no de Sendero: en `http://` (una IP de la LAN, por ejemplo) la bloquea, y el botón te lo dirá. Por `https://` o desde `localhost` funciona; instalada como app, lo hereda del dominio con el que la instalaste.
 
 En **Ajustes → Sin conexión** tienes el panel de control: estado de la copia local, **↓ Descargar todas las rutas** (para llevártelas al monte sin haberlas abierto una a una), cuánto ocupan los mapas descargados con su botón de borrar, y la cola de cambios pendientes de enviar.
 

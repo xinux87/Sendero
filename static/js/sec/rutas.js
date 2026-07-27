@@ -809,7 +809,10 @@
     if (!mapLoaded) return;              // el 'load' pintará con mapRoutes
     map.getSource('routes').setData(routesGeoJSON(mapRoutes));
     applyLineFilter();
-    if (!userMoved) { clearTimeout(fitTimer); fitTimer = setTimeout(fitMap, 600); }
+    // Ni sobre lo que el usuario está explorando, ni sobre su ubicación: mientras
+    // se la sigue, un repintado de la lista (filtro, sincronización) le devolvía
+    // el mapa a las rutas.
+    if (!userMoved && !geoTracking(map)) { clearTimeout(fitTimer); fitTimer = setTimeout(fitMap, 600); }
   }
 
   function initMap() {
@@ -820,6 +823,10 @@
     });
     map.addControl(new maplibregl.AttributionControl({compact: true}), 'bottom-right');
     map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'top-right');
+    // Seguir la ubicación cuenta como explorar: el auto-encuadre pendiente (hay
+    // uno programado a 600 ms tras cada repintado) no debe robar la cámara.
+    const geo = addGeolocate(map, 'top-right');
+    if (geo) geo.on('trackuserlocationstart', () => { userMoved = true; clearTimeout(fitTimer); });
     map.addControl(new maplibregl.FullscreenControl(), 'top-right');
     // selector de capas (top-left)
     map.addControl({

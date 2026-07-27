@@ -54,6 +54,7 @@
     map.scrollZoom.disable();
     map.addControl(new maplibregl.AttributionControl({compact: true}), 'bottom-right');
     map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'top-right');
+    addGeolocate(map, 'top-right');
     // selector de capas, para poder usar la offline como en el resto de mapas
     map.addControl({
       onAdd() {
@@ -189,6 +190,9 @@
      el "vuelo" que se quitó del mapa de "Mis Rutas" (ver "Bugs corregidos"). */
   function fitPlans() {
     if (!map) return;
+    // Todos los encuadres de esta vista son automáticos (no hay botón "centrar"),
+    // así que basta pararlos aquí mientras se sigue la ubicación del usuario.
+    if (geoTracking(map)) return;
     let mnLo = Infinity, mxLo = -Infinity, mnLa = Infinity, mxLa = -Infinity, any = false;
     const acc = (lo, la) => {
       if (lo == null || la == null) return;

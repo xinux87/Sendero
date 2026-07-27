@@ -81,6 +81,7 @@
     });
     map.addControl(new maplibregl.AttributionControl({compact: true}), 'bottom-right');
     map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'bottom-right');
+    addGeolocate(map, 'bottom-right');
     // botón centrar (mismo idioma que el detalle de ruta y Mis Rutas)
     map.addControl({
       onAdd() {

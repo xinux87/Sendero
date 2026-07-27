@@ -929,13 +929,100 @@ def main():
             check(otra > plano * 0.4, f"y a la segunda activación también ({otra // 1024} KB)")
         ctx.route(patron_externo, stub_tesela)
 
-        # ── 16. errores de consola ────────────────────────────────────────────
+        # ── 16. botón «Mi ubicación» en los seis mapas ────────────────────────
+        seccion("Botón «Mi ubicación» (GeolocateControl) en los seis mapas")
+        # Chromium sirve la ubicación que le diga el contexto, así que esto se
+        # puede comprobar de verdad y no solo "existe el botón": tras pulsarlo, el
+        # punto de ubicación tiene que quedar en el CENTRO del mapa (que es lo que
+        # se pidió: centrar donde está el usuario). Como el objeto `map` vive dentro
+        # del IIFE de cada sección y no se puede leer desde fuera, se mide la
+        # posición del marcador (DOM) contra el centro del contenedor.
+        # Primero, sin permiso: tiene que avisar en español, no fallar en silencio.
+        page.goto(BASE + "/rutas", wait_until="load")
+        page.wait_for_selector("#sec-rutas:not(.hidden)", timeout=15000)
+        page.click("#overview-map .maplibregl-ctrl-geolocate")
+        page.wait_for_selector("#toast.show", timeout=15000)
+        check("denegada" in (page.text_content("#toast") or ""),
+              "sin permiso, avisa en español (no se queda en silencio)")
+
+        ctx.grant_permissions(["geolocation"])
+        ctx.set_geolocation({"latitude": 42.6377, "longitude": -0.0206})   # Balaitús
+        # Contador de watchPosition/clearWatch: seguir la ubicación deja un watch
+        # del GPS abierto, y salir de la sección tiene que cerrarlo (lo hace el
+        # map.remove() de unmount(), que llama al onRemove del control). Un watch
+        # colgado es la fuga de siempre de esta conversión, pero con batería.
+        # (IIFE a propósito: add_init_script evalúa el texto tal cual, no llama a
+        # una función que le pases como fuente — al contrario que evaluate().)
+        ctx.add_init_script("""(() => {
+          const g = navigator.geolocation; if (!g) return;
+          const w = g.watchPosition.bind(g), c = g.clearWatch.bind(g);
+          window.__geo = {w: 0, c: 0};
+          g.watchPosition = (...a) => { window.__geo.w++; return w(...a); };
+          g.clearWatch = (...a) => { window.__geo.c++; return c(...a); };
+        })()""")
+        MAPAS = [
+            ("dashboard",  "/dashboard",                "#sec-dashboard", "#dash-map"),
+            ("Mis Rutas",  "/rutas",                    "#sec-rutas",     "#overview-map"),
+            ("Mis Planes", "/planificacion",            "#sec-planes",    "#plan-map"),
+            ("detalle",    f"/Sendero/{rid}",           "#sec-detalle",   "#d-map"),
+            ("plan",       f"/Plan/{pid_plan}",         "#sec-plan",      "#pl-map"),
+            ("editor",     f"/Sendero/{rid}/editor",    "#sec-editor",    "#edmap"),
+        ]
+        for nombre, url, sec, mapa in MAPAS:
+            page.goto(BASE + url, wait_until="load")
+            page.wait_for_selector(sec + ":not(.hidden)", timeout=15000)
+            page.wait_for_timeout(1200)      # que el encuadre inicial de la vista acabe
+            # Los modales que se abren solos en el detalle taparían el botón.
+            page.add_style_tag(content="#immich-modal,#d-activity-modal{display:none!important}")
+            btn = page.locator(f"{mapa} .maplibregl-ctrl-geolocate")
+            if not check(btn.count() == 1, f"{nombre}: el mapa tiene el botón de ubicación"):
+                continue
+            check((btn.get_attribute("title") or "") == "Mi ubicación",
+                  f"{nombre}: el botón está en español")
+            btn.click()
+            try:
+                page.wait_for_selector(f"{mapa} .maplibregl-user-location-dot", timeout=15000)
+            except Exception:
+                check(False, f"{nombre}: aparece el punto de ubicación")
+                continue
+            page.wait_for_timeout(2500)          # el vuelo hasta la ubicación
+            caja = page.evaluate("""(mapa) => {
+              const m = document.querySelector(mapa).getBoundingClientRect();
+              const d = document.querySelector(mapa + ' .maplibregl-user-location-dot')
+                                .getBoundingClientRect();
+              return {dx: (d.left + d.width / 2) - (m.left + m.width / 2),
+                      dy: (d.top + d.height / 2) - (m.top + m.height / 2)};
+            }""", mapa)
+            check(abs(caja["dx"]) < 40 and abs(caja["dy"]) < 40,
+                  f"{nombre}: el mapa se centra en la ubicación "
+                  f"(punto a {caja['dx']:.0f},{caja['dy']:.0f} px del centro)")
+            check(page.locator(f"{mapa} .maplibregl-user-location-accuracy-circle").count() == 1,
+                  f"{nombre}: pinta el círculo de precisión")
+            check("geolocate-active" in (btn.get_attribute("class") or ""),
+                  f"{nombre}: el botón queda en estado activo (siguiendo)")
+        # Salir de la sección tiene que cerrar el watch del GPS. Tiene que ser una
+        # navegación de la SPA (go()), no un page.goto: un documento nuevo reinicia
+        # los contadores y no probaría nada.
+        page.goto(BASE + "/rutas", wait_until="load")
+        page.wait_for_selector("#sec-rutas:not(.hidden)", timeout=15000)
+        page.wait_for_timeout(1200)
+        page.click("#overview-map .maplibregl-ctrl-geolocate")
+        page.wait_for_selector("#overview-map .maplibregl-user-location-dot", timeout=15000)
+        page.evaluate("() => go('/dashboard')")
+        page.wait_for_selector("#sec-dashboard:not(.hidden)", timeout=15000)
+        page.wait_for_timeout(800)
+        geo = page.evaluate("() => window.__geo || {w: 0, c: 0}")
+        check(geo["w"] >= 1 and geo["c"] >= geo["w"],
+              f"al cambiar de sección se cierra el watch del GPS "
+              f"({geo['w']} abiertos, {geo['c']} cerrados)")
+
+        # ── 17. errores de consola ────────────────────────────────────────────
         seccion("Errores de JavaScript")
         errs = con.limpias()
         check(not errs, "ningún error de JS ni excepción sin capturar"
               + (":\n     " + "\n     ".join(errs[:8]) if errs else ""))
 
-        # ── 17. copia local retenida por otra ventana (IndexedDB) ─────────────
+        # ── 18. copia local retenida por otra ventana (IndexedDB) ─────────────
         # Regresión de la 0.9.9. Al subir DB_VERSION (v3 → v4 en la 0.9.8), una
         # ventana con el código anterior retenía la BD: el open() de la ventana
         # actualizada no resolvía NUNCA —la app se veía a medias y sin error— y el

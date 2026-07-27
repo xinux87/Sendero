@@ -275,6 +275,7 @@
       center:cur.length?cur[0]:[-3.7,40.4],zoom:12,attributionControl:false});
     map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
     map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-right');
+    addGeolocate(map,'top-right');
     map.addControl({onAdd(){
       const c=document.createElement('div');c.className='maplibregl-ctrl maplibregl-ctrl-group';
       const b=document.createElement('button');b.innerHTML='⤢';b.title='Centrar en la ruta';
@@ -323,7 +324,10 @@
 
       mkStart = new maplibregl.Marker({color:'#e3b23c'}).setLngLat(cur[0]).addTo(map);
       mkEnd = new maplibregl.Marker({color:'#e0e0e0'}).setLngLat(cur[cur.length-1]).addTo(map);
-      fitRoute();
+      // Este encuadre inicial llega DESPUÉS de que el mapa exista, así que puede
+      // pillar al usuario ya pulsando "Mi ubicación" y devolverle la cámara al
+      // track. El botón "centrar en la ruta" sí encuadra siempre: lo pide él.
+      if(!geoTracking(map)) fitRoute();
 
       map.on('click','ruta-hit',e=>{
         if(suppressLineClick){suppressLineClick=false;return;}

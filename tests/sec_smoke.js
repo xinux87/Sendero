@@ -41,6 +41,8 @@ global.fmtPace=()=>'0:00 /km'; global.fmtDateLong=()=>''; global.fmtDateTime=()=
 global.iconSvg=()=>''; global.buildStyle=()=>({}); global.basemapNames=()=>[];
 global.defaultBasemap=()=>'Topográfico'; global.applyBasemap=()=>{};
 global.OFFLINE_LAYER='Offline (local)'; global.Chart=function(){}; global.maplibregl={};
+/* viven en static/shared.js, que aquí no se carga */
+global.addGeolocate=()=>null; global.geoTracking=()=>false;
 global.go=()=>{};
 
 eval(fs.readFileSync('static/js/sec/detalle.js','utf8'));

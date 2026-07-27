@@ -396,6 +396,7 @@
 
   function fitToPoints() {
     if (!routes || !routes.length || !map) return;
+    if (geoTracking(map)) return;     // la cámara es del usuario mientras se sigue
     let mnLo = 180, mxLo = -180, mnLa = 90, mxLa = -90;
     routes.forEach(r => {
       if (r.start_lon < mnLo) mnLo = r.start_lon;
@@ -484,6 +485,7 @@
     });
     map.addControl(new maplibregl.AttributionControl({compact: true}), 'bottom-right');
     map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'top-right');
+    addGeolocate(map, 'top-right');
     map.addControl(new maplibregl.FullscreenControl(), 'top-right');
 
     const tok = _tok;

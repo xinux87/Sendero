@@ -233,6 +233,40 @@ header .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;marg
    pone en blanco. */
 .maplibregl-ctrl button .maplibregl-ctrl-icon{filter:brightness(0) invert(1)}
 .maplibregl-ctrl button:disabled .maplibregl-ctrl-icon{filter:brightness(0) invert(1);opacity:.35}
+/* ── Botón "Mi ubicación" (GeolocateControl, lo añade addGeolocate) ──────────
+   En reposo se ve como los demás: el icono de serie, blanco por la regla de
+   arriba. Lo que hay que dar aquí es el estado ACTIVO (siguiendo la ubicación):
+   MapLibre lo distingue con un icono azul cian, y ese filtro lo dejaría blanco,
+   o sea idéntico al reposo. Se sustituye el icono por el mismo dibujo en ámbar
+   (--pr-yellow, el color de "activo" del rediseño) y en rojo (--gr-red) si la
+   ubicación falla mientras seguía activo.
+   Los hex van dentro del data:URI porque una url() no puede leer una variable
+   CSS; son los valores de esos dos tokens y hay que cambiarlos aquí si cambian.
+   El !important es necesario: #sec-detalle/#sec-plan reponen el filtro blanco
+   con un selector de ID, que gana por especificidad a cualquier clase. */
+.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon,
+.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-active-error .maplibregl-ctrl-icon,
+.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-background .maplibregl-ctrl-icon,
+.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-background-error .maplibregl-ctrl-icon{
+  filter:none!important;opacity:1}
+.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon{
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' fill='%23e3b23c' viewBox='0 0 20 20'%3E%3Cpath d='M10 4C9 4 9 5 9 5v.1A5 5 0 0 0 5.1 9H5s-1 0-1 1 1 1 1 1h.1A5 5 0 0 0 9 14.9v.1s0 1 1 1 1-1 1-1v-.1a5 5 0 0 0 3.9-3.9h.1s1 0 1-1-1-1-1-1h-.1A5 5 0 0 0 11 5.1V5s0-1-1-1m0 2.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 1 1 0-7'/%3E%3Ccircle cx='10' cy='10' r='2'/%3E%3C/svg%3E")!important}
+.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-background .maplibregl-ctrl-icon{
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' fill='%23e3b23c' viewBox='0 0 20 20'%3E%3Cpath d='M10 4C9 4 9 5 9 5v.1A5 5 0 0 0 5.1 9H5s-1 0-1 1 1 1 1 1h.1A5 5 0 0 0 9 14.9v.1s0 1 1 1 1-1 1-1v-.1a5 5 0 0 0 3.9-3.9h.1s1 0 1-1-1-1-1-1h-.1A5 5 0 0 0 11 5.1V5s0-1-1-1m0 2.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 1 1 0-7'/%3E%3C/svg%3E")!important}
+.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-active-error .maplibregl-ctrl-icon,
+.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-background-error .maplibregl-ctrl-icon{
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' fill='%23e2492c' viewBox='0 0 20 20'%3E%3Cpath d='M10 4C9 4 9 5 9 5v.1A5 5 0 0 0 5.1 9H5s-1 0-1 1 1 1 1 1h.1A5 5 0 0 0 9 14.9v.1s0 1 1 1 1-1 1-1v-.1a5 5 0 0 0 3.9-3.9h.1s1 0 1-1-1-1-1-1h-.1A5 5 0 0 0 11 5.1V5s0-1-1-1m0 2.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 1 1 0-7'/%3E%3C/svg%3E")!important}
+/* Punto de ubicación y círculo de precisión: de serie son azules (#1da1f2), que
+   no está en la paleta. En ámbar, con el anillo blanco que ya trae de serie
+   (:after), se lee igual sobre satélite, topográfico y oscuro. */
+.maplibregl-user-location-dot,.maplibregl-user-location-dot:before{
+  background-color:var(--pr-yellow)}
+.maplibregl-user-location-accuracy-circle{background-color:rgba(227,178,60,.22)}
+/* Y el punto "rancio" (la posición dejó de actualizarse) sigue apagado: la regla
+   de arriba, al ser posterior a la del vendor, le ganaba y lo dejaba en ámbar
+   como si la ubicación siguiera fresca. */
+.maplibregl-user-location-dot-stale,.maplibregl-user-location-dot-stale:before{
+  background-color:var(--muted)}
 /* ── Loaders flotantes (subidas, borrados, re-escaneos) ────────────────────
    Globales porque el JS los cuelga de document.body, no de la sección. */
 .upload-loader{position:fixed;bottom:24px;right:24px;background:var(--panel);

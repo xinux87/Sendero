@@ -184,6 +184,77 @@ function buildStyle(capa){
           layers:[{id:'basemap',type:'raster',source:'basemap'}]};
 }
 
+/* ── ubicación del usuario ────────────────────────────────────────────────────
+   Botón "Mi ubicación" de TODOS los mapas: centra el mapa donde esté el usuario
+   y lo sigue mientras no arrastre. Es el GeolocateControl de MapLibre, no un
+   control propio, y eso importa por una razón concreta: el punto y el círculo de
+   precisión los pinta con marcadores DOM, no con capas de estilo, así que
+   sobreviven al setStyle() de applyBasemap (regla 15) sin que cada vista tenga
+   que repintar nada al cambiar de capa base.
+   Dos cosas hay que poner a mano:
+   - los textos: MapLibre solo los traduce por la opción `locale` del mapa, y son
+     seis mapas — mejor una vez aquí (ver _geoLabels);
+   - el aviso de error, porque la geolocalización solo existe en contexto seguro
+     (https o localhost): en LAN por http el navegador la deniega, y el motivo no
+     se ve en ningún sitio de la página. */
+const GEO_TXT={
+  ok:'Mi ubicación',
+  nosop:'Este navegador no puede dar la ubicación',
+  http:'La ubicación necesita HTTPS (o localhost): por http el navegador la bloquea',
+  denied:'Ubicación denegada: dale permiso al sitio en el navegador',
+  unavail:'No se ha podido determinar la ubicación (sin señal GPS)',
+  timeout:'La ubicación ha tardado demasiado; inténtalo otra vez',
+};
+/* ¿este mapa está siguiendo ahora mismo la ubicación del usuario?
+   Lo preguntan los re-encuadres AUTOMÁTICOS de las secciones (un filtro, una
+   sincronización que repinta la lista, el 'load' del mapa): mientras se sigue la
+   ubicación la cámara es del usuario, y un fitBounds() no solo se la robaba —
+   además tumbaba el seguimiento a "segundo plano", porque MapLibre entiende
+   cualquier movimiento ajeno como que el usuario se ha ido a mirar otra cosa.
+   Los encuadres que el usuario PIDE (botón "centrar en la ruta") no miran esto. */
+const _geoTracking=new WeakSet();
+function geoTracking(map){ return !!map&&_geoTracking.has(map); }
+
+function addGeolocate(map,position='top-right'){
+  if(typeof maplibregl==='undefined'||!maplibregl.GeolocateControl) return null;
+  const ctrl=new maplibregl.GeolocateControl({
+    positionOptions:{enableHighAccuracy:true,timeout:10000,maximumAge:10000},
+    trackUserLocation:true,showUserLocation:true,showAccuracyCircle:true,
+    // maxZoom para que en un GPS impreciso no se cuele hasta z20 sobre nada
+    fitBoundsOptions:{maxZoom:15,duration:700},
+  });
+  ctrl.on('trackuserlocationstart',()=>_geoTracking.add(map));
+  ctrl.on('trackuserlocationend',()=>_geoTracking.delete(map));
+  ctrl.on('error',e=>{
+    if(typeof toast!=='function') return;
+    // En contexto no seguro el navegador responde PERMISSION_DENIED igual que si
+    // el usuario hubiera dicho no: hay que distinguirlo antes de por el código.
+    if(!window.isSecureContext){ toast(GEO_TXT.http); return; }
+    toast(e&&e.code===1?GEO_TXT.denied:e&&e.code===3?GEO_TXT.timeout:GEO_TXT.unavail);
+  });
+  map.addControl(ctrl,position);
+  _geoLabels(map);
+  return ctrl;
+}
+/* Pasa a español el título del botón. MapLibre lo escribe cuando termina de
+   comprobar si el navegador soporta geolocalización, y eso es ASÍNCRONO (el
+   botón todavía no existe al volver de addControl), así que se reescribe cuando
+   pase, no una sola vez. Se deja de escuchar a los 5 s: después ya no cambia. */
+function _geoLabels(map){
+  const apply=()=>{
+    const btn=map.getContainer().querySelector('.maplibregl-ctrl-geolocate');
+    if(!btn) return;
+    const t=btn.disabled?GEO_TXT.nosop:GEO_TXT.ok;
+    if(btn.title!==t){ btn.title=t; btn.setAttribute('aria-label',t); }
+  };
+  apply();
+  if(typeof MutationObserver==='undefined') return;
+  const obs=new MutationObserver(apply);
+  obs.observe(map.getContainer(),{subtree:true,childList:true,
+                                 attributes:true,attributeFilter:['title','disabled']});
+  setTimeout(()=>obs.disconnect(),5000);
+}
+
 /* Cambia la capa base de un mapa ya creado.
    OJO: setTiles() solo vale entre capas del mismo tipo de fuente. Al entrar o
    salir de la capa offline (pmtiles:// con otro maxzoom) hay que reconstruir el

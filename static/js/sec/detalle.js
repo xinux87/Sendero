@@ -294,6 +294,7 @@
     });
     map.addControl(new maplibregl.AttributionControl({compact: true}), 'bottom-right');
     map.addControl(new maplibregl.NavigationControl({showCompass: true}), 'top-right');
+    addGeolocate(map, 'top-right');
     // selector de capas (top-left, arriba: es lo que pide el rediseño)
     map.addControl({
       onAdd() {

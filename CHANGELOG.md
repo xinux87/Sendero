@@ -5,6 +5,26 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.10] — 2026-07-27
+
+### Añadido
+- **Botón «Mi ubicación» en los seis mapas** (dashboard, Mis Rutas, Mis Planes, detalle de
+  ruta, detalle de plan y editor). Centra el mapa donde estás y **te sigue** mientras no
+  arrastres: el punto va en ámbar con su círculo de precisión, y el botón se queda
+  encendido mientras el seguimiento está activo. Sirve para saber dónde estás respecto a
+  una ruta que ya hiciste, a un plan que vas a hacer o al track que estás editando, y
+  funciona **sin conexión** (la ubicación la da el dispositivo, no el servidor) siempre que
+  el mapa base esté descargado.
+- Si el navegador no da la ubicación, **lo dice en español** en vez de no hacer nada: se
+  distingue el permiso denegado, la falta de señal, el tiempo agotado y —el caso típico en
+  una LAN— que la página no va por HTTPS, que es cuando el navegador la bloquea sin avisar.
+
+### Corregido
+- Mientras se sigue la ubicación, los mapas de **Mis Rutas**, **Mis Planes** y del
+  **dashboard** ya no se re-encuadran solos sobre las rutas: un cambio de filtro o una
+  sincronización en segundo plano devolvía la cámara a la colección y dejaba el seguimiento
+  a medias.
+
 ## [0.9.9] — 2026-07-27
 
 ### Corregido

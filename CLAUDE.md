@@ -22,7 +22,8 @@ sincronización delta. Lo que eso significa en la práctica:
   precacheados), los listados de rutas y planes, el dashboard (con las últimas
   estadísticas guardadas, avisando), el detalle de rutas y planes ya sincronizados, el
   mapa de «Mis Planes» con las trazas de cada plan (guardadas en el Store), el
-  mapa base si hay un `.pmtiles` en `data/tiles/`, y editar nombre/notas/actividad y
+  mapa base si hay un `.pmtiles` en `data/tiles/`, el botón «Mi ubicación» de cualquier
+  mapa (la ubicación la da el dispositivo, no el servidor), y editar nombre/notas/actividad y
   **marcar un plan como realizado** (se encolan y se envían al volver la red).
 - **NO funciona sin conexión, a propósito**: el **editor** (opera sobre el estado
   guardado en el servidor y cada guardado lleva `base_version`; encolar eso sería
@@ -275,7 +276,8 @@ static/sw.js       Service Worker (lo sirve /sw.js, no /static/sw.js — ver api
 static/icons/      icon-192.png, icon-512.png, icon-maskable-512.png, generados de
                    static/icon.svg con cairosvg (el maskable al 80% sobre el fondo)
 static/shared.js   ACTIVITIES/activityOf/iconSvg/_loadActImages, BASEMAP_TILES,
-                   buildStyle/basemapNames/defaultBasemap/applyBasemap, MAP_CFG
+                   buildStyle/basemapNames/defaultBasemap/applyBasemap, MAP_CFG,
+                   addGeolocate/geoTracking (botón «Mi ubicación», ver §6.3)
 static/js/core/    chrome.js  helpers globales ($, toast, fmtKm/fmtDur/fmtDate, esc)
                               + TODO el modal de Ajustes + registro del Service
                               Worker + badge de conexión + Ajustes → Sin conexión.
@@ -782,6 +784,47 @@ servidor encendido; esto no.
   3 descargas en paralelo y pausa entre teselas. Si añades una capa nueva a `BASEMAP_TILES`,
   mira su licencia antes de dejar que se pre-descargue.
 
+### Botón «Mi ubicación» (`addGeolocate()` en `static/shared.js`)
+Los **seis** mapas lo llevan: centra el mapa en el usuario y lo sigue mientras no arrastre.
+Es el `GeolocateControl` de MapLibre, no un control propio, y se añade siempre con
+`addGeolocate(map, esquina)` justo después del `NavigationControl` — así los textos, los
+avisos de error y el estilo se tocan en un solo sitio. La ubicación la da el dispositivo,
+así que **funciona sin conexión** si el mapa base está descargado.
+
+- **No necesita repintarse al cambiar de capa base** (regla 15): el punto y el círculo de
+  precisión son marcadores **DOM**, no capas del estilo, así que sobreviven al `setStyle()`
+  de `applyBasemap`. Un control propio con una capa GeoJSON sí habría que repintarlo.
+- **`geoTracking(map)` es el freno de los re-encuadres automáticos.** Mientras se sigue la
+  ubicación, la cámara es del usuario: `fitToPoints()` (dashboard), `fitPlans()` (planes),
+  el auto-encuadre de `renderMap()` (rutas) y el `fitRoute()` del `load` del editor lo
+  consultan y se apartan. Sin eso, un cambio de filtro o una sincronización de fondo le
+  devolvía el mapa a la colección **y** tumbaba el seguimiento a «segundo plano» (MapLibre
+  entiende cualquier movimiento ajeno como que el usuario se fue a mirar otra cosa). Los
+  encuadres que el usuario PIDE («centrar en la ruta») no miran esto.
+- **Los textos van a mano** porque MapLibre solo los traduce con la opción `locale` de cada
+  mapa, y son seis: `_geoLabels()` reescribe el título del botón cuando MapLibre lo pone en
+  inglés, que es **asíncrono** (al volver de `addControl` el botón todavía no existe: lo
+  crea `_setupUI` tras comprobar el soporte del navegador). De ahí el `MutationObserver`.
+- **La geolocalización solo existe en contexto seguro** (https o localhost). En LAN por http
+  el navegador la deniega con el mismo código que un permiso denegado, y no dice nada
+  visible en la página: por eso el aviso mira `window.isSecureContext` **antes** que el
+  código de error. Cuatro mensajes distintos (http, denegado, sin señal, tiempo agotado).
+- **El estado activo se pinta en `base.html`**, con el resto de reglas de MapLibre: el icono
+  de serie es azul cian, y el filtro que pone en blanco los iconos de los controles lo
+  dejaba idéntico al de reposo. Se sustituye por el mismo dibujo en ámbar (y en rojo si
+  falla la ubicación con el seguimiento puesto), con `!important` porque el vendor trae una
+  variante del selector con un `button` de más que gana por especificidad, y porque
+  `#sec-detalle`/`#sec-plan` reponen el filtro con un selector de ID. Los hex están dentro
+  del `data:URI` (una `url()` no puede leer una variable CSS): son `--pr-yellow` y
+  `--gr-red`, y hay que cambiarlos ahí si cambian los tokens.
+- **El `unmount()` de la sección ya lo apaga**, sin código extra: `map.remove()` llama al
+  `onRemove` del control, que hace `clearWatch` del GPS. Si algún día un mapa se destruye sin
+  `map.remove()`, el watch se queda abierto — es la fuga nº 1 de esta conversión, pero
+  gastando batería.
+- Lo cubre el bloque 16 de `tests/e2e_spa.py`, que da permiso y ubicación falsa a Chromium y
+  comprueba en los seis mapas que el punto acaba **en el centro** del contenedor, que sin
+  permiso avisa en español, y que al cambiar de sección el watch del GPS se cierra.
+
 ### Escrituras en el detalle (`static/js/sec/detalle.js`)
 Dos categorías, y la diferencia importa:
 - **Por `Store.patch`** (nombre, notas, actividad, `immich_checked`, descartar aviso de
@@ -1236,6 +1279,8 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
     `OFFLINE_LAYER` (`pmtiles://`, otro maxzoom) **reconstruye el estilo y eso borra todas
     tus fuentes y capas de datos** — repinta escuchando `map.on('sendero:basemap')` o
     recreando el mapa (ver `plan.js` y `sec/detalle.js`/`sec/rutas.js` respectivamente).
+    Lo que NO hay que repintar son los controles ni los marcadores DOM (el punto de «Mi
+    ubicación» es uno de ellos, por eso no aparece en ningún repintado).
 
 16. **El Service Worker NO cachea documentos que lleven datos inyectados dentro.**
     `/Sendero/<pid>` trae la ruta en `bootstrap_json`, así que su HTML es una copia de
@@ -1437,7 +1482,7 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tocaste el CSS del modal Immich (`static/css/detalle.css`): comprueba que
   `#sec-detalle .overlay.hidden` sigue ocultando el modal al cargar la ruta.
 - Con Playwright disponible, la comprobación de verdad es `python tests/e2e_spa.py`
-  (135 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
+  (167 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
   Worker, modo sin conexión y cola de escrituras). Necesita un servidor con
   `SENDERO_DATA` **de pruebas** y `python tests/e2e_seed.py` para sembrarlo.
 - Si tocaste `/actualizar` o el Service Worker: comprueba que la página sigue llegando de
@@ -1493,7 +1538,9 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   saber si están cargados: `typeof X !== 'undefined'`.
 - Si creaste un mapa nuevo o tocaste el selector de capas: ¿pasa por
   `buildStyle(defaultBasemap(...))` y por `applyBasemap()`, y repinta sus capas de datos
-  al entrar/salir de la capa offline? (regla 15).
+  al entrar/salir de la capa offline? (regla 15). ¿Lleva su `addGeolocate(map, esquina)`
+  como los otros seis? Y si tiene un re-encuadre **automático**, ¿lo frena
+  `geoTracking(map)`? (ver «Botón Mi ubicación»: si no, le roba la cámara al usuario).
 - Si tocaste `makeCard` o el CSS de `.card`: están en `sec/rutas.*`, y el CSS va escopado
   bajo `#sec-rutas` (sin el prefijo pisaría a `.plan-card` y a las tarjetas del detalle).
 - Si tocaste el mapa del dashboard: verifica que `paintRoutes()` limpia las fuentes antes

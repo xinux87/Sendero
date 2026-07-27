@@ -1,6 +1,6 @@
 # Qué viene después
 
-Lo que queda por hacer en Sendero. Revisado el 27-07-2026 con la 0.9.9 recién cerrada.
+Lo que queda por hacer en Sendero. Revisado el 27-07-2026 con la 0.9.10 recién cerrada.
 Tres listas: lo que **se hace**, lo que está **pendiente de probar** (el código existe, falta
 verificarlo con datos reales) y lo que se ha **descartado** — esto último está aquí para que
 nadie lo vuelva a proponer sin un motivo nuevo.
@@ -21,7 +21,7 @@ marcarlo o desmarcarlo. Los datos ya llegan: `_build_plan_dict()` devuelve `comp
 y la acción en el menú `⋯`, reutilizando el selector de ruta del listado o uno equivalente.
 
 ### La suite e2e no cubre «Mis Planes»
-`tests/e2e_spa.py` (135 comprobaciones) es la red de seguridad de la SPA, pero de la sección
+`tests/e2e_spa.py` (167 comprobaciones) es la red de seguridad de la SPA, pero de la sección
 `planes` solo mira que las tarjetas, el mapa y el modal de alta existan. Lo que la 0.9.8
 añadió —traza en el mapa, marcar/desmarcar realizada (incluido sin conexión), el selector de
 ruta y el filtro por estado— se verificó a mano con Playwright, y esos guiones **no están en
@@ -44,6 +44,19 @@ encendido** (el corredor de teselas por ruta cubre el caso del servidor apagado)
 Para probarlo: consigue un tileset raster con licencia que lo permita, conviértelo con
 `pmtiles convert`, déjalo en `data/tiles/` y selecciónalo en Ajustes → Mapas. Comprueba que
 el `MAP_OFFLINE_MAXZOOM` coincide con el del archivo, o verás teselas en blanco al acercarte.
+
+### «Mi ubicación» en un móvil de verdad
+
+El botón está probado en Chromium con ubicación simulada (bloque 16 de `tests/e2e_spa.py`:
+centra el mapa y sigue al usuario en los seis mapas), pero **no con un GPS real en el monte**.
+Lo que falta comprobar es lo que un emulador no dice: cuánto tarda la primera posición con
+señal pobre, si el seguimiento gasta batería de forma notable en una salida larga, y que
+sobre las teselas descargadas del corredor de una ruta el punto caiga donde debe.
+
+Y una cosa que sí es segura y conviene tener presente: la geolocalización **solo existe en
+contexto seguro**. Si accedes por `http://<ip-de-la-lan>:8090` el navegador la bloquea y el
+botón te lo dice; para usarla de verdad hace falta HTTPS (un proxy inverso con certificado)
+o entrar por `localhost`.
 
 ---
 
