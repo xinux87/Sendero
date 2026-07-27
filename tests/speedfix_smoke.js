@@ -14,6 +14,16 @@
      3. tras aplicar el plan ya no queda ninguna velocidad por encima del umbral,
      4. una tira sin punto válido al otro lado (llega al final del track) sí se
         elimina, porque no hay nada con lo que promediar.
+
+   Y a partir de la v0.9.7, lo que de verdad importa de "✔ Corregir todo":
+     5. detectGpsIssues() es un puerto EXACTO de detect_gps_anomalies() del
+        servidor (mismos tres tipos, mismo criterio entre puntos consecutivos),
+     6. planGpsFix() converge en UNA pasada: tras corregir no queda ni un aviso,
+        ni de velocidad, ni de tasa vertical, ni de altitud — incluido el caso
+        que fallaba, en el que corregir la velocidad reescribía la altitud y
+        fabricaba avisos de elevación nuevos,
+     7. y cuando algo NO se puede arreglar interpolando (una "altitud máx." por
+        debajo de todo el track), lo devuelve en `issues` en vez de fingir.
 */
 const fs = require('fs');
 const assert = require('assert');
@@ -41,6 +51,12 @@ const eleOf = oi => (P.ele ? P.ele[oi] : null);
 const haversineM = eval('(' + fuente('haversineM') + ')');
 const detectSpeedErr = eval('(' + fuente('detectSpeedErr') + ')');
 const planSpeedFix = eval('(' + fuente('planSpeedFix') + ')');
+/* Motor de "✔ Corregir todo": detector equivalente al del servidor y
+   planificador convergente. Son funciones puras (arrays entran, plan sale). */
+const _speedBad = eval('(' + fuente('_speedBad') + ')');
+const _forEachStrip = eval('(' + fuente('_forEachStrip') + ')');
+const detectGpsIssues = eval('(' + fuente('detectGpsIssues') + ')');
+const planGpsFix = eval('(' + fuente('planGpsFix') + ')');
 
 /* Track sintético: recta hacia el este a ~10 m por punto y 10 s por punto
    (≈3,6 km/h, ritmo de andar), con elevación subiendo 1 m por punto. */
@@ -147,5 +163,134 @@ aplicar(plan);
 assert.equal(idxMap.length, 19);
 assert.deepEqual([...detectSpeedErr(UMBRAL)], []);
 console.log('OK un salto al final del track se elimina (no hay media posible)');
+
+
+/* ══ "✔ Corregir todo": tiene que converger a CERO avisos en una pasada ══════
+   Estos son los casos que obligaban a pasar la herramienta varias veces. El
+   criterio de éxito es siempre el mismo y no admite matices: detectGpsIssues()
+   sobre el resultado devuelve [].                                            */
+
+const TH = {maxSpeed: 15, maxVert: 3, maxEle: 4900};   // senderismo
+
+/* Estado del editor → los arrays que comen las funciones puras. */
+function estado() {
+  return {
+    pos: Array.from(idxMap, oi => P.lonlat[oi]),
+    ele: P.ele ? Array.from(idxMap, oi => P.ele[oi]) : null,
+    t:   timeMs ? Array.from(idxMap, oi => timeMs[oi]) : null,
+  };
+}
+/* Aplica el resultado de planGpsFix como lo hacen las ops del editor. */
+function aplicarPlan(plan) {
+  for (let i = 0; i < idxMap.length; i++) {
+    const oi = idxMap[i];
+    P.lonlat[oi] = plan.pos[i];
+    if (plan.ele) P.ele[oi] = plan.ele[i];
+  }
+  if (plan.drops.length) {
+    const fuera = new Set(plan.drops);
+    idxMap = Int32Array.from([...idxMap].filter((_, i) => !fuera.has(i)));
+  }
+  reconstruir();
+}
+function avisos() {
+  const s = estado();
+  return detectGpsIssues(s.pos, s.ele, s.t, TH);
+}
+function corregir() {
+  const s = estado();
+  const plan = planGpsFix(s.pos, s.ele, s.t, TH);
+  aplicarPlan(plan);
+  return plan;
+}
+
+// ── 5) el detector ve los tres tipos, y solo cuando toca ──────────────────────
+nuevoTrack(20);
+assert.deepEqual(avisos(), [], 'un track limpio no debe dar ningún aviso');
+console.log('OK un track limpio no genera avisos');
+
+nuevoTrack(20);
+P.ele[8] = P.ele[7] + 100;          // +100 m en 10 s = 10 m/s (umbral 3)
+reconstruir();
+let tipos = avisos().map(x => x.type);
+assert.ok(tipos.includes('elevation'), `debía detectar tasa vertical: ${tipos}`);
+console.log('OK detecta la tasa vertical imposible (m/s), no solo el salto de altura');
+
+nuevoTrack(20);
+P.ele[9] = 6000;                    // por encima de max_ele_m
+reconstruir();
+tipos = avisos().map(x => x.type);
+assert.ok(tipos.includes('altitude'), `debía detectar la altitud: ${tipos}`);
+console.log('OK detecta la altitud por encima del máximo de la actividad');
+
+// ── 6) EL CASO DEL FALLO: un salto de GPS con altitud falsa ───────────────────
+//    Corregir la velocidad recolocaba el punto y le reescribía la altitud sin
+//    mirar la tasa vertical, así que aparecían avisos de elevación nuevos y
+//    había que volver a pasar la herramienta.
+nuevoTrack(30);
+P.lonlat[15] = [P.lonlat[15][0] + 0.01, 42.0];
+P.ele[15] = 3000;                   // el salto trae altitud falsa
+reconstruir();
+let antes = avisos();
+assert.ok(antes.some(x => x.type === 'speed'), 'debía haber aviso de velocidad');
+assert.ok(antes.some(x => x.type === 'elevation'), 'y de tasa vertical');
+plan = corregir();
+assert.equal(plan.issues.length, 0, `planGpsFix se declara convergido: ${JSON.stringify(plan.issues)}`);
+assert.deepEqual(avisos(), [], 'UNA pasada tiene que dejar el track sin avisos');
+assert.equal(idxMap.length, 30, 'y sin perder puntos');
+console.log('OK un salto de GPS con altitud falsa se resuelve en UNA pasada');
+
+// ── 7) varios saltos a la vez, de los tres tipos mezclados ────────────────────
+nuevoTrack(60);
+P.lonlat[10] = [P.lonlat[10][0] + 0.012, 42.001];   // salto de posición
+P.ele[10] = 2500;
+[24, 25, 26].forEach((i, k) => {                    // tira desviada
+  P.lonlat[i] = [P.lonlat[i][0] + 0.009 + k * 0.001, 42.003];
+});
+P.ele[40] = P.ele[39] + 250;                        // pico de barómetro
+P.ele[41] = P.ele[39] + 240;                        // con meseta
+P.ele[50] = 6200;                                   // altitud imposible
+reconstruir();
+antes = avisos();
+assert.ok(antes.length >= 4, `el escenario debe ensuciar bien el track: ${antes.length}`);
+assert.deepEqual([...new Set(antes.map(x => x.type))].sort(),
+  ['altitude', 'elevation', 'speed'], 'deben aparecer los tres tipos');
+plan = corregir();
+assert.equal(plan.issues.length, 0, `quedan avisos: ${JSON.stringify(plan.issues)}`);
+assert.deepEqual(avisos(), [], 'los tres tipos mezclados se resuelven en UNA pasada');
+console.log(`OK ${antes.length} avisos de los 3 tipos, resueltos en una pasada (${plan.passes} iteración interna)`);
+
+// ── 8) idempotencia: volver a corregir no debe tocar nada ─────────────────────
+const posDespues = JSON.stringify(estado().pos);
+const eleDespues = JSON.stringify(estado().ele);
+plan = corregir();
+assert.equal(plan.drops.length, 0, 'una segunda pasada no debe eliminar nada');
+assert.equal(JSON.stringify(estado().pos), posDespues, 'ni mover ningún punto');
+assert.equal(JSON.stringify(estado().ele), eleDespues, 'ni tocar ninguna altitud');
+console.log('OK corregir un track ya corregido no cambia nada (idempotente)');
+
+// ── 9) lo irreparable se REPORTA, no se finge ─────────────────────────────────
+//    Altitud máxima por debajo de toda la ruta: no hay ancla válida con la que
+//    interpolar. Antes se quedaba en bucle silencioso; ahora sale en issues.
+nuevoTrack(20);
+for (let i = 0; i < 20; i++) P.ele[i] = 5200;       // todo por encima de 4900
+reconstruir();
+plan = planGpsFix(estado().pos, estado().ele, estado().t, TH);
+assert.ok(plan.issues.length > 0, 'debe admitir que no puede arreglarlo');
+assert.ok(plan.issues.every(x => x.type === 'altitude'), 'y decir de qué tipo son');
+assert.ok(plan.passes <= 4, `no puede quedarse iterando: ${plan.passes}`);
+console.log('OK una altitud máxima imposible se reporta en vez de fingir que se arregló');
+
+// ── 10) el reparto temporal no puede retroceder ───────────────────────────────
+//    Con timestamps desordenados dentro de la tira, la monotonía del reparto es
+//    lo que impide fabricar una velocidad nueva entre dos puntos interpolados.
+nuevoTrack(30);
+[14, 15, 16].forEach(i => { P.lonlat[i] = [P.lonlat[i][0] + 0.01, 42.002]; });
+timeMs[idxMap[15]] = timeMs[idxMap[14]] - 5000;     // marca fuera de orden
+reconstruir();
+plan = corregir();
+assert.deepEqual(avisos().filter(x => x.type === 'speed'), [],
+  'con timestamps desordenados tampoco puede quedar velocidad excesiva');
+console.log('OK un timestamp fuera de orden no rompe el reparto (monotonía forzada)');
 
 console.log('\nTODO OK');

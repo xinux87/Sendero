@@ -106,9 +106,21 @@ def _editor_meta(con, row):
     """Metadatos que el editor necesita para arrancar (el track va por /points)."""
     d = dict(row)
     d["version"] = _current_version(con, row["id"])
-    # Umbral de velocidad plausible para la actividad (Ajustes → "GPS incorrecto");
-    # el editor lo usa como valor inicial de "Corregir velocidad excesiva".
-    d["gps_max_speed"] = cfg.gps_thresholds_for(d.get("activity_type"))["max_speed_kmh"]
+    # Umbrales de "GPS incorrecto" para la actividad (Ajustes). Van los TRES, no
+    # solo el de velocidad: "✔ Corregir todo" comprueba su propio resultado
+    # re-detectando en cliente con el mismo criterio que detect_gps_anomalies(),
+    # y sin la tasa vertical ni la altitud máxima no podría hacerlo — corregía a
+    # ciegas y dejaba avisos que solo se veían al guardar (había que pasar la
+    # herramienta varias veces).
+    th = cfg.gps_thresholds_for(d.get("activity_type"))
+    d["gps_thresholds"] = {
+        "max_speed_kmh":    th.get("max_speed_kmh"),
+        "max_vert_rate_ms": th.get("max_vert_rate_ms"),
+        "max_ele_m":        th.get("max_ele_m"),
+    }
+    # Se conserva suelto porque es el valor inicial del panel "Corregir velocidad
+    # excesiva", que el usuario puede tocar a mano.
+    d["gps_max_speed"] = th["max_speed_kmh"]
     # Avisos GPS calculados en create/rescan/guardado: el editor los premarca.
     d["gps_issues"] = json.loads(d.get("gps_issues") or "[]")
     # Recalcular elevación con DEM solo si hay servicio configurado en Ajustes.

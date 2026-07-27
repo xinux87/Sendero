@@ -1034,6 +1034,198 @@
     return {moves,drops};
   }
 
+  /* ── avisos GPS: detección y corrección CONVERGENTE ─────────────────────────
+     Todo lo de aquí abajo es geometría pura (arrays entran, plan sale) para que
+     `node tests/speedfix_smoke.js` pueda comprobar la propiedad que importa:
+     después de corregir NO puede quedar ni un aviso. Hasta la v0.9.7 no había
+     nada que lo comprobara y había que pasar "✔ Corregir todo" varias veces. */
+
+  /* Umbrales efectivos de la actividad (Ajustes → "GPS incorrecto"), tal como los
+     manda /api/routes/<id>/editor. Los de reserva son los de 'otros' en
+     core/config.DEFAULT_GPS_THRESHOLDS, por si un cliente con el JS viejo en
+     caché se encuentra sin el campo. */
+  function gpsThresholds(){
+    const t=(R&&R.gps_thresholds)||{};
+    const num=(v,d)=>(v==null||isNaN(+v))?d:+v;
+    return {maxSpeed:num(t.max_speed_kmh,num(R&&R.gps_max_speed,40)),
+            maxVert :num(t.max_vert_rate_ms,5),
+            maxEle  :t.max_ele_m==null?null:num(t.max_ele_m,null)};
+  }
+
+  /* Puerto EXACTO de core/gps_analysis.py::detect_gps_anomalies. Que sea exacto
+     es el punto: si el cliente comprobara con otro criterio, diría "0 avisos" y
+     el servidor volvería a marcarlos al guardar. Los tres tipos se miran entre
+     puntos CONSECUTIVOS (no contra el último punto bueno, que es como busca los
+     saltos `detectSpeedErr`; esa es una heurística de reparación, no el criterio).
+       pos: [[lon,lat],…] · ele: [m|null]|null · t: [ms|null]|null
+     Devuelve [{type,i,value,threshold}], con i = índice del punto culpable. */
+  function detectGpsIssues(pos,ele,t,th){
+    const out=[], n=pos.length;
+    if(n<2)return out;
+    if(th.maxEle!=null&&ele&&ele[0]!=null&&ele[0]>th.maxEle)
+      out.push({type:'altitude',i:0,value:ele[0],threshold:th.maxEle});
+    for(let i=1;i<n;i++){
+      const a=pos[i-1], b=pos[i];
+      const distM=haversineM(a[1],a[0],b[1],b[0]);
+      if(th.maxEle!=null&&ele&&ele[i]!=null&&ele[i]>th.maxEle)
+        out.push({type:'altitude',i,value:ele[i],threshold:th.maxEle});
+      if(!t)continue;
+      const t0=t[i-1], t1=t[i];
+      if(t0==null||t1==null)continue;
+      const dtS=(t1-t0)/1000;
+      if(dtS<=0)continue;
+      const kmh=(distM/1000)/(dtS/3600);
+      if(kmh>th.maxSpeed)out.push({type:'speed',i,value:kmh,threshold:th.maxSpeed});
+      if(ele&&ele[i-1]!=null&&ele[i]!=null){
+        const rate=Math.abs(ele[i]-ele[i-1])/dtS;
+        if(rate>th.maxVert)out.push({type:'elevation',i,value:rate,threshold:th.maxVert});
+      }
+    }
+    return out;
+  }
+
+  /* Corrige TODOS los avisos y garantiza que lo interpolado no genera otros.
+     Devuelve {pos,ele,drops,issues,passes}: el estado ya corregido (arrays
+     nuevos, no muta la entrada), qué índices no se pueden salvar, y los avisos
+     que QUEDAN (vacío = convergió).
+
+     Por qué converge en una sola pasada, en vez de a base de repetir:
+     · La velocidad depende solo de posición y tiempo; la tasa vertical y la
+       altitud, solo de elevación y tiempo. Son independientes, así que basta
+       arreglar posiciones y DESPUÉS elevaciones — el segundo paso no puede
+       romper el primero.
+     · Velocidad: cada tira mala se recoloca sobre el segmento recto A→B con
+       fracción PROPORCIONAL AL TIEMPO, así que la velocidad entre cualquier par
+       consecutivo resultante es exactamente |AB|/(tB−tA), que es justo la que
+       `detectSpeedErr` ya validó al aceptar B. No puede pasarse.
+     · Elevación y altitud: los anclas se ABREN hacia fuera hasta que cumplen
+       las dos condiciones (|eB−eA|/(tB−tA) ≤ tasa máx. y ambas ≤ altitud máx.).
+       Interpolando por TIEMPO entre esos anclas, la tasa de cada par interior es
+       constante e igual a la del ancla, y ningún punto interior supera el mayor
+       de los dos extremos. Interpolar por DISTANCIA, que es lo que se hacía, no
+       acota una tasa en m/s: ese era el fallo.
+     El bucle exterior es solo red de seguridad y verificación: si algo no se
+     puede arreglar (p.ej. una altitud máxima por debajo de todo el track), sale
+     y lo devuelve en `issues` para poder decirlo en vez de fingir que está. */
+  function planGpsFix(pos,ele,t,th,maxPasses){
+    const n=pos.length;
+    const P2=pos.map(p=>[p[0],p[1]]);
+    const E2=ele?ele.slice():null;
+    const dropped=new Set();
+    let issues=[], passes=0;
+    const limit=maxPasses||4;
+
+    for(;passes<limit;passes++){
+      const live=[];for(let i=0;i<n;i++)if(!dropped.has(i))live.push(i);
+      if(live.length<2)break;
+      const lp=live.map(i=>P2[i]);
+      const le=E2?live.map(i=>E2[i]):null;
+      const lt=t?live.map(i=>t[i]):null;
+      issues=detectGpsIssues(lp,le,lt,th);
+      if(!issues.length)break;
+
+      // 1) velocidad — recoloca sobre A→B con reparto temporal
+      if(lt&&issues.some(x=>x.type==='speed')){
+        const bad=_speedBad(lp,lt,th.maxSpeed);
+        _forEachStrip(bad,(i0,i1)=>{
+          const a=i0-1,b=i1+1;
+          if(a<0||b>=live.length){for(let q=i0;q<=i1;q++)dropped.add(live[q]);return;}
+          const A=lp[a],B=lp[b],tA=lt[a],tB=lt[b],span=(tA!=null&&tB!=null)?tB-tA:0;
+          const eA=le?le[a]:null,eB=le?le[b]:null,m=i1-i0+1;
+          let prev=0;
+          for(let q=0;q<m;q++){
+            const i=i0+q, ti=lt[i];
+            let f=(q+1)/(m+1);
+            if(span>0&&ti!=null){const g=(ti-tA)/span;if(g>0&&g<1)f=g;}
+            if(f<=prev)f=prev+1e-9;          // monotonía: nunca retroceder
+            prev=f;
+            const oi=live[i];
+            P2[oi]=[A[0]+(B[0]-A[0])*f, A[1]+(B[1]-A[1])*f];
+            if(E2&&eA!=null&&eB!=null)E2[oi]=Math.round((eA+(eB-eA)*f)*10)/10;
+          }
+        });
+      }
+
+      // 2) elevación y altitud — anclas que se abren hasta cumplir, y reparto
+      //    temporal (por distancia solo si el track no tiene tiempos)
+      if(E2&&issues.some(x=>x.type==='elevation'||x.type==='altitude')){
+        const bad=new Set();
+        issues.forEach(x=>{
+          if(x.type==='elevation'){bad.add(x.i);bad.add(x.i-1);}
+          else if(x.type==='altitude')bad.add(x.i);
+        });
+        const list=[...bad].filter(i=>i>=0&&i<live.length).sort((x,y)=>x-y);
+        _forEachStrip(list,(i0,i1)=>{
+          let a=i0-1,b=i1+1;
+          const okAnchor=(x,y)=>{
+            if(x<0||y>=live.length)return false;
+            const eX=le[x],eY=le[y];
+            if(eX==null||eY==null)return false;
+            if(th.maxEle!=null&&(eX>th.maxEle||eY>th.maxEle))return false;
+            if(lt&&lt[x]!=null&&lt[y]!=null){
+              const s=(lt[y]-lt[x])/1000;
+              if(s>0&&Math.abs(eY-eX)/s>th.maxVert)return false;
+            }
+            return true;
+          };
+          while(!okAnchor(a,b)&&(a>=0||b<live.length)){
+            if(a>=0)a--;
+            if(b<live.length)b++;
+            if(a<0&&b>=live.length)break;
+          }
+          if(!okAnchor(a,b))return;          // irreparable: se reporta al salir
+          const eA=le[a],eB=le[b];
+          const tA=lt?lt[a]:null,tB=lt?lt[b]:null;
+          const useT=(tA!=null&&tB!=null&&tB>tA);
+          let dTot=0;const dAcc=[0];
+          if(!useT)for(let i=a+1;i<=b;i++){
+            const p=lp[i-1],q=lp[i];
+            dTot+=haversineM(p[1],p[0],q[1],q[0]);dAcc.push(dTot);
+          }
+          for(let i=a+1;i<b;i++){
+            let f;
+            if(useT){const ti=lt[i];f=(ti==null)?(i-a)/(b-a):(ti-tA)/(tB-tA);}
+            else f=dTot?dAcc[i-a]/dTot:(i-a)/(b-a);
+            f=Math.max(0,Math.min(1,f));
+            E2[live[i]]=Math.round((eA+(eB-eA)*f)*10)/10;
+          }
+        });
+      }
+    }
+
+    // verificación final sobre el estado ya corregido
+    const live=[];for(let i=0;i<n;i++)if(!dropped.has(i))live.push(i);
+    issues=live.length<2?[]:detectGpsIssues(
+      live.map(i=>P2[i]), E2?live.map(i=>E2[i]):null, t?live.map(i=>t[i]):null, th);
+    return {pos:P2,ele:E2,drops:[...dropped].sort((a,b)=>a-b),issues,passes};
+  }
+
+  /* Puntos cuya velocidad contra el ÚLTIMO BUENO se pasa del umbral. Es la
+     heurística que hace que un grupo entero desplazado (el track "se va" y
+     vuelve) caiga completo y no solo su primer punto. */
+  function _speedBad(pos,t,maxKmh){
+    const bad=[];let last=null;
+    for(let i=0;i<pos.length;i++){
+      if(t[i]==null)continue;
+      if(last==null){last=i;continue;}
+      const dt=(t[i]-t[last])/1000;
+      if(dt<=0){last=i;continue;}
+      const a=pos[last],b=pos[i];
+      if(haversineM(a[1],a[0],b[1],b[0])/dt*3.6>maxKmh)bad.push(i);
+      else last=i;
+    }
+    return bad;
+  }
+  /* Recorre una lista ordenada de índices agrupándola en tiras contiguas. */
+  function _forEachStrip(idxs,fn){
+    for(let k=0;k<idxs.length;){
+      let j=k;
+      while(j+1<idxs.length&&idxs[j+1]===idxs[j]+1)j++;
+      fn(idxs[k],idxs[j]);
+      k=j+1;
+    }
+  }
+
   function toggleSpeedFix(){
     const panel=document.getElementById('speedfix-panel');
     if(panel.classList.contains('hidden')){
@@ -1309,71 +1501,71 @@
       })});
   }
 
+  /* "✔ Corregir todo": deja el track SIN avisos de una sola pasada, y lo
+     comprueba antes de decirlo. El plan se calcula entero sobre copias
+     (planGpsFix) y solo al final se emiten las ops, así que sigue costando 2
+     pasos de deshacer (3 si además hay que eliminar un salto sin referencia),
+     no uno por iteración. */
   function fixAllIssues(){
-    const issues=R.gps_issues||[];
-    if(!issues.length)return;
     if(opsList.length){toast('Los avisos son del estado guardado: deshaz o guarda los cambios primero');return;}
-    let nEle=0,nSpd=0,nDrop=0;
+    const th=gpsThresholds();
+    const pos=cur.map(p=>[p[0],p[1]]);
+    const ele=P.ele?idxMap.map(oi=>eleOf(oi)):null;
+    const tms=timeMs?Array.from(idxMap,oi=>timeMs[oi]):null;
 
-    // 1) Elevación/altitud primero (no cambian geometría → los km de los avisos
-    //    siguen siendo válidos). Un fallo de barómetro genera DOS avisos de
-    //    elevación (la subida y la bajada imposibles) con la meseta falsa entre
-    //    medias, y los de altitud marcan directamente la meseta: se fusionan los
-    //    tramos cercanos (<0,5 km) en una región y se interpola de extremo a
-    //    extremo, cubriendo también la meseta.
-    if(P.ele){
-      const ranges=issues.filter(it=>it.type==='elevation'||it.type==='altitude')
-        .map(it=>[it.d_from,it.d_to]).sort((a,b)=>a[0]-b[0]);
-      const regions=[];
-      ranges.forEach(r=>{
-        const last=regions[regions.length-1];
-        if(last&&r[0]-last[1]<0.5)last[1]=Math.max(last[1],r[1]);
-        else regions.push([r[0],r[1]]);
-      });
-      const items=[];
-      regions.forEach(([d0,d1])=>{
-        const a=Math.max(0,kmToIdx(d0)-1);
-        const b=Math.min(idxMap.length-1,kmToIdx(d1)+1);
-        const eA=eleOf(idxMap[a]), eB=eleOf(idxMap[b]);
-        if(eA==null||eB==null||b-a<2)return;
-        for(let i=a+1;i<b;i++){
-          const t=(cumM[i]-cumM[a])/((cumM[b]-cumM[a])||1);
-          items.push([i,Math.round((eA+(eB-eA)*t)*10)/10]);
-        }
-      });
-      if(items.length){
-        doOp({op:'set_ele',items,desc:`Corregida la elevación de ${items.length} puntos (avisos GPS)`});
-        nEle=items.length;
-      }
+    if(!detectGpsIssues(pos,ele,tms,th).length){
+      toast('No queda ningún aviso GPS con los umbrales actuales');
+      return;
+    }
+    const plan=planGpsFix(pos,ele,tms,th);
+    if(idxMap.length-plan.drops.length<2){
+      toast('No se puede corregir: no quedarían puntos suficientes');
+      return;
     }
 
-    // 2) Velocidad: los saltos de GPS se RECOLOCAN interpolando entre los puntos
-    //    válidos de alrededor (ver planSpeedFix), no se borran. Solo caen los que
-    //    no tienen punto válido a un lado (una tira que llega al final del track).
-    const spd=issues.filter(it=>it.type==='speed');
-    if(spd.length&&timeMs){
-      const idxs=detectSpeedErr(Math.min(...spd.map(it=>it.threshold)));
-      const plan=planSpeedFix(idxs);
-      if(idxMap.length-plan.drops.length>=2){
-        if(plan.moves.length){
-          doOp({op:'move_points',items:plan.moves,
-            desc:`Corregida velocidad excesiva (${plan.moves.length} punto${plan.moves.length!==1?'s':''} interpolado${plan.moves.length!==1?'s':''}, avisos GPS)`});
-          nSpd=plan.moves.length;
-        }
-        if(plan.drops.length){
-          doOp({op:'delete_points',indices:plan.drops,
-            desc:`Eliminado${plan.drops.length!==1?'s':''} ${plan.drops.length} punto${plan.drops.length!==1?'s':''} de GPS sin referencia`});
-          nDrop=plan.drops.length;
-        }
-      }
+    // Diferencias contra el estado actual → las ops mínimas. Orden obligatorio:
+    // move_points ANTES que delete_points (al revés reindexaría los movimientos).
+    const dropSet=new Set(plan.drops);
+    const moves=[], eles=[];
+    for(let i=0;i<idxMap.length;i++){
+      if(dropSet.has(i))continue;
+      const movedXY=plan.pos[i][0]!==pos[i][0]||plan.pos[i][1]!==pos[i][1];
+      const e0=ele?ele[i]:null, e1=plan.ele?plan.ele[i]:null;
+      const movedE=ele&&e1!=null&&e1!==e0;
+      if(movedXY){
+        const it=[i,plan.pos[i][0],plan.pos[i][1]];
+        if(movedE)it.push(e1);
+        moves.push(it);
+      } else if(movedE) eles.push([i,e1]);
     }
+    if(!moves.length&&!eles.length&&!plan.drops.length){
+      toast('No se encontró nada que corregir con los umbrales actuales');
+      return;
+    }
+    if(moves.length)
+      doOp({op:'move_points',items:moves,
+        desc:`Corregida velocidad excesiva (${moves.length} punto${moves.length!==1?'s':''} interpolado${moves.length!==1?'s':''}, avisos GPS)`});
+    if(eles.length)
+      doOp({op:'set_ele',items:eles,
+        desc:`Corregida la elevación de ${eles.length} punto${eles.length!==1?'s':''} (avisos GPS)`});
+    if(plan.drops.length)
+      doOp({op:'delete_points',indices:plan.drops,
+        desc:`Eliminado${plan.drops.length!==1?'s':''} ${plan.drops.length} punto${plan.drops.length!==1?'s':''} de GPS sin referencia`});
 
-    if(!nEle&&!nSpd&&!nDrop){toast('No se encontró nada que corregir con los umbrales actuales');return;}
     const parts=[];
-    if(nSpd)parts.push(`${fmt(nSpd)} punto${nSpd!==1?'s':''} de velocidad recolocado${nSpd!==1?'s':''}`);
-    if(nDrop)parts.push(`${fmt(nDrop)} eliminado${nDrop!==1?'s':''} sin referencia`);
-    if(nEle)parts.push(`elevación corregida en ${fmt(nEle)} punto${nEle!==1?'s':''}`);
-    toast('Corregido: '+parts.join(' · ')+'. Revisa el resultado y guarda.');
+    if(moves.length)parts.push(`${fmt(moves.length)} punto${moves.length!==1?'s':''} recolocado${moves.length!==1?'s':''}`);
+    if(eles.length)parts.push(`elevación corregida en ${fmt(eles.length)} punto${eles.length!==1?'s':''}`);
+    if(plan.drops.length)parts.push(`${fmt(plan.drops.length)} eliminado${plan.drops.length!==1?'s':''} sin referencia`);
+    if(plan.issues.length){
+      // Honestidad: quedan avisos que la interpolación no puede resolver (el caso
+      // típico es una "altitud máx." por debajo de la cota real de la ruta, que
+      // se arregla en Ajustes → "GPS incorrecto", no tocando el track).
+      const tipos=[...new Set(plan.issues.map(x=>x.type))].join(', ');
+      toast(`Corregido: ${parts.join(' · ')}. Quedan ${fmt(plan.issues.length)} aviso${plan.issues.length!==1?'s':''} (${tipos}) que no se pueden arreglar interpolando: revisa los umbrales en Ajustes.`);
+    } else {
+      toast(`Corregido: ${parts.join(' · ')}. Sin avisos restantes — revisa el resultado y guarda.`);
+    }
+    return;
   }
 
   function fixIssue(k){

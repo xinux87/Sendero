@@ -49,7 +49,8 @@ python -m pytest                   # tests unitarios (tests/): editing, parsers,
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
 node tests/sec_smoke.js            # sec/detalle.js carga contra los ids reales del markup
 node tests/tiles_smoke.js          # geometría del corredor de teselas (§6.2)
-node tests/speedfix_smoke.js       # corrección de velocidad excesiva del editor (interpolación)
+node tests/speedfix_smoke.js       # velocidad excesiva y convergencia de «Corregir todo»
+node tests/gps_parity_smoke.js     # el detector de avisos GPS del cliente == el del servidor
 
 # end-to-end en un navegador real (Playwright; NO va en requirements-dev.txt)
 python -m venv /tmp/pw && /tmp/pw/bin/pip install playwright
@@ -175,7 +176,7 @@ un hilo de gunicorn (evita duplicar el importador con 2 workers).
 `tests/` — pytest sin BD ni Flask (funciones puras): `conftest.py` trae un constructor
 de GPX sintéticos (`make_gpx_xml`) y un FIT de muestra (`tests/fixtures/Activity.fit`).
 Si tocas una op del editor o el aplanado, añade/ajusta el test correspondiente.
-Además hay cuatro pruebas de humo de JavaScript que se lanzan con **Node a pelo** (sin npm
+Además hay cinco pruebas de humo de JavaScript que se lanzan con **Node a pelo** (sin npm
 ni dependencias, regla 1; pytest ignora los `.js`): `node tests/sw_smoke.js` ejecuta
 `static/sw.js` con `caches`/`fetch` simulados y comprueba install/activate y qué
 estrategia le toca a cada URL; `node tests/sec_smoke.js` carga `static/js/sec/detalle.js`
@@ -351,7 +352,7 @@ archivo, nunca en `mount()`.
 | GET | `/api/routes/<id>/thumb` | sirve el PNG del track (image/png) |
 | GET | `/api/routes/<id>/gpx` | descarga el archivo GPX/FIT original |
 | GET | `/Sendero/<public_id>/editor` | `shell.html` (sección `editor`); por nombre redirige 302 al `public_id` |
-| GET | `/api/routes/<public_id>/editor` | metadatos de arranque del editor (nombre, versión, `gps_max_speed`, `gps_issues`, `dem_enabled`). Antes iban inyectados en la plantilla |
+| GET | `/api/routes/<public_id>/editor` | metadatos de arranque del editor (nombre, versión, `gps_thresholds` con los TRES umbrales de la actividad, `gps_max_speed`, `gps_issues`, `dem_enabled`). Antes iban inyectados en la plantilla |
 | GET | `/api/routes/<id>/points` | puntos completos para el editor: arrays paralelos lonlat/ele/time/hr 1:1 con los trkpt + `segments` + `version` |
 | POST | `/api/routes/<id>/edit` | guarda edición: `{base_version, summary, ops}`; 409 si base_version ≠ actual |
 | POST | `/api/routes/<id>/split` | divide en el punto `index`: la original se recorta (versión nueva) y la 2ª mitad pasa a ruta nueva; las fotos se quedan en la original |
@@ -421,7 +422,40 @@ Lo que sabe hacer, todo con versionado:
   hay cambios pendientes: los km son del estado guardado), y "Corregir" hace zoom al
   tramo y abre la herramienta según `type` (speed → velocidad excesiva con el umbral del
   aviso; elevation → picos). "✔ Corregir todo" lo resuelve en 2 ops deshacibles (3 si
-  además hay que eliminar un salto al final del track, ver abajo).
+  además hay que eliminar un salto al final del track, ver abajo) y **converge a la
+  primera** — ver la sección siguiente.
+
+**«✔ Corregir todo» tiene que converger EN UNA PASADA, y lo comprueba** (v0.9.7). No es
+un detalle de comodidad: si al guardar reaparecen avisos, el usuario no sabe si la
+herramienta funciona. Las piezas, todas en `sec/editor.js` y todas puras:
+
+- **`detectGpsIssues(pos, ele, t, th)`** es un **puerto exacto** de
+  `core/gps_analysis.py::detect_gps_anomalies`: mismos tres tipos (`speed`, `elevation`
+  = tasa vertical en m/s, `altitude` = cota absoluta) y mismo criterio **entre puntos
+  consecutivos**. Si los dos criterios divergen, el cliente cantará "0 avisos" y el
+  servidor los volverá a marcar al guardar. **`node tests/gps_parity_smoke.js` compara
+  las dos implementaciones punto a punto sobre 12 escenarios**: si tocas una, toca la otra.
+- **`planGpsFix(pos, ele, t, th)`** devuelve el estado ya corregido y **los avisos que
+  quedan**. Converge en una pasada porque la velocidad depende solo de posición y tiempo,
+  y la tasa vertical y la altitud solo de elevación y tiempo: son independientes, así que
+  basta arreglar posiciones y **después** elevaciones. El segundo paso no puede romper el
+  primero.
+  - Velocidad: reparto **proporcional al tiempo** sobre el segmento A→B ⇒ la velocidad de
+    cualquier par consecutivo resultante es exactamente `|AB|/(tB−tA)`, que es la que
+    `detectSpeedErr` ya validó al aceptar B. No puede pasarse. El reparto se fuerza
+    monótono, o un timestamp desordenado fabricaría una velocidad nueva.
+  - Elevación y altitud: los **anclas se abren hacia fuera** hasta cumplir las dos
+    condiciones (`|eB−eA|/(tB−tA) ≤ tasa máx.` y ambas `≤ altitud máx.`), y se interpola
+    **por TIEMPO**. Interpolar por distancia —que es lo que se hacía— no acota una tasa
+    en m/s: ese era el fallo.
+- **Lo irreparable se reporta.** Si la "altitud máx." de la actividad está por debajo de
+  la cota real de la ruta no hay ancla válida: sale en `plan.issues` y el toast lo dice,
+  en vez de fingir que está arreglado. Se corrige en Ajustes, no tocando el track.
+- Los **tres umbrales** llegan en `gps_thresholds` de `/api/routes/<id>/editor`. Sin la
+  tasa vertical y la altitud máxima el cliente no puede verificarse: si añades un umbral
+  nuevo al detector, mándalo también ahí.
+- El plan se calcula entero sobre copias y las ops se emiten **al final**, para que siga
+  costando 2 pasos de deshacer y no uno por iteración.
 
 **Corrección de velocidad excesiva: se arregla el punto, no se borra** (`planSpeedFix()`
 en `sec/editor.js`, probado con `node tests/speedfix_smoke.js`). Hasta la 0.7.1 los puntos
@@ -1329,9 +1363,15 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   editor puede ser un simple cambio de sección, y de eso se encarga un listener en fase de
   captura dentro de `sec/editor.js`.
 - Si tocaste la corrección de velocidad excesiva o los avisos GPS del editor:
-  `node tests/speedfix_smoke.js` (y recuerda que la herramienta **recoloca** los puntos, no
-  los borra: si vuelve a aparecer un `delete_points` con todos los marcados, es una
-  regresión). El nombre de las funciones importa: el test las extrae por nombre del archivo.
+  `node tests/speedfix_smoke.js` **y `node tests/gps_parity_smoke.js`** (y recuerda que la
+  herramienta **recoloca** los puntos, no los borra: si vuelve a aparecer un
+  `delete_points` con todos los marcados, es una regresión). El nombre de las funciones
+  importa: los tests las extraen por nombre del archivo.
+- Si tocaste `core/gps_analysis.py::detect_gps_anomalies` o `detectGpsIssues()` de
+  `sec/editor.js`: **son la misma lógica en dos idiomas y tienen que seguir coincidiendo**
+  (`node tests/gps_parity_smoke.js`). Y si añades un umbral, mándalo también en
+  `gps_thresholds` de `/api/routes/<id>/editor`, o «✔ Corregir todo» no podrá verificarse
+  y volverá a hacer falta pasarlo varias veces.
 - Si tocaste `chrome.js`, `router.js` o `store.js`: recuerda que `Router` y `Store` son
   `const` de un script clásico y **no** están en `window` (ver "Bugs corregidos"). Para
   saber si están cargados: `typeof X !== 'undefined'`.

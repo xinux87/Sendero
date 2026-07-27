@@ -5,6 +5,48 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.7] — 2026-07-27
+
+### Corregido
+- **«✔ Corregir todo» deja el track sin avisos GPS a la primera.** Había que pasar la
+  herramienta varias veces sobre la misma ruta, y aun así podían quedar avisos. Eran cinco
+  fallos encadenados:
+  - El editor **no conocía dos de los tres umbrales**. `/api/routes/<id>/editor` solo
+    mandaba el de velocidad, así que la corrección de elevación trabajaba a ciegas y no
+    podía comprobar su propio resultado. Ahora van los tres.
+  - La corrección de elevación **interpolaba por distancia**, pero el umbral del servidor
+    es una **tasa vertical en m/s**. Interpolar por distancia no acota una tasa: podía
+    dejar el aviso intacto. Ahora interpola por tiempo.
+  - La corrección de velocidad **reescribía la altitud** de cada punto recolocado sin mirar
+    la tasa resultante, así que arreglaba la velocidad y **creaba** avisos de elevación
+    nuevos. De ahí la sensación de que la herramienta «no terminaba nunca».
+  - Los avisos de **altitud** no se resolvían si los puntos ancla también superaban el
+    máximo: interpolaba entre dos valores demasiado altos. Ahora los anclas se abren hacia
+    fuera hasta encontrar dos válidos.
+  - **Nada verificaba el resultado.** Ahora sí: el editor re-detecta con el mismo criterio
+    que el servidor y solo entonces dice que está limpio.
+- Cuando algo **no se puede arreglar interpolando** —el caso típico es una «altitud máx.»
+  configurada por debajo de la cota real de la ruta— se dice cuántos avisos quedan y de qué
+  tipo, en vez de dar el trabajo por terminado. Eso se arregla en Ajustes → «GPS
+  incorrecto», no tocando el track.
+
+### Añadido
+- `GET /api/routes/<id>/editor` devuelve `gps_thresholds` con los tres umbrales de la
+  actividad (`max_speed_kmh`, `max_vert_rate_ms`, `max_ele_m`). `gps_max_speed` se conserva:
+  es el valor inicial del panel «Corregir velocidad excesiva», que el usuario puede tocar.
+- `tests/gps_parity_smoke.js`: comprueba que el detector del cliente y
+  `core/gps_analysis.py::detect_gps_anomalies` marcan **los mismos puntos** en 12
+  escenarios. De esa equivalencia depende toda la garantía — si el cliente comprobara con
+  otro criterio, diría «0 avisos» y el servidor los volvería a marcar al guardar.
+- `tests/speedfix_smoke.js` gana seis casos: los tres tipos de aviso mezclados resueltos en
+  una pasada, idempotencia, lo irreparable reportado, y que un timestamp fuera de orden no
+  rompe el reparto.
+
+### Cambiado
+- La corrección se planifica entera sobre copias y solo al final emite las operaciones, así
+  que sigue costando **2 pasos de deshacer** (3 si además hay que eliminar un salto sin
+  referencia), no uno por iteración.
+
 ## [0.9.6] — 2026-07-27
 
 ### Eliminado
