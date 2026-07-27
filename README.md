@@ -42,10 +42,6 @@ En resumen, Sendero te permite:
 
 ## Dashboard
 
-> ℹ️ Las capturas de esta sección y de las dos siguientes son de una versión anterior a
-> la 0.9.0, que rediseñó el dashboard, Mis Rutas y el detalle de ruta. Lo que describe cada
-> lista debajo sí corresponde a la versión actual.
-
 La portada de Sendero: un resumen de todo lo que has recorrido, con las cifras globales, el mapa de todas tus rutas y tus mejores marcas de un vistazo.
 
 ![Dashboard de Sendero](readme_images/dasboard_es.png)

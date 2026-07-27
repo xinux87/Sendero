@@ -28,15 +28,6 @@ Para probarlo: consigue un tileset raster con licencia que lo permita, conviért
 `pmtiles convert`, déjalo en `data/tiles/` y selecciónalo en Ajustes → Mapas. Comprueba que
 el `MAP_OFFLINE_MAXZOOM` coincide con el del archivo, o verás teselas en blanco al acercarte.
 
-### Capturas del README
-Las de `readme_images/` son de antes del rediseño (dashboard, Mis Rutas y detalle de ruta
-cambiaron en la 0.9.0). El README lo advierte, pero es un parche: hay que rehacerlas desde la
-instalación real cuando la 0.9.2 esté desplegada y a gusto.
-
-Al capturar mapas o gráficas, **hazlo del viewport, no de la página completa**: el contenido
-WebGL de MapLibre y los `<canvas>` de Chart.js no se repintan para el viewport ampliado de una
-captura full-page y salen cortados (está en los quirks de `CLAUDE.md`).
-
 ---
 
 ## Descartado (no volver a proponerlo sin motivo nuevo)
