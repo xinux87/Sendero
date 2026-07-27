@@ -24,8 +24,11 @@ const Store = (() => {
      (regla 11 de CLAUDE.md): onupgradeneeded vacía los almacenes y los clientes
      se rehacen la copia. 2 = el detalle trae `n_points` (rediseño 0.9.0), y un
      detalle ya guardado no lo recibiría nunca: su rev no cambia, así que el
-     Store seguiría sirviendo la copia vieja. */
-  const DB_VERSION = 2;
+     Store seguiría sirviendo la copia vieja.
+     3 = el listado trae `gps_issues_n`, `gps_issues_high` y `n_photos` (avisos
+     de GPS y nº de fotos en la tarjeta): sin vaciar, las rutas ya guardadas se
+     pintarían sin esos campos hasta que su rev cambiara por otro motivo. */
+  const DB_VERSION = 3;
   const STORES = {
     meta:     {keyPath: 'k'},
     routes:   {keyPath: 'public_id'},

@@ -11,52 +11,7 @@ Al terminar cualquiera de estos puntos: bórralo de aquí y cuéntalo en `CHANGE
 
 ## Para hacer
 
-### 3. Más contexto en la tarjeta del listado: avisos de GPS y número de fotos
-**Qué**: hoy la tarjeta de «Mis Rutas» solo avisa de posibles duplicadas.
-- **Avisos de GPS**: los `gps_issues` solo se ven al abrir la ruta, así que una con un salto
-  de GPS no se distingue en el listado.
-- **Número de fotos**: un icono pequeño de cámara con la cifra, para ver de un vistazo qué
-  salidas tienen fotos y cuáles no. Nada si la ruta no tiene ninguna — un «0» es ruido.
-
-Los dos van juntos porque comparten exactamente el mismo coste: ninguno de los dos datos
-viaja hoy en el listado, y arreglarlo pasa por las mismas cuatro piezas. Hacerlos a la vez
-significa **una sola** subida de `DB_VERSION` y **una sola** revisión de índices.
-
-**Cómo, y por qué no es de dos líneas**:
-- **`gps_issues`** está en `routes` pero no en `ROUTE_LIST_COLS` (`api/routes.py`). Mejor
-  llevar un contador o un flag que el JSON entero, que pesa y en la tarjeta no se usa.
-- **El número de fotos NO es una columna de `routes`**: sale de la tabla `photos`. O un
-  subselect en la query del listado —`(SELECT COUNT(*) FROM photos WHERE route_id=routes.id)
-  AS n_photos`— o una columna desnormalizada que hay que mantener al día en cada alta y baja
-  de foto. El subselect es más simple y no puede quedar desincronizado; mídelo con las ~500
-  rutas reales antes de darlo por bueno, y si hace falta añade **índice en `photos(route_id)`**,
-  que hoy no existe (solo está `idx_photos_public_id`).
-- **Índice de cobertura** en `init_db()` para la parte que salga de `routes` (regla 12: una
-  columna leída en un listado sin índice obliga a SQLite a atravesar los blobs de cada fila;
-  ya pasó y costó 7-9 s por petición).
-- **Subir `DB_VERSION`** en `static/js/core/store.js` (regla 11), o los clientes seguirán
-  sirviendo su copia local sin los campos nuevos.
-- **Pintarlo**: en `makeCard()` (el icono de cámara junto a distancia y localidad, en
-  `.card-meta`) y en la columna «Estado» de la vista Tabla, que hoy solo dice OK / ⚠ duplicada.
-
-**A favor**: `ROUTE_LIST_COLS` la comparten el listado y los `upserted` de
-`/api/sync/changes`, así que tocando un sitio se enteran los dos. Y el `rev` de una ruta ya
-sube al añadir o borrar una foto (los triggers de `photos` suben el de su ruta), de modo que
-el contador se sincroniza solo sin tocar nada de la sincronización.
-
----
-
-### 4. `.gitattributes` con `* text=auto eol=lf`
-**Por qué**: el 26-07-2026 el árbol de trabajo se reescribió entero con CRLF (64 archivos
-«modificados» sin un solo cambio de contenido) y eso bloqueó los `git checkout` con un error
-que no dice lo que pasa. Trabajando desde Windows/WSL volverá a ocurrir.
-
-**Cómo**: añadir el archivo y renormalizar una vez (`git add --renormalize .`) en un commit
-propio, que tocará muchos archivos y no debe mezclarse con cambios reales.
-
----
-
-### 5. Quitar la columna muerta `draw_anchors`
+### 1. Quitar la columna muerta `draw_anchors`
 **Qué**: resto del planificador interno (dibujo por anclas con BRouter) que se implementó y
 se revirtió el mismo día. Hoy `planned_routes.draw_anchors` es siempre NULL, `api/planned.py`
 la borra del dict al servir (`d.pop`) y nadie la escribe.

@@ -21,6 +21,35 @@ def new_token():
 # en vez de esperar a que se libere; con esto esperan hasta 20s antes de fallar.
 BUSY_TIMEOUT_MS = 20000
 
+# ── resumen de gps_issues para el LISTADO ────────────────────────────────────
+# La tarjeta de "Mis Rutas" necesita saber si una ruta tiene avisos GPS y
+# cuántos, pero NO el JSON entero: pesa (un track ruidoso tiene decenas de
+# tramos) y en el listado no se usa ninguno de sus campos. Estas dos
+# expresiones lo resumen en dos enteros.
+#
+# Van DENTRO del índice de cobertura del listado (índice sobre expresiones), y
+# ese es todo el truco: `gps_issues` se añadió con ALTER TABLE, así que vive
+# físicamente DETRÁS de los blobs geojson/elevation/heart_rate de cada fila y
+# leerla obliga a SQLite a atravesarlos (regla 12). Guardando el RESULTADO en
+# el índice, la query se resuelve sin tocar la fila. Guardar el JSON crudo en
+# el índice también funcionaría, pero ocupa casi el doble (152 KiB vs 80 KiB
+# con 500 rutas) y crece con lo ruidoso que sea cada track.
+#
+# OJO: el texto de la expresión en la query y en el CREATE INDEX debe ser
+# IDÉNTICO o SQLite no reconocerá el índice como de cobertura y volverá a
+# atravesar los blobs. Por eso viven aquí y las importa api/routes.py
+# (ROUTE_LIST_COLS), en vez de estar escritas dos veces.
+#   json_valid() como guarda: gps_issues es NULL en la inmensa mayoría de
+#   rutas, y en bases antiguas puede ser 'null' o '[]'; json_valid(NULL) es
+#   NULL, así que ambas caen en el ELSE y dan 0.
+#   '"high"' entrecomillado: la única vez que ese literal aparece en el JSON es
+#   como valor de "severity" (los tipos son speed/elevation/altitude), y
+#   funciona tanto con separadores compactos como con los de json.dumps.
+GPS_ISSUES_N_SQL = ("CASE WHEN json_valid(gps_issues) "
+                    "THEN json_array_length(gps_issues) ELSE 0 END")
+GPS_ISSUES_HIGH_SQL = ("CASE WHEN gps_issues IS NOT NULL "
+                       "AND instr(gps_issues,'\"high\"')>0 THEN 1 ELSE 0 END")
+
 
 def db():
     if "db" not in g:
@@ -226,15 +255,46 @@ def init_db():
     # Nombre nuevo (_cov3) porque el listado ahora lee también locality: un
     # CREATE ... IF NOT EXISTS sobre el nombre viejo no lo recrearía con la
     # columna añadida (regla 12). Se crean el nuevo y se descartan los anteriores.
-    con.execute("""CREATE INDEX IF NOT EXISTS idx_routes_list_cov4 ON routes(
+    # Nombre nuevo (_cov5) porque el listado ahora lleva además el resumen de
+    # gps_issues (nº de avisos y si alguno es grave). No son columnas: son las
+    # EXPRESIONES de GPS_ISSUES_N_SQL/GPS_ISSUES_HIGH_SQL, guardadas ya
+    # calculadas en el índice para no tener que leer gps_issues de la fila (que
+    # está detrás de los blobs). El texto debe coincidir carácter a carácter con
+    # el de ROUTE_LIST_COLS: por eso se interpolan las mismas constantes.
+    con.execute(f"""CREATE INDEX IF NOT EXISTS idx_routes_list_cov5 ON routes(
         COALESCE(started_at,created_at) DESC,
         id, name, distance_m, ascent_m, duration_s, moving_s, started_at,
         activity_type, start_lat, start_lon, thumb_file, dup_suspect_of, locality,
-        public_id
+        public_id, {GPS_ISSUES_N_SQL}, {GPS_ISSUES_HIGH_SQL}
     )""")
     con.execute("DROP INDEX IF EXISTS idx_routes_list_cov")
     con.execute("DROP INDEX IF EXISTS idx_routes_list_cov2")
     con.execute("DROP INDEX IF EXISTS idx_routes_list_cov3")
+    con.execute("DROP INDEX IF EXISTS idx_routes_list_cov4")
+    # El listado cuenta las fotos de cada ruta con un subselect correlacionado
+    # (una por fila). Sin este índice SQLite se fabrica un "AUTOMATIC COVERING
+    # INDEX" sobre photos en CADA petición, cuyo coste crece con el total de
+    # fotos; con él son 500 búsquedas en un índice de cobertura.
+    con.execute("CREATE INDEX IF NOT EXISTS idx_photos_route ON photos(route_id)")
+    # Si esta BD tiene estadísticas (alguien corrió ANALYZE alguna vez), un índice
+    # RECIÉN creado no aparece en sqlite_stat1 y el planificador lo descarta a
+    # favor de uno con estadísticas: la query del listado se resolvería por
+    # idx_routes_date leyendo la fila completa, o sea atravesando los blobs, que
+    # es justo el problema que el índice de cobertura evita (25 ms vs 1,4 ms con
+    # 500 rutas medidos al añadir cov5; el bug de 7-9 s de CLAUDE.md es este
+    # mismo con la caché fría). Se re-analiza UNA vez, solo si hay stats y les
+    # falta el índice nuevo. Sin sqlite_stat1 no hace falta: sin estadísticas
+    # todos los índices parten iguales y el de cobertura gana solo.
+    if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                   "AND name='sqlite_stat1'").fetchone():
+        if not con.execute("SELECT 1 FROM sqlite_stat1 WHERE idx=?",
+                           ("idx_routes_list_cov5",)).fetchone():
+            try:
+                con.execute("ANALYZE routes")
+                con.execute("ANALYZE photos")
+                con.commit()
+            except sqlite3.OperationalError:
+                pass          # otro worker lo está haciendo: con uno basta
     # Lookups de public_id → id en el borde de cada endpoint; UNIQUE por tabla.
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_routes_public_id ON routes(public_id)")
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_photos_public_id ON photos(public_id)")

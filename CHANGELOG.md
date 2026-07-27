@@ -5,6 +5,42 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.5] — 2026-07-27
+
+### Añadido
+- **Avisos de GPS y número de fotos en el listado de «Mis Rutas»**. Hasta ahora la tarjeta
+  solo avisaba de posibles duplicadas: una ruta con un salto de GPS no se distinguía de una
+  limpia sin abrirla, y no había forma de ver de un vistazo qué salidas tienen fotos.
+  - La tarjeta muestra un icono de cámara con la cifra junto a distancia y localidad, y
+    **nada si la ruta no tiene fotos** — un «0» sería ruido.
+  - Y una chapa `⚠ N avisos GPS`, en ámbar fuerte si alguno es grave y apagada si no. Cabe
+    junto a la de posible duplicada cuando se dan las dos.
+  - La columna «Estado» de la vista Tabla dice ahora las dos cosas, no solo duplicada.
+
+### Cambiado
+- El listado lleva tres campos derivados nuevos (`gps_issues_n`, `gps_issues_high`,
+  `n_photos`). **`gps_issues` no viaja entero**: pesa y en la tarjeta no se usa, así que se
+  resume en dos enteros calculados en SQL. Como son deterministas, van guardados **ya
+  calculados** dentro del índice de cobertura nuevo `idx_routes_list_cov5` (índice sobre
+  expresiones), y la fila nunca se toca. Guardar el JSON crudo en el índice también
+  funcionaría, pero ocupa 152 KiB frente a 80 KiB con 500 rutas y crece con lo ruidoso que
+  sea cada track; así el índice pesa lo mismo que el anterior.
+- `n_photos` sale de un subselect a `photos`, no de una columna desnormalizada: no puede
+  quedar desincronizado. No hizo falta tocar la sincronización — el `rev` de una ruta ya
+  sube al añadir o borrar una foto, así que el contador se propaga solo.
+- Índice nuevo `idx_photos_route ON photos(route_id)`, que es lo que mantiene barato ese
+  subselect. Con 500 rutas y 1192 fotos el listado pasa de 1,1 ms a **1,4 ms**; sin los dos
+  índices serían 59 ms.
+- `DB_VERSION` del Store sube a 3 para que los clientes rehagan su copia local con los
+  campos nuevos (regla 11).
+
+### Corregido
+- **`init_db()` re-analiza una vez si la base tiene estadísticas de SQLite.** Un índice de
+  cobertura recién creado no aparece en `sqlite_stat1`, así que en una base donde alguien
+  hubiera corrido `ANALYZE` el planificador lo habría descartado y habría vuelto a leer la
+  fila entera — 25 ms en vez de 1,4 ms, y el bug de 7-9 s con la caché fría. Ninguna
+  instalación corre `ANALYZE` por su cuenta, pero el fallo habría sido mudo.
+
 ## [0.9.4] — 2026-07-27
 
 ### Cambiado

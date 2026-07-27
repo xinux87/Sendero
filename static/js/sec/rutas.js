@@ -261,6 +261,26 @@
     return '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
   }
 
+  function camSvg() {
+    return '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9zm3 5.5a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>';
+  }
+
+  /* Nº de fotos: solo si hay alguna (un «0» en cada tarjeta sería ruido). */
+  function photosHtml(r) {
+    const n = r.n_photos || 0;
+    if (!n) return '';
+    return `<span class="card-photos" title="${n} ${n === 1 ? 'foto' : 'fotos'}">`
+         + `${camSvg()}${n}</span>`;
+  }
+
+  /* Aviso de GPS. El listado NO trae los tramos (solo cuántos son y si alguno es
+     grave, ver ROUTE_LIST_COLS): el detalle y el editor los desglosan. */
+  function gpsWarnText(r) {
+    const n = r.gps_issues_n || 0;
+    if (!n) return null;
+    return n === 1 ? '1 aviso GPS' : `${n} avisos GPS`;
+  }
+
   /* Alterna la selección de una ruta en modo edición (lo comparten la tarjeta y
      la fila de la tabla). */
   function toggleSel(id, el, check) {
@@ -286,11 +306,22 @@
     const thumbHtml = !editMode && r.thumb_file
       ? `<div class="card-thumb"><img src="/api/routes/${r.public_id}/thumb" alt="" loading="lazy"></div>` : '';
     const dupBadge = r.dup_suspect_of
-      ? '<div class="card-dup" title="Importada automáticamente, se parece a otra ruta. Ábrela para revisarla.">⚠ posible duplicada</div>' : '';
+      ? '<div class="card-badge card-dup" title="Importada automáticamente, se parece a otra ruta. Ábrela para revisarla.">⚠ posible duplicada</div>' : '';
+    // Los avisos GPS se pintan en ámbar si alguno es grave y apagados si no, el
+    // mismo criterio que «Calidad del track» del detalle (.warn.crit/.warn.info).
+    const gpsTxt = gpsWarnText(r);
+    const gpsBadge = gpsTxt
+      ? `<div class="card-badge card-gps${r.gps_issues_high ? ' crit' : ''}"`
+        + ` title="Tramos con datos GPS imposibles. Ábrela para verlos o corrígelos en el editor.">`
+        + `⚠ ${gpsTxt}</div>` : '';
+    const badges = (dupBadge || gpsBadge)
+      ? `<div class="card-badges">${dupBadge}${gpsBadge}</div>` : '';
     const distHtml = r.distance_m ? `<span class="card-dist">${fmtKm(r.distance_m)} km</span>` : '';
     const locHtml = r.locality
       ? `<span class="card-loc" title="${esc(r.locality)}">${pinSvg()}${esc(r.locality)}</span>` : '';
-    const metaHtml = (distHtml || locHtml) ? `<div class="card-meta">${distHtml}${locHtml}</div>` : '';
+    const phHtml = photosHtml(r);
+    const metaHtml = (distHtml || locHtml || phHtml)
+      ? `<div class="card-meta">${distHtml}${locHtml}${phHtml}</div>` : '';
     c.innerHTML = `${thumbHtml}
       ${editMode ? `<div class="card-check">${sel ? '✓' : ''}</div>`
                  : (act ? `<div class="card-act">${iconSvg(act, 26)}</div>` : '')}
@@ -298,14 +329,14 @@
         <h3>${esc(r.name)}</h3>
         <div class="date">${fmtDateLong(r.started_at)}</div>
         ${metaHtml}
-        ${dupBadge}
+        ${badges}
       </div>`;
     return c;
   }
 
-  /* Fila de la vista ☰ Tabla. El "Estado" solo puede decir lo que trae el
-     listado: si la importación automática la marcó como posible duplicada. Los
-     avisos de GPS viven en el detalle (no están en ROUTE_LIST_COLS). */
+  /* Fila de la vista ☰ Tabla. El "Estado" dice lo que trae el listado: si la
+     importación automática la marcó como posible duplicada y si tiene avisos de
+     GPS (gps_issues_n/gps_issues_high van en ROUTE_LIST_COLS). */
   function makeRow(r) {
     const act = activityOf(r.activity_type);
     const sel = selectedIds.has(r.public_id);
@@ -314,9 +345,19 @@
     tr.dataset.id = r.public_id;
     tr.onclick = editMode ? () => toggleSel(r.public_id, tr, null)
                           : () => openRoute(r.public_id);
-    const estado = r.dup_suspect_of
-      ? '<span class="t-state warn" title="Importada automáticamente, se parece a otra ruta">⚠ DUPLICADA</span>'
-      : '<span class="t-state">OK</span>';
+    const gpsTxt = gpsWarnText(r);
+    const estados = [];
+    if (r.dup_suspect_of) {
+      estados.push('<span class="t-state warn" title="Importada automáticamente, '
+                 + 'se parece a otra ruta">⚠ DUPLICADA</span>');
+    }
+    if (gpsTxt) {
+      estados.push(`<span class="t-state${r.gps_issues_high ? ' warn' : ' info'}"`
+                 + ` title="${esc(gpsTxt)}: tramos con datos GPS imposibles">`
+                 + `⚠ ${r.gps_issues_n} GPS</span>`);
+    }
+    const estado = estados.length ? estados.join('')
+                                  : '<span class="t-state">OK</span>';
     tr.innerHTML = `
       <td class="t-name" title="${esc(r.name)}">${esc(r.name)}</td>
       <td class="t-zone">${esc(r.locality || '—')}</td>

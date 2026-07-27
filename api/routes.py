@@ -8,7 +8,10 @@ from flask import (
 )
 
 import core.config as cfg
-from core.database import db, new_token, rid_from_public, entity_rev
+from core.database import (
+    db, new_token, rid_from_public, entity_rev,
+    GPS_ISSUES_N_SQL, GPS_ISSUES_HIGH_SQL,
+)
 from core.parsers import (
     analyse_gpx, analyse_fit, _detect_activity, _gpx_type_lookup, _FIT_SPORT_MAP
 )
@@ -27,10 +30,23 @@ routes_bp = Blueprint("routes", __name__)
 # también api/sync.py para los 'upserted' del delta — si las dos listas se
 # separaran, el cliente recibiría tarjetas con campos distintos según si la ruta
 # llegó por la carga inicial o por una sincronización. Cubiertas por
-# idx_routes_list_cov4 (regla 12): al añadir una columna aquí, añádela al índice.
+# idx_routes_list_cov5 (regla 12): al añadir una columna aquí, añádela al índice.
+#
+# Los tres últimos NO son columnas de la tabla, son derivados para la tarjeta:
+#   gps_issues_n / gps_issues_high — resumen de gps_issues en dos enteros (el
+#     JSON entero no viaja al listado: ver GPS_ISSUES_N_SQL en core/database.py,
+#     donde también se explica por qué las mismas expresiones están en el índice)
+#   n_photos — subselect a photos, que no tiene columna en routes. Se prefiere
+#     al contador desnormalizado porque no puede desincronizarse; el coste con
+#     idx_photos_route es ~0,2 ms sobre 500 rutas. El `rev` de la ruta ya sube al
+#     añadir o borrar una foto (triggers de photos), así que el contador se
+#     sincroniza solo sin tocar api/sync.py.
 ROUTE_LIST_COLS = ("id,public_id,name,distance_m,ascent_m,duration_s,moving_s,"
                    "started_at,activity_type,start_lat,start_lon,thumb_file,"
-                   "dup_suspect_of,locality")
+                   "dup_suspect_of,locality,"
+                   f"{GPS_ISSUES_N_SQL} AS gps_issues_n,"
+                   f"{GPS_ISSUES_HIGH_SQL} AS gps_issues_high,"
+                   "(SELECT COUNT(*) FROM photos WHERE route_id=routes.id) AS n_photos")
 
 
 def _truthy(v):

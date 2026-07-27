@@ -45,7 +45,7 @@ sincronización delta. Lo que eso significa en la práctica:
 # desarrollo
 pip install -r requirements-dev.txt   # incluye requirements.txt + pytest
 python app.py                      # http://localhost:8080, init_db() automático
-python -m pytest                   # tests unitarios (tests/): editing, parsers, FIT, gps_analysis
+python -m pytest                   # tests unitarios (tests/): editing, parsers, FIT, gps_analysis, columnas del listado
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
 node tests/sec_smoke.js            # sec/detalle.js carga contra los ids reales del markup
 node tests/tiles_smoke.js          # geometría del corredor de teselas (§6.2)
@@ -550,7 +550,7 @@ original. Backfill único de las rutas previas en `init_db()` (firma desde la BD
 hash leyendo el archivo; solo filas con `content_hash IS NULL`). Al añadir la columna
 `dup_suspect_of` al listado se creó `idx_routes_list_cov2` (regla 12); al añadir después
 `locality` se sustituyó por `idx_routes_list_cov3`, y al añadir `public_id` por
-`idx_routes_list_cov4` (se descartan todos los anteriores).
+`idx_routes_list_cov5`, que además guarda ya calculado el resumen de `gps_issues` (se descartan todos los anteriores).
 
 ### Thumbnails de track (`core/thumbs.py`)
 `generate_thumb(coords, gpx_file)` genera un PNG:
@@ -868,18 +868,24 @@ no gasta ni una petición.
 
 ### Listado de rutas en `static/js/sec/rutas.js` — scroll infinito
 Cada tarjeta (`makeCard`) muestra nombre (Oswald 19 px), fecha larga en versalitas
-(`fmtDateLong`), **distancia** (`fmtKm(r.distance_m)`, en ámbar) y **localidad**
-(`r.locality`, con icono de pin `pinSvg()`) en una línea `.card-meta`, más el badge de
-posible duplicada, el borde izquierdo del color de la actividad y la miniatura del track
-al 22 % anclada abajo a la derecha. `distance_m` y `locality` vienen ya en el listado.
+(`fmtDateLong`), **distancia** (`fmtKm(r.distance_m)`, en ámbar), **localidad**
+(`r.locality`, con icono de pin `pinSvg()`) y el **nº de fotos** (`r.n_photos`, con
+icono de cámara `camSvg()`, y **nada si es 0** — un «0» es ruido) en una línea
+`.card-meta`; debajo, un `.card-badges` con las chapas de **posible duplicada** y de
+**avisos GPS** (`⚠ N avisos GPS`, ámbar fuerte si `gps_issues_high`, apagada si no).
+Más el borde izquierdo del color de la actividad y la miniatura del track al 22 %
+anclada abajo a la derecha. `distance_m`, `locality`, `n_photos`, `gps_issues_n` y
+`gps_issues_high` vienen ya en el listado.
 
 **Tres vistas** (`viewMode`, botones en la cabecera y estado en `sessionStorage`):
 - `'a'` ⊞ Cuadrícula — tarjetas en rejilla de 3.
 - `'t'` ☰ Tabla — la variante densa del rediseño: `makeRow()` en vez de `makeCard()`,
   con el mismo agrupado por mes (cada mes es su propia `<table class="rtable">`, con
   `table-layout:fixed` y `<colgroup>` para que las columnas de meses distintos cuadren).
-  El "Estado" solo puede decir lo que trae el listado (posible duplicada), no los avisos
-  de GPS: `gps_issues` no está en `ROUTE_LIST_COLS`.
+  El "Estado" dice OK, posible duplicada y avisos GPS (`⚠ N GPS`), las dos chapas
+  apiladas si se dan a la vez. Desde la v0.9.5 el resumen de `gps_issues` viaja en el
+  listado; lo que sigue sin poder decir es cualquier cosa que no esté en
+  `ROUTE_LIST_COLS`.
 - `'b'` ▤ Panel — lista estrecha + mapa grande (se fuerza a `'a'` en móvil).
 Cambiar de vista repinta la lista (`renderList()`), porque es otro markup.
 
@@ -968,6 +974,19 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
   DEM no llega (sin internet), queda la vista inclinada en 2D en vez de negro.
   Lo cubre `tests/e2e_spa.py` con una ruta de alta montaña sembrada a propósito
   (comprobado que el test FALLA si se revierte el arreglo).
+
+- **Un índice de cobertura RECIÉN creado puede ser ignorado por el planificador si la
+  BD tiene `sqlite_stat1`** — es la trampa de la regla 12 en su segunda vuelta. Si
+  alguien corrió `ANALYZE` alguna vez, SQLite tiene estadísticas de los índices
+  *antiguos* y ninguna del nuevo, así que lo descarta a favor de uno con datos
+  (`idx_routes_date`) y vuelve a leer la fila completa — o sea, a atravesar los blobs
+  `geojson`/`elevation`/`heart_rate`. Medido al añadir `idx_routes_list_cov5`: **25 ms
+  en vez de 1,4 ms** con 500 rutas, y con la caché fría es el mismo bug de 7-9 s de más
+  abajo. Ninguna instalación de Sendero corre `ANALYZE` por su cuenta (sin
+  `sqlite_stat1` todos los índices parten iguales y el de cobertura gana solo), pero el
+  fallo sería mudo. Por eso `init_db()` re-analiza **una sola vez**, solo si hay
+  `sqlite_stat1` y le falta el índice nuevo. Si añades otro índice de cobertura,
+  añádelo también a esa comprobación.
 
 - **`init_db()` a nivel de módulo** — Gunicorn importa `app:app` sin ejecutar el
   bloque `__main__`; sin `init_db()` al importar falla en el primer request.
@@ -1117,7 +1136,7 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | heart_rate | TEXT JSON | lista `[{d, hr}, …]` o NULL |
 | hr_avg, hr_max | INTEGER | NULL si no hay FC |
 | speed | TEXT JSON | lista `[{d, v}, …]` (v en km/h) o NULL. GPX: derivada de posición/tiempo con ventana móvil de `SPEED_WINDOW_S` (15s) para suavizar ruido GPS — requiere `<time>` por punto, si no hay queda vacío. FIT: `enhanced_speed`/`speed` del propio dispositivo, sin suavizar |
-| gps_issues | TEXT JSON | tramos GPS anómalos (`core/gps_analysis.py::detect_gps_anomalies`, umbrales por actividad de Ajustes → "GPS incorrecto"); lista `[{type: speed\|elevation\|altitude, d_from, d_to, value_max, threshold, severity}, …]` o NULL. `altitude` (puntos por encima de `max_ele_m`) se detecta incluso sin timestamps. Lo calculan `create_route` y `_reanalyse_and_update` (rescan + guardados del editor); el editor lo premarca. OJO: `app.py` hace `refresh_config()` en `before_request` porque con 2 workers un POST de ajustes solo refrescaba el worker que lo atendía |
+| gps_issues | TEXT JSON | tramos GPS anómalos (`core/gps_analysis.py::detect_gps_anomalies`, umbrales por actividad de Ajustes → "GPS incorrecto"); lista `[{type: speed\|elevation\|altitude, d_from, d_to, value_max, threshold, severity}, …]` o NULL. `altitude` (puntos por encima de `max_ele_m`) se detecta incluso sin timestamps. Lo calculan `create_route` y `_reanalyse_and_update` (rescan + guardados del editor); el editor lo premarca. El **listado no lleva este JSON** (pesa y en la tarjeta no se usa): lleva su resumen en dos enteros derivados, `gps_issues_n` y `gps_issues_high`, calculados con las expresiones `GPS_ISSUES_N_SQL`/`GPS_ISSUES_HIGH_SQL` de `core/database.py` y guardados **ya calculados dentro de `idx_routes_list_cov5`**, que es un índice sobre expresiones — por eso la fila nunca se toca. Query e índice importan las mismas constantes a propósito: si los dos textos SQL dejan de coincidir, el índice deja de aplicarse y vuelve el problema de la regla 12 (`tests/test_list_cols.py` lo vigila con un `EXPLAIN QUERY PLAN`). OJO: `app.py` hace `refresh_config()` en `before_request` porque con 2 workers un POST de ajustes solo refrescaba el worker que lo atendía |
 | created_at | TEXT | |
 | activity_type | TEXT | senderismo/bicicleta/caminata/correr/esqui/otros |
 | device | TEXT | fabricante/modelo del dispositivo |
@@ -1127,9 +1146,9 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat | REAL | bounding box del track completo; lo calcula `_route_bbox()` en `create_route`/`rescan_route`. Usado por `/api/routes/geojson?bbox=` (mapa del dashboard) para no cargar rutas fuera de la zona visible |
 | content_hash | TEXT | SHA-256 de los bytes crudos del archivo importado (`core/dedup.py`). Dedup DURA: reimportar los mismos bytes (aunque con otro nombre) → 409. Índice propio `idx_routes_content_hash`. Solo se fija al importar; NO se recalcula al editar/reescanear (la pregunta es "¿ya vi este archivo?", referida al original) |
 | signature | TEXT | Huella SEMÁNTICA del entreno (`route_signature`): `started_at` al minuto + primer/último punto a 4 decimales (~11 m). Sin timestamps cae a distancia(100 m)+nº puntos. Dedup BLANDA. Índice propio `idx_routes_signature`. Deliberadamente NO incluye distancia cuando hay hora (el hash por igualdad daría falsos negativos en las fronteras de cubo). Solo al importar, no se recalcula |
-| dup_suspect_of | INTEGER | id de la ruta a la que se parece, cuando la ingesta AUTOMÁTICA (`?auto=1`) la importó pese al aviso semántico. NULL = limpia. Se lee en el listado → va en `idx_routes_list_cov4` (regla 12). Se limpia al editar la ruta o con `PATCH {dup_suspect_of:null}` ("descartar aviso") |
-| locality | TEXT | Sitio donde se hizo la ruta ("Localidad, Región"), por geocoding inverso del punto de inicio (`core/geocode.py`, `GEOCODE_URL` en Ajustes → Editor). Se rellena best-effort al importar (`create_route`) y al reescanear una ruta que aún no la tenga (`_reanalyse_and_update`, backfill vía "Re-escanear"); NULL = servicio desactivado o geocoding fallido. Se lee en el listado y se muestra en la tarjeta de "Mis Rutas" y en el detalle → va en `idx_routes_list_cov4` (regla 12) |
-| public_id | TEXT | Identificador **opaco no secuencial** (`secrets.token_urlsafe(8)`, ~11 chars) expuesto en TODAS las URLs `/api/routes/<public_id>/...`; la PK entera `id` queda solo interna (FKs, `versions/<route_id>/`, prefijo de nombre de foto). Evita que CrowdSec vea enumeración al pedir las miniaturas del listado. Índice UNIQUE `idx_routes_public_id`; se lee en el listado → va en `idx_routes_list_cov4` (regla 12). Se fija al importar (con reintento por colisión) y por backfill en `init_db()`; NO se recalcula. Los endpoints resuelven `public_id`→`id` con `rid_from_public()` en su 1ª línea (thumb/gpx/foto consultan `WHERE public_id=?` directo). Al añadirlo se invalidó la caché del cliente (regla 11) |
+| dup_suspect_of | INTEGER | id de la ruta a la que se parece, cuando la ingesta AUTOMÁTICA (`?auto=1`) la importó pese al aviso semántico. NULL = limpia. Se lee en el listado → va en `idx_routes_list_cov5` (regla 12). Se limpia al editar la ruta o con `PATCH {dup_suspect_of:null}` ("descartar aviso") |
+| locality | TEXT | Sitio donde se hizo la ruta ("Localidad, Región"), por geocoding inverso del punto de inicio (`core/geocode.py`, `GEOCODE_URL` en Ajustes → Editor). Se rellena best-effort al importar (`create_route`) y al reescanear una ruta que aún no la tenga (`_reanalyse_and_update`, backfill vía "Re-escanear"); NULL = servicio desactivado o geocoding fallido. Se lee en el listado y se muestra en la tarjeta de "Mis Rutas" y en el detalle → va en `idx_routes_list_cov5` (regla 12) |
+| public_id | TEXT | Identificador **opaco no secuencial** (`secrets.token_urlsafe(8)`, ~11 chars) expuesto en TODAS las URLs `/api/routes/<public_id>/...`; la PK entera `id` queda solo interna (FKs, `versions/<route_id>/`, prefijo de nombre de foto). Evita que CrowdSec vea enumeración al pedir las miniaturas del listado. Índice UNIQUE `idx_routes_public_id`; se lee en el listado → va en `idx_routes_list_cov5` (regla 12). Se fija al importar (con reintento por colisión) y por backfill en `init_db()`; NO se recalcula. Los endpoints resuelven `public_id`→`id` con `rid_from_public()` en su 1ª línea (thumb/gpx/foto consultan `WHERE public_id=?` directo). Al añadirlo se invalidó la caché del cliente (regla 11) |
 
 ### Tabla `route_versions`
 Historial del editor de rutas (append-only, ver sección "Editor de rutas").
@@ -1143,6 +1162,9 @@ El archivo activo de la ruta es siempre idéntico a la versión más alta.
 `public_id` (opaco no secuencial, como en `routes`: `/api/photos/<public_id>/file`
 y DELETE; índice UNIQUE `idx_photos_public_id`; se fija al insertar con
 `set_public_id()` y por backfill en `init_db()`). La PK entera `id` queda interna.
+`idx_photos_route ON photos(route_id)` (v0.9.5) es lo que hace barato el subselect
+`n_photos` del listado de rutas: sin él SQLite se fabrica un índice automático en
+cada petición, y con volumen pasa a `SCAN photos` (34 ms vs 1,4 ms con 500 rutas).
 
 ### Tabla `planned_routes`
 `name`, `source` (`gpx` | `dibujada`), `source_url`, `activity_type`,

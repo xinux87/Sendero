@@ -106,10 +106,23 @@
 #sec-rutas .card-loc{color:var(--muted);display:inline-flex;align-items:center;gap:4px;
   min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #sec-rutas .card-loc svg{flex-shrink:0;opacity:.7}
+#sec-rutas .card-photos{color:var(--muted);display:inline-flex;align-items:center;gap:4px;
+  flex-shrink:0}
+#sec-rutas .card-photos svg{flex-shrink:0;opacity:.7}
 #sec-rutas .card-act{position:absolute;top:12px;right:14px;line-height:0;z-index:1}
-#sec-rutas .card-dup{display:inline-block;margin-top:9px;font-family:var(--mono);font-size:10.5px;
-  color:var(--gr-red);background:rgba(226,73,44,.18);border:1px solid rgba(226,73,44,.55);
-  border-radius:999px;padding:3px 10px;text-transform:uppercase;letter-spacing:.04em}
+/* Avisos de la tarjeta (posible duplicada, avisos de GPS). Van en su propia
+   fila y envuelven: con las dos a la vez la tarjeta no debe desbordarse. */
+#sec-rutas .card-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+#sec-rutas .card-badge{font-family:var(--mono);font-size:10.5px;border-radius:999px;
+  padding:3px 10px;text-transform:uppercase;letter-spacing:.04em}
+#sec-rutas .card-dup{color:var(--gr-red);background:rgba(226,73,44,.18);
+  border:1px solid rgba(226,73,44,.55)}
+/* GPS: ámbar solo si hay algún aviso grave, apagado si son leves — el mismo
+   criterio que «Calidad del track» del detalle. */
+#sec-rutas .card-gps{color:var(--muted);background:rgba(236,229,216,.05);
+  border:1px solid var(--line-strong)}
+#sec-rutas .card-gps.crit{color:var(--pr-yellow);background:rgba(227,178,60,.14);
+  border-color:rgba(227,178,60,.5)}
 /* Miniatura del track: pegada al borde derecho y de arriba abajo de la tarjeta,
    escalando con ella (object-fit:contain mantiene la proporción del PNG, que
    depende del bounding box del track). Va DETRÁS de todo (z-index:0 contra el 1
@@ -139,14 +152,15 @@
 /* table-layout:fixed + anchos por columna: cada mes es una tabla propia, y sin
    esto las columnas de un mes no cuadran con las del siguiente. */
 #sec-rutas .rtable{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:fixed}
-#sec-rutas .rtable col.c-name{width:28%}
-#sec-rutas .rtable col.c-zone{width:16%}
-#sec-rutas .rtable col.c-date{width:12%}
-#sec-rutas .rtable col.c-dist{width:10%}
-#sec-rutas .rtable col.c-asc{width:9%}
+#sec-rutas .rtable col.c-name{width:25%}
+#sec-rutas .rtable col.c-zone{width:15%}
+#sec-rutas .rtable col.c-date{width:11%}
+#sec-rutas .rtable col.c-dist{width:9%}
+#sec-rutas .rtable col.c-asc{width:8%}
 #sec-rutas .rtable col.c-time{width:8%}
 #sec-rutas .rtable col.c-act{width:11%}
-#sec-rutas .rtable col.c-state{width:6%}
+/* Más ancha que antes: el Estado puede llevar dos pastillas (duplicada + GPS). */
+#sec-rutas .rtable col.c-state{width:13%}
 #sec-rutas .rtable th{text-align:left;padding:9px 10px;font-family:var(--mono);font-size:10.5px;
   font-weight:400;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-faint)}
 #sec-rutas .rtable th.num,#sec-rutas .rtable td.num{text-align:right;font-family:var(--mono)}
@@ -159,9 +173,13 @@
 #sec-rutas .rtable .t-dist{color:var(--pr-yellow)}
 #sec-rutas .rtable .t-name{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #sec-rutas .t-state{display:inline-block;padding:3px 10px;border-radius:999px;
-  font-family:var(--mono);font-size:10.5px;border:1px solid var(--line-strong);color:var(--muted)}
+  font-family:var(--mono);font-size:10.5px;border:1px solid var(--line-strong);color:var(--muted);
+  margin:1px 3px 1px 0;white-space:nowrap}
 #sec-rutas .t-state.warn{background:var(--pr-yellow);color:var(--bg);border-color:transparent;
   font-weight:500}
+/* Aviso GPS leve: se ve, pero sin gritar como el ámbar de los graves. Mismo
+   tratamiento que .card-gps en la cuadrícula. */
+#sec-rutas .t-state.info{color:var(--muted);background:rgba(236,229,216,.05)}
 
 /* ── selector de fecha ─────────────────────────────────────────────────────── */
 #sec-rutas .date-range{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
