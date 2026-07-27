@@ -5,15 +5,24 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.2] — 2026-07-26
+
+### Añadido
+- **Sección «Mantenimiento» en Ajustes**, con el solucionador de problemas de caché. En la
+  0.9.1 el botón estaba como último apartado de «Sin conexión», al final de una sección
+  larga: justo lo que no encuentras cuando la app se ve rota. Ahora tiene entrada propia y
+  explica el síntoma (botones que no responden, opciones que no cargan), cómo confirmarlo en
+  una ventana de incógnito y qué hace el botón.
+- **Estado de este navegador** en esa misma sección: versión que sirve el servidor frente a
+  la que tiene guardada el dispositivo (deducida del nombre de la caché
+  `sendero-shell-<versión>`), estado del Service Worker, cachés y teselas guardadas. Si no
+  coinciden, o hay una versión nueva esperando, lo dice en ámbar — es el dato que delata el
+  problema sin abrir DevTools.
+
 ## [0.9.1] — 2026-07-26
 
 ### Añadido
-- **Sección «Mantenimiento» en Ajustes**, con el solucionador de problemas de caché: explica
-  el síntoma (botones que no responden, opciones que no cargan), cómo confirmarlo en una
-  ventana de incógnito, el botón que lo arregla, y el **estado de este navegador** — versión
-  que sirve el servidor frente a la que tiene guardada el dispositivo, estado del Service
-  Worker y cachés. Si las versiones no coinciden, lo dice en ámbar.
-- **Página de reparación `/actualizar`**, a la que lleva ese botón («Actualizar la app en
+- **Página de reparación `/actualizar`**, enlazada desde Ajustes («Actualizar la app en
   este dispositivo»). Desregistra el Service Worker, borra sus cachés, la copia
   local (IndexedDB) y las preferencias de sesión, y ofrece volver a la app, que se descarga
   de cero. Existe porque el peor fallo de esta arquitectura es quedarse con el código de la
