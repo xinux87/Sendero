@@ -243,9 +243,12 @@ Los colores de actividad viven en `ACTIVITIES` (`static/shared.js`), no en CSS:
 `esquí #a86ee0` · `otros #e055c0`, con el glifo del icono en `#0b120e` (tinta oscura
 sobre el color, no blanca). **Nada de hex sueltos** en plantillas ni en el CSS de
 las secciones: si necesitas un color que no está, añade el token aquí. Las únicas
-excepciones son los `rgba()` de velos y separadores del propio rediseño y los
+excepciones son los `rgba()` de velos y separadores del propio rediseño, los
 colores de serie de las gráficas (elevación `#f0b070`, velocidad `#3d9be9`, FC
-`#e34b4b`, barras `#3f5a49`/`#4e7159`/`#e8863c`), que van en el JS que las pinta.
+`#e34b4b`, barras `#3f5a49`/`#4e7159`/`#e8863c`), que van en el JS que las pinta,
+y los iconos del botón «Mi ubicación» en `base.html`: van dentro de un `data:URI`
+porque una `url()` no puede leer una variable CSS, y **repiten el valor** de
+`--pr-yellow` y `--gr-red` (si cambias esos tokens, cámbialos también ahí).
 
 > **En `templates/` solo hay tres cosas**: `base.html` (el chrome: cabecera, modal
 > de Ajustes, CSS global), `shell.html` (el shell de la SPA) y `sec/` con las 6
@@ -902,6 +905,10 @@ patrón, ver más abajo, pero adaptado a que aquí sí hay filtros de lista acti
   el vuelo desde ese placeholder cada vez que se (re)crea el mapa, aunque tus rutas estén al
   otro lado del mundo. El resto de llamadas a `fitMap()` (botón "centrar", cambios de filtro)
   sí animan, ahí tiene sentido.
+- **El auto-encuadre se aparta si se está siguiendo la ubicación**: el `setTimeout(fitMap,
+  600)` de `renderMap()` mira `userMoved` **y** `geoTracking(map)`, y `trackuserlocationstart`
+  pone `userMoved` (ver «Botón Mi ubicación»). Sin eso, una sincronización de fondo devolvía
+  el mapa a las rutas mientras el usuario se miraba a sí mismo.
 
 ### Mapa del dashboard en `static/js/sec/dashboard.js`
 Segundo mapa MapLibre. Dibuja las rutas con **dos representaciones según el zoom** en vez
@@ -922,6 +929,8 @@ de cargar siempre todas las líneas completas:
 - **Se crea DESPUÉS de que `renderAnalytics()` quite el `.hidden` de `#ov-content`.**
   Creándolo con el panel en `display:none`, MapLibre mide un contenedor de 0 px y luego
   solo repinta teselas en una esquina, aunque después se llame a `resize()`.
+- `fitToPoints()` se aparta mientras se sigue la ubicación (`geoTracking(map)`): lo llama
+  `reloadRoutes()`, o sea cada sincronización de fondo.
 
 ### Mapa de «Mis Planes» en `static/js/sec/planes.js`
 Tercer mapa MapLibre. Pinta dos cosas: los **marcadores DOM** de salida (icono de la
@@ -944,7 +953,9 @@ click no exija acertar 2 px; color por `activityLineColor()`).
   `addLineLayers()` vuelve a crear fuente y capas en `map.once('sendero:basemap', …)`.
 - `fitPlans()` encuadra las trazas **más** los puntos de salida, con `duration:0`: el
   centro del constructor es un placeholder y animar desde él es el «vuelo» que se quitó
-  del mapa de «Mis Rutas».
+  del mapa de «Mis Rutas». Y **no encuadra nada mientras se sigue la ubicación**
+  (`geoTracking(map)`): aquí todos los encuadres son automáticos (filtro, recarga,
+  llegada de las trazas), no hay botón de «centrar», así que basta pararlo ahí.
 
 ### Marcar un plan como realizado (`static/js/sec/planes.js`)
 Cada tarjeta de «Mis Planes» lleva un botón: `✓ Marcar realizada` abre `#done-modal`
