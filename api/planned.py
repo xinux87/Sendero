@@ -7,15 +7,21 @@ import core.config as cfg
 from core.database import db, plan_id_from_public, set_public_id
 from core.parsers import analyse_gpx, _detect_activity, _gpx_type_lookup
 from core.summaries import auto_summary_planned
+from core.sync import decimate
 
 planned_bp = Blueprint("planned", __name__)
 
 # Columnas del listado de planes. Única fuente de verdad: las lee list_planned() y
 # api/sync.py para los 'upserted' del delta (mismo criterio que ROUTE_LIST_COLS en
-# api/routes.py). Cubiertas por idx_planned_list_cov (regla 12).
+# api/routes.py). Cubiertas por idx_planned_list_cov2 (regla 12).
+# `completed_route_public` sale de un subselect y no de la columna cruda porque la
+# tarjeta enlaza a la ruta por su public_id (el id interno no se expone nunca), y
+# porque así una ruta borrada da NULL sola: "realizada, sin ruta".
 PLANNED_LIST_COLS = ("id,public_id,name,source,source_url,activity_type,"
                      "distance_m,ascent_m,descent_m,ele_max,start_lat,start_lon,"
-                     "created_at")
+                     "created_at,completed_at,"
+                     "(SELECT public_id FROM routes WHERE routes.id="
+                     "planned_routes.completed_route_id) AS completed_route_public")
 
 
 def _build_plan_dict(pid):
@@ -27,6 +33,14 @@ def _build_plan_dict(pid):
     d["elevation"] = json.loads(d.get("elevation") or "[]")
     d["has_gpx"]   = bool(d.get("gpx_data"))
     d["gpx_data"]  = None
+    # public_id de la ruta que cumplió el plan, para enlazarla (el id interno no
+    # se expone). Igual que dup_suspect_public en el detalle de una ruta.
+    d["completed_route_public"] = None
+    if d.get("completed_route_id"):
+        row = db().execute("SELECT public_id FROM routes WHERE id=?",
+                           (d["completed_route_id"],)).fetchone()
+        if row:
+            d["completed_route_public"] = row["public_id"]
     d["auto_summary"] = auto_summary_planned(d)
     return d
 
@@ -76,6 +90,39 @@ def list_planned():
         else con.execute(q).fetchall()
     )
     return jsonify({"items": [dict(r) for r in rows], "total": total})
+
+
+@planned_bp.route("/api/planned/geojson", methods=["GET"])
+def planned_geojson():
+    """FeatureCollection de líneas decimadas para el mapa de "Mis Planes".
+
+    El listado (PLANNED_LIST_COLS) no trae `geojson` a propósito — pesa y la
+    tarjeta no lo usa —, así que el mapa solo podía pintar el punto de salida de
+    cada plan. Esto es el equivalente de /api/routes/geojson para los planes, con
+    dos diferencias: no acepta ?bbox= (no hay columnas de bounding box en
+    `planned_routes` y los planes son unas decenas, no cientos) y devuelve el
+    `public_id` como id, que es la URL canónica del plan.
+    """
+    rows = db().execute(
+        "SELECT public_id, name, activity_type, geojson, distance_m "
+        "FROM planned_routes WHERE geojson IS NOT NULL AND geojson != '[]'"
+    ).fetchall()
+    features = []
+    for r in rows:
+        coords = json.loads(r["geojson"] or "[]")
+        if len(coords) < 2:
+            continue
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": decimate(coords)},
+            "properties": {
+                "id": r["public_id"],
+                "name": r["name"],
+                "activity": r["activity_type"] or "otros",
+                "km": (r["distance_m"] or 0) / 1000,
+            },
+        })
+    return jsonify({"type": "FeatureCollection", "features": features})
 
 
 @planned_bp.route("/api/planned", methods=["POST"])
@@ -133,14 +180,42 @@ def get_planned(pid):
 
 @planned_bp.route("/api/planned/<pid>", methods=["PATCH"])
 def update_planned(pid):
+    """Actualiza un plan. Además de nombre/notas/actividad, marca o desmarca el
+    plan como realizado:
+
+        {"completed_at": "2026-07-27T18:30:00", "completed_route": "<public_id>"}
+        {"completed_at": null, "completed_route": null}        # desmarcar
+
+    La FECHA la manda el cliente a propósito, no se pone aquí con `now()`: este
+    PATCH se encola en el outbox sin conexión (Store.patch) y al reenviarse días
+    después la marca debe seguir siendo de cuándo el usuario la puso, no de cuándo
+    llegó al servidor. `completed_route` es el public_id de la ruta real que
+    cumplió el plan (opcional: se puede marcar sin ruta); se resuelve aquí al id
+    interno, que es lo que se guarda.
+    """
     pid = plan_id_from_public(pid)
     data = request.get_json(force=True)
     con = db()
     fields, vals = [], []
-    for key in ("name", "notes", "activity_type"):
+    for key in ("name", "notes", "activity_type", "completed_at"):
         if key in data:
             fields.append(f"{key}=?")
-            vals.append(data[key])
+            vals.append(data[key] or None if key == "completed_at" else data[key])
+    if "completed_route" in data:
+        ref = data["completed_route"]
+        rid = None
+        if ref:
+            row = con.execute("SELECT id FROM routes WHERE public_id=?", (ref,)).fetchone()
+            if not row:
+                return jsonify({"error": "la ruta indicada no existe"}), 400
+            rid = row["id"]
+        fields.append("completed_route_id=?")
+        vals.append(rid)
+    elif "completed_at" in data and not data["completed_at"]:
+        # Desmarcar sin mandar `completed_route`: la ruta asociada tampoco tiene
+        # sentido ya. Se limpia aquí para que no quede colgando.
+        fields.append("completed_route_id=?")
+        vals.append(None)
     if not fields:
         return jsonify({"error": "nada que actualizar"}), 400
     vals.append(pid)

@@ -308,7 +308,7 @@ archivo, nunca en `mount()`.
 | `templates/sec/plan.html` | (sección `plan` del shell) | Detalle de ruta planificada. Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
 | `templates/sec/dashboard.html` | (sección `dashboard`) | "Analítica global": selector de año, 5 KPIs, desnivel por mes, zonas más visitadas, almacenamiento, mapa de todas las rutas, "Por actividad", "Rutas por año" y récords. Lógica en `static/js/sec/dashboard.js` |
 | `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros (actividad, fechas y **buscador**), mapa de visión general, tres vistas (⊞ Cuadrícula · ☰ Tabla · ▤ Panel), modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
-| `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa y alta por GPX. Lógica en `static/js/sec/planes.js` |
+| `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa (marcadores de salida **y** la traza de cada plan, ver abajo), alta por GPX, **marcar un plan como realizado** (botón por tarjeta + selector `#done-modal` de la ruta que lo cumplió) y el filtro de estado `#pg-filters` (Pendientes · Realizadas · Todas, que filtra también el mapa). Lógica en `static/js/sec/planes.js` |
 | `templates/sec/editor.html` | (sección `editor`) | Editor de rutas. Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` |
 
 ### Navegación
@@ -370,9 +370,10 @@ archivo, nunca en `mount()`.
 | GET | `/api/storage` | tamaño en disco de `/data`: `{db,gpx,photos,thumbs,tiles,total,immich_refs}`. Lo pinta el panel «Almacenamiento» del dashboard |
 | POST | `/api/stats/refresh` | recalcula y guarda caché de stats |
 | GET | `/api/planned` | lista rutas planificadas |
+| GET | `/api/planned/geojson` | FeatureCollection de líneas decimadas de TODOS los planes (props: id=`public_id`, name, activity, km), para el mapa de «Mis Planes». Sin `?bbox=` a propósito: `planned_routes` no tiene columnas de bounding box y los planes son unas decenas |
 | POST | `/api/planned` | crea ruta planificada desde GPX |
 | GET | `/api/planned/<id>` | dict completo del plan |
-| PATCH | `/api/planned/<id>` | actualiza nombre/notas/actividad del plan |
+| PATCH | `/api/planned/<id>` | actualiza nombre/notas/actividad del plan y su estado de **realizada**: `{completed_at, completed_route}` (fecha ISO que pone el CLIENTE y `public_id` de la ruta que lo cumplió, opcional; `{completed_at:null, completed_route:null}` desmarca y limpia la ruta). 400 si el `completed_route` no existe |
 | DELETE | `/api/planned/<id>` | borra plan |
 | GET | `/api/planned/<id>/gpx` | descarga GPX del plan |
 | GET | `/api/config` | estado Immich (enabled, margin, dist) |
@@ -872,6 +873,68 @@ de cargar siempre todas las líneas completas:
   Creándolo con el panel en `display:none`, MapLibre mide un contenedor de 0 px y luego
   solo repinta teselas en una esquina, aunque después se llame a `resize()`.
 
+### Mapa de «Mis Planes» en `static/js/sec/planes.js`
+Tercer mapa MapLibre. Pinta dos cosas: los **marcadores DOM** de salida (icono de la
+actividad, click → `/Plan/<public_id>`) y, desde la v0.9.8, la **traza de cada plan**
+(`pl-lines` + `pl-lines-hit`, misma línea ancha invisible que `ov-lines-hit` para que el
+click no exija acertar 2 px; color por `activityLineColor()`).
+- Las líneas **no salen del listado**: `PLANNED_LIST_COLS` no trae `geojson` a propósito,
+  así que las da `GET /api/planned/geojson`. Se piden **todas de una vez**, sin `?bbox=`
+  ni umbral de zoom (a diferencia de `ov-lines`/`dash-lines`): los planes son unas
+  decenas, no cientos, y `planned_routes` no tiene columnas de bounding box.
+- **Sin conexión siguen viéndose**: se guardan en el Store con
+  `Store.setMeta('planned_lines', …)` y se pintan antes de pedir la red, como los récords
+  del dashboard. Si la petición falla, quedan las guardadas (o solo los marcadores).
+- `lineFC()` filtra por los `public_id` que el listado tiene ahora mismo, para que la
+  traza de un plan borrado no se quede pintada hasta que responda la petición.
+- Al entrar/salir de la capa offline hay que **volver a añadir las capas** (regla 15):
+  `applyBasemap` reconstruye el estilo. Los marcadores se recrean (son DOM) y
+  `addLineLayers()` vuelve a crear fuente y capas en `map.once('sendero:basemap', …)`.
+- `fitPlans()` encuadra las trazas **más** los puntos de salida, con `duration:0`: el
+  centro del constructor es un placeholder y animar desde él es el «vuelo» que se quitó
+  del mapa de «Mis Rutas».
+
+### Marcar un plan como realizado (`static/js/sec/planes.js`)
+Cada tarjeta de «Mis Planes» lleva un botón: `✓ Marcar realizada` abre `#done-modal`
+(«¿qué ruta la cumplió?») y `Desmarcar` la devuelve a pendiente. Se guarda en
+`planned_routes.completed_at` + `completed_route_id` (ver la tabla más abajo).
+- **La ruta asociada es opcional**: el botón «Marcarla sin ruta asociada» del modal
+  manda `completed_route:null`. No todo plan hecho tiene un track subido.
+- **El selector sale del Store, no de la red**: `loadRoutesIndex()` usa
+  `Store.routes()`, así que funciona sin conexión. Las rutas cuyo inicio cae a
+  menos de `NEAR_M` (3 km) del inicio del plan van arriba, en «Sugeridas»
+  (`haversineM` local al módulo, como en `detalle`/`editor`); el resto, en «Todas»,
+  con buscador por nombre y localidad.
+- **Sin conexión se encola** (`Store.patch` → outbox) y por eso la fecha la pone el
+  cliente con `isoLocal(new Date())` — ISO local sin zona, como los `created_at`
+  del servidor; con `toISOString()` un plan marcado a las 00:30 saldría con la
+  fecha del día anterior.
+- **Tras el PATCH hay que actualizar la copia local**: `Store.patchPlanRow(pid,
+  cambios)` (mismo motivo que `putDetail` en el detalle de una ruta). Sin eso, el
+  cambio hecho sin conexión desaparece en el siguiente `reload()`, porque la
+  sección relee el listado de IndexedDB y ahí seguiría el estado del servidor.
+- La tarjeta realizada se **apaga** (`.plan-card.done`, opacidad .62 y título
+  tachado) y recupera opacidad al pasar el ratón.
+
+**Filtro por estado** (`#pg-filters`, en la fila de `.pg-list-head`): píldoras
+`Pendientes · Realizadas · Todas` con el recuento de cada estado dentro, pintadas
+por `renderFilters()`. Arranca en `'pendientes'` (esta vista es la lista de lo que
+queda por hacer) y se recuerda en `sessionStorage` bajo `sendero_planes_estado_v1`
+— es una preferencia, no un dato, igual que los filtros de «Mis Rutas». Tres cosas
+que no son opcionales si lo tocas:
+- **Filtra la lista Y el mapa.** `visiblePlans()` es la única fuente: la usan
+  `render()`, `syncMarkers()`, `lineFC()` y `fitPlans()`. Un filtro que solo
+  escondiera tarjetas dejaría el mapa contando otra historia (mismo criterio que
+  `applyLineFilter()` en «Mis Rutas»).
+- Los **marcadores se sincronizan** (`syncMarkers()`), no solo se añaden: hay que
+  QUITAR el del plan que el filtro deja fuera. Antes solo se añadían, y con un
+  filtro eso deja marcadores de planes que no están en la lista.
+- **Vacío por el filtro ≠ vacío de verdad**: `#no-plans` explica cuál de los dos es
+  y ofrece cambiar de estado. Si no, marcar el último plan pendiente parece haber
+  borrado la colección.
+- Los KPIs de la cabecera **no** se filtran: describen la colección entera (el
+  recuento por estado ya lo dan las píldoras).
+
 ### Analítica del dashboard (`static/js/sec/dashboard.js`)
 Desde el rediseño, **casi todo se calcula en el cliente** con el listado que ya tiene el
 Store (`allRows`, que incluye `distance_m`, `ascent_m`, `moving_s`, `started_at` y
@@ -1208,8 +1271,21 @@ cada petición, y con volumen pasa a `SCAN photos` (34 ms vs 1,4 ms con 500 ruta
 `public_id` (opaco no secuencial, igual que en `routes`/`photos`: es la URL
 canónica `/Plan/<public_id>`, la clave de `/api/planned/<public_id>` y la clave
 estable de la sincronización; índice UNIQUE `idx_planned_public_id` + índice de
-cobertura del listado `idx_planned_list_cov`, regla 12 — estas columnas pequeñas
+cobertura del listado `idx_planned_list_cov2`, regla 12 — estas columnas pequeñas
 vienen físicamente DESPUÉS del BLOB `gpx_data`).
+
+**Plan realizado** (v0.9.8): `completed_at` (ISO, cuándo se marcó; NULL =
+pendiente) y `completed_route_id` (id interno de la ruta real que lo cumplió;
+NULL = marcada sin ruta). Las dos se leen en el listado → van en
+`idx_planned_list_cov2` (regla 12; sustituye a `idx_planned_list_cov`, que se
+descarta). **Sin FK a propósito**: `PRAGMA foreign_keys` está apagado (regla 14) y
+si esa ruta se borra el subselect de `PLANNED_LIST_COLS` da NULL solo, así que la
+tarjeta queda «realizada, sin ruta» en vez de romperse. El listado NO expone el id
+interno: manda `completed_route_public` (subselect del `public_id`), que es lo que
+la tarjeta enlaza, y el nombre lo pone el cliente desde su copia de `routes` — así
+un renombrado se refleja sin denormalizar nada. La **fecha la manda el cliente**,
+no `now()` del servidor: el PATCH se encola en el outbox sin conexión y al
+reenviarse llevaría la fecha en que volvió la red.
 
 La v0.9.6 eliminó `draw_anchors` (resto del planificador interno revertido). El
 `DROP COLUMN` de una tabla con BLOB e índices de cobertura sale limpio **si la

@@ -20,6 +20,7 @@ import pytest
 import core.config as cfg
 from core.database import GPS_ISSUES_HIGH_SQL, GPS_ISSUES_N_SQL, init_db
 from api.routes import ROUTE_LIST_COLS
+from api.planned import PLANNED_LIST_COLS
 
 LIST_QUERY = (f"SELECT {ROUTE_LIST_COLS} FROM routes "
               "ORDER BY COALESCE(started_at,created_at) DESC")
@@ -86,6 +87,41 @@ def test_los_indices_de_cobertura_anteriores_se_descartan(tmp_path, monkeypatch)
     assert "idx_routes_list_cov5" in idx
     assert not (idx & {"idx_routes_list_cov", "idx_routes_list_cov2",
                        "idx_routes_list_cov3", "idx_routes_list_cov4"})
+
+
+PLANNED_QUERY = (f"SELECT {PLANNED_LIST_COLS} FROM planned_routes "
+                 "ORDER BY created_at DESC")
+
+
+def test_el_listado_de_planes_sale_de_su_indice_de_cobertura(tmp_path, monkeypatch):
+    """Mismo riesgo que en rutas, y peor: en `planned_routes` las columnas
+    pequeñas vienen físicamente DESPUÉS del BLOB `gpx_data` (regla 12)."""
+    monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "sendero.db")
+    init_db()
+    con = sqlite3.connect(cfg.DB_PATH)
+    plan = " | ".join(r[-1] for r in
+                      con.execute("EXPLAIN QUERY PLAN " + PLANNED_QUERY))
+    assert "idx_planned_list_cov2" in plan, plan
+    # el subselect de la ruta que cumplió el plan, por la PK de routes
+    assert "SCAN routes" not in plan, plan
+
+
+def test_el_listado_de_planes_lleva_el_estado_de_realizada():
+    """`completed_at` y el public_id de la ruta asociada: sin ellos la tarjeta no
+    puede pintar la chapa ni enlazar la ruta (y el id interno no se expone)."""
+    assert "completed_at" in PLANNED_LIST_COLS
+    assert "completed_route_public" in PLANNED_LIST_COLS
+    assert "completed_route_id" not in PLANNED_LIST_COLS.split(" AS ")[0].split(",")
+
+
+def test_el_indice_de_cobertura_de_planes_anterior_se_descarta(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "sendero.db")
+    init_db()
+    con = sqlite3.connect(cfg.DB_PATH)
+    idx = {r[0] for r in con.execute(
+        "SELECT name FROM sqlite_master WHERE type='index'")}
+    assert "idx_planned_list_cov2" in idx
+    assert "idx_planned_list_cov" not in idx
 
 
 def test_init_db_es_idempotente(tmp_path, monkeypatch):

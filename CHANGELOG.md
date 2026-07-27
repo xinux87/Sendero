@@ -5,6 +5,34 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.8] — 2026-07-27
+
+### Añadido
+- **Marcar un plan como realizado.** Cada tarjeta de «Mis Planes» tiene un botón
+  «✓ Marcar realizada» que pregunta **qué ruta lo cumplió** (con las que empiezan a menos de
+  3 km del plan arriba, en «Sugeridas», y buscador para el resto); también se puede
+  marcar sin ruta asociada. La tarjeta queda apagada, con la chapa «✔ Realizada» y su
+  fecha, enlazando la ruta real, y se puede desmarcar. La cabecera cuenta
+  «Realizadas N/M». Funciona **sin conexión**: se encola y se envía al volver la red,
+  con la fecha del día en que se marcó, no la del día en que se envió.
+  Dos columnas nuevas en `planned_routes` (`completed_at`, `completed_route_id`) y su
+  índice de cobertura `idx_planned_list_cov2`. Si la ruta asociada se borra, el plan
+  sigue realizado y solo se pierde el enlace.
+- **Filtro de estado en «Mis Planes»: Pendientes · Realizadas · Todas**, con el recuento
+  de cada uno en la propia píldora. Arranca en «Pendientes» (la vista es la lista de lo
+  que queda por hacer) y se recuerda durante la sesión, como los filtros de «Mis Rutas».
+  **También filtra el mapa** —marcadores y trazas—, y cuando el filtro deja la lista
+  vacía lo dice y ofrece cambiar de estado, en vez de parecer que no hay planes.
+- **El mapa de «Mis Planes» enseña la traza de cada ruta, no solo el punto de salida.**
+  Se dibuja con el color de la actividad y se puede pulsar para abrir el plan (misma línea
+  ancha invisible que el mapa de «Mis Rutas», para no exigir acertar 2 px). El encuadre
+  inicial ya cubre las rutas enteras en vez del arranque.
+- `GET /api/planned/geojson`: líneas decimadas de todos los planes, el equivalente de
+  `/api/routes/geojson` para `planned_routes` (el listado no trae `geojson` a propósito).
+  Sin `?bbox=`: los planes son unas decenas y `planned_routes` no tiene columnas de
+  bounding box. Las trazas se guardan en el Store (`planned_lines`), así que el mapa
+  sigue enseñándolas **sin conexión**.
+
 ## [0.9.7] — 2026-07-27
 
 ### Corregido

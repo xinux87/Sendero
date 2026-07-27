@@ -27,8 +27,11 @@ const Store = (() => {
      Store seguiría sirviendo la copia vieja.
      3 = el listado trae `gps_issues_n`, `gps_issues_high` y `n_photos` (avisos
      de GPS y nº de fotos en la tarjeta): sin vaciar, las rutas ya guardadas se
-     pintarían sin esos campos hasta que su rev cambiara por otro motivo. */
-  const DB_VERSION = 3;
+     pintarían sin esos campos hasta que su rev cambiara por otro motivo.
+     4 = el listado de PLANES trae `completed_at` y `completed_route_public`
+     («marcar como realizada»): los planes ya guardados se pintarían siempre como
+     pendientes hasta que su rev cambiara. */
+  const DB_VERSION = 4;
   const STORES = {
     meta:     {keyPath: 'k'},
     routes:   {keyPath: 'public_id'},
@@ -330,6 +333,20 @@ const Store = (() => {
                          lite: !!lite, data});
   }
 
+  /* Aplica en local un cambio que la sección acaba de mandar con Store.patch
+     sobre una FILA DEL LISTADO (hoy: marcar un plan como realizado). Mismo motivo
+     que putDetail: sin esto, un cambio hecho sin conexión desaparecería al
+     repintar la lista — el PATCH está en la cola, pero la copia local seguiría
+     siendo la del servidor. Se conserva el `rev`, así que cuando el servidor lo
+     confirme la sincronización traerá la fila de verdad y pisará esta. */
+  async function patchPlanRow(pid, changes) {
+    const row = await get('planned', pid);
+    if (!row) return null;
+    const next = Object.assign({}, row, changes);
+    await put('planned', next);
+    return next;
+  }
+
   async function plan(pid, {bootstrap = null} = {}) {
     if (bootstrap && bootstrap.public_id === pid) return bootstrap;
     try {
@@ -423,7 +440,7 @@ const Store = (() => {
   return {
     open, meta, setMeta, onChange, isOnline,
     syncNow, checkState, verify, diffManifest,
-    routes, planned, route, plan, routeRow, planRow, putDetail,
+    routes, planned, route, plan, routeRow, planRow, putDetail, patchPlanRow,
     prefetchAll, usage, clearLocal,
     patch, flushOutbox, pendingCount,
     _get: get, _put: put, _del: del, _getAll: getAll,

@@ -442,14 +442,45 @@ def init_db():
                 raise
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_planned_public_id "
                 "ON planned_routes(public_id)")
+    # ── plan realizado ──────────────────────────────────────────────────────
+    # `completed_at` (ISO, cuándo se marcó) y `completed_route_id` (la ruta real
+    # que lo cumplió, id interno; NULL = marcada sin ruta asociada). Sin FK a
+    # propósito: PRAGMA foreign_keys está apagado (regla 14) y si esa ruta se
+    # borra, el subselect de PLANNED_LIST_COLS devuelve NULL y la tarjeta queda
+    # como "realizada, sin ruta" en vez de romperse.
+    for _col, _type in (("completed_at", "TEXT"), ("completed_route_id", "INTEGER")):
+        if _col not in plan_cols:
+            try:
+                con.execute(f"ALTER TABLE planned_routes ADD COLUMN {_col} {_type}")
+                con.commit()
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e):
+                    raise
     # Índice de cobertura del listado (regla 12): public_id y las demás columnas
     # pequeñas se leen juntas en /api/planned, y en esta tabla vienen físicamente
     # DESPUÉS de geojson/elevation/gpx_data (un BLOB con el GPX entero).
-    con.execute("""CREATE INDEX IF NOT EXISTS idx_planned_list_cov ON planned_routes(
+    # cov2 sustituye a cov (añade completed_at/completed_route_id): dejar los dos
+    # duplicaría el coste de escritura.
+    con.execute("DROP INDEX IF EXISTS idx_planned_list_cov")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_planned_list_cov2 ON planned_routes(
         created_at DESC,
         id, name, source, source_url, activity_type, distance_m, ascent_m,
-        descent_m, ele_max, start_lat, start_lon, public_id
+        descent_m, ele_max, start_lat, start_lon, public_id,
+        completed_at, completed_route_id
     )""")
+    # Mismo cuidado que con idx_routes_list_cov5 (ver arriba): si la BD tiene
+    # estadísticas, un índice recién creado no está en sqlite_stat1 y el
+    # planificador lo descarta a favor del que sí tiene — leyendo la fila entera,
+    # o sea atravesando el BLOB gpx_data de cada plan. Se re-analiza UNA vez.
+    if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                   "AND name='sqlite_stat1'").fetchone():
+        if not con.execute("SELECT 1 FROM sqlite_stat1 WHERE idx=?",
+                           ("idx_planned_list_cov2",)).fetchone():
+            try:
+                con.execute("ANALYZE planned_routes")
+                con.commit()
+            except sqlite3.OperationalError:
+                pass          # otro worker lo está haciendo: con uno basta
     # Backfill idempotente y tolerante a la carrera de 2 workers (igual que el de
     # routes/photos: el UPDATE lleva "AND public_id IS NULL").
     for _id in [row[0] for row in con.execute(

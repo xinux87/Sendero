@@ -35,6 +35,28 @@
     </div>
   </div>
 
+  {# ── MODAL: ¿qué ruta cumplió este plan? ─────────────────────────────────────
+     Sale al pulsar «✓ Realizada» en una tarjeta. Las rutas las pone
+     static/js/sec/planes.js desde el Store (o sea, también sin conexión), con las
+     que salen cerca del inicio del plan arriba, en «Sugeridas». Se puede marcar
+     sin ruta: no todo plan realizado tiene un track subido. #}
+  <div id="done-modal" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>¿Qué ruta la cumplió?</h2>
+        <button class="btn ghost sm" onclick="SEC.planes.closeDoneModal()">Cerrar</button>
+      </div>
+      <div id="done-plan-name" class="done-plan-name"></div>
+      <input id="done-search" class="done-search" type="search" autocomplete="off"
+             placeholder="Buscar por nombre o localidad…"
+             oninput="SEC.planes.filterDoneList()">
+      <div id="done-list" class="done-list"></div>
+      <button class="btn ghost modal-cta" onclick="SEC.planes.markDone(null)">
+        Marcarla sin ruta asociada
+      </button>
+    </div>
+  </div>
+
   <div id="plan-loader" class="upload-loader hidden">
     <div class="upload-loader-title">
       <span id="loader-title">Procesando…</span>
@@ -55,10 +77,15 @@
 
   <div id="plan-map"></div>
 
+  {# El filtro por estado (Pendientes · Realizadas · Todas) lo pinta
+     SEC.planes.renderFilters() con el recuento de cada uno; arranca en
+     «Pendientes» y se recuerda en sessionStorage, como los filtros de «Mis
+     Rutas». Afecta a las tarjetas Y al mapa. #}
   <div class="pg-list-head">
     <span class="panel-title">Rutas planificadas</span>
     <span id="pg-count" class="pg-count"></span>
     <span class="rule"></span>
+    <div id="pg-filters" class="pg-filters"></div>
   </div>
 
   <div id="plan-grid" class="plan-grid"></div>

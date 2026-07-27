@@ -26,7 +26,8 @@
   margin-bottom:6px;overflow:hidden}
 
 /* ── cabecera de la lista (mismo patrón que .d-block-head del detalle) ─────── */
-#sec-planes .pg-list-head{display:flex;align-items:center;gap:14px;margin:22px 0 12px}
+#sec-planes .pg-list-head{display:flex;align-items:center;gap:14px;margin:22px 0 12px;
+  flex-wrap:wrap}
 /* Igual que con .overlay: el .hidden global (0,0,1,0) pierde contra el selector
    escopado, así que la variante oculta va aquí mismo y con la misma
    especificidad. */
@@ -34,6 +35,28 @@
 #sec-planes .pg-count{font-family:var(--mono);font-size:11px;color:var(--muted-faint);
   text-transform:uppercase;letter-spacing:.06em}
 #sec-planes .pg-list-head .rule{flex:1;height:1px;background:rgba(236,229,216,.1)}
+
+/* ── filtro por estado (Pendientes · Realizadas · Todas) ──────────────────────
+   Píldoras mono, mismo lenguaje que las de actividad de "Mis Rutas": la activa
+   en ámbar, el recuento de cada estado en apagado dentro de la propia píldora
+   (así el filtro dice cuánto hay a cada lado antes de pulsarlo). */
+#sec-planes .pg-filters{display:flex;gap:6px;flex:none}
+#sec-planes .pg-filter{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);background:transparent;border:1px solid var(--line-strong);
+  border-radius:999px;padding:5px 11px;white-space:nowrap;
+  transition:color .15s,border-color .15s,background .15s}
+#sec-planes .pg-filter:hover{color:var(--ink)}
+#sec-planes .pg-filter.on{color:var(--pr-yellow);border-color:var(--pr-yellow);
+  background:rgba(227,178,60,.08)}
+#sec-planes .pg-filter .n{color:var(--muted-faint)}
+#sec-planes .pg-filter.on .n{color:var(--pr-yellow)}
+/* Botón dentro del mensaje de lista vacía: enlace, no botón (la acción es
+   cambiar de filtro, no una operación). */
+#sec-planes .pg-empty-link{background:none;border:none;padding:0;cursor:pointer;
+  font-family:inherit;font-size:inherit;color:var(--sage);
+  border-bottom:1px solid transparent}
+#sec-planes .pg-empty-link:hover{border-bottom-color:var(--sage)}
 
 /* ── tarjeta de plan ──────────────────────────────────────────────────────────
    Copia deliberada de .card de `rutas`: borde izquierdo de 4 px con el color de
@@ -67,9 +90,61 @@
 
 /* Badge de fuente: chip mono neutro, no un color plano (los colores saturados
    están reservados a las actividades). */
-#sec-planes .source-badge{display:inline-flex;align-items:center;gap:5px;margin-top:10px;
+#sec-planes .source-badge{display:inline-flex;align-items:center;gap:5px;
   font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--muted-dim);border:1px solid var(--line-strong);border-radius:999px;padding:2px 9px}
+
+/* ── plan realizado ───────────────────────────────────────────────────────────
+   La tarjeta realizada se APAGA (no se esconde: sigue siendo parte de la
+   colección y se puede desmarcar), y al pasar el ratón vuelve a legibilidad
+   completa para poder leerla y usar sus botones. */
+#sec-planes .card-foot{display:flex;align-items:center;justify-content:space-between;
+  gap:10px;margin-top:10px}
+#sec-planes .card-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+#sec-planes .plan-card.done{opacity:.62}
+#sec-planes .plan-card.done:hover{opacity:1}
+#sec-planes .plan-card.done h3{text-decoration:line-through;
+  text-decoration-color:var(--muted-faint);text-decoration-thickness:1px}
+#sec-planes .done-badge{display:inline-flex;align-items:center;gap:5px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--pr-yellow);border:1px solid var(--pr-yellow);border-radius:999px;padding:2px 9px;
+  white-space:nowrap}
+#sec-planes .done-route{display:flex;align-items:baseline;gap:8px;margin-top:8px;
+  font-family:var(--mono);font-size:12px;color:var(--muted);min-width:0}
+#sec-planes .done-route a{color:var(--sage);text-decoration:none;border-bottom:1px solid transparent;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sec-planes .done-route a:hover{border-bottom-color:var(--sage)}
+#sec-planes .done-route-date{color:var(--muted-faint);font-size:10.5px;white-space:nowrap}
+/* Acción de la tarjeta: botón discreto, no una llamada a la acción (la acción
+   principal de la tarjeta sigue siendo abrir el plan). */
+#sec-planes .plan-act-btn{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);background:var(--panel-2);
+  border:1px solid var(--line-strong);border-radius:999px;padding:5px 11px;cursor:pointer;
+  white-space:nowrap;transition:color .15s,border-color .15s,background .15s}
+#sec-planes .plan-act-btn:hover{color:var(--pr-yellow);border-color:var(--pr-yellow)}
+#sec-planes .plan-act-btn.undo:hover{color:var(--ink);border-color:var(--line-strong)}
+
+/* ── selector "¿qué ruta la cumplió?" ─────────────────────────────────────── */
+#sec-planes .done-plan-name{font-family:var(--display);font-size:17px;font-weight:500;
+  color:var(--pr-yellow);margin-bottom:12px}
+#sec-planes .done-search{width:100%;background:var(--panel-2);border:1px solid var(--line-strong);
+  border-radius:9px;padding:9px 12px;color:var(--ink);font-family:var(--mono);font-size:12.5px}
+#sec-planes .done-search:focus{outline:none;border-color:var(--sage)}
+#sec-planes .done-list{margin-top:10px;max-height:46vh;overflow-y:auto;
+  border:1px solid var(--line);border-radius:10px}
+#sec-planes .done-group{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--sage);padding:9px 12px 5px;
+  background:var(--panel);position:sticky;top:0}
+#sec-planes .done-row{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;
+  border-top:1px solid var(--line)}
+#sec-planes .done-row:hover{background:var(--panel-2)}
+#sec-planes .done-row-ico{line-height:0;flex:none}
+#sec-planes .done-row-body{display:flex;flex-direction:column;gap:2px;min-width:0}
+#sec-planes .done-row-name{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+#sec-planes .done-row-meta{font-family:var(--mono);font-size:10.5px;color:var(--muted-faint)}
+#sec-planes .done-empty{font-family:var(--mono);font-size:12px;color:var(--muted-dim);
+  padding:14px 12px}
 
 /* ── modal de alta ───────────────────────────────────────────────────────────
    La regla .overlay.hidden va INMEDIATAMENTE después de .overlay y con
@@ -107,6 +182,14 @@
   #sec-planes .plan-glyph{width:38%}
   #sec-planes .pg-kpi .v{font-size:20px}
   #sec-planes .modal{padding:14px}
+  /* En una tarjeta a ancho completo la chapa y el botón caben en una línea, pero
+     con la chapa de "realizada" añadida no siempre: que envuelva. */
+  #sec-planes .card-foot{flex-wrap:wrap}
+  #sec-planes .done-list{max-height:40vh}
+  /* En móvil las píldoras del filtro pasan a su propia línea (el .rule las
+     empuja) y ocupan el ancho disponible. */
+  #sec-planes .pg-filters{width:100%}
+  #sec-planes .pg-filter{flex:1;justify-content:center;padding:6px 8px}
 }
 @media(hover:none) and (pointer:coarse){
   #sec-planes .plan-card:hover{transform:none}
