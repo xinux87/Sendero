@@ -11,22 +11,6 @@ Al terminar cualquiera de estos puntos: bórralo de aquí y cuéntalo en `CHANGE
 
 ## Para hacer
 
-### 1. Rediseñar «Mis Planes» y el detalle de plan
-**Por qué ahora**: son las dos vistas que más cantan al lado de Mis Rutas, porque comparten
-patrón (tarjetas + mapa) y conservan la maquetación anterior. Hoy heredan la paleta y la
-tipografía nuevas —los tokens cambiaron de valor, no de nombre— pero no la estructura.
-
-**Cómo**: el patrón está en las tres vistas ya hechas (`redesign/README.md` tiene medidas y
-tokens; `redesign/screenshots/` el resultado esperado). En corto: panel `--panel` + borde
-`--line` + radio 12, título de panel con `.panel-title`, cifras en Oswald, datos en mono.
-La tarjeta de plan debería acercarse a `.card` de `sec/rutas.css` (borde de color, miniatura
-al fondo, distancia en ámbar), y el detalle de plan al `d-hero` del detalle de ruta.
-
-**Ojo**: `plan.js` repinta sus capas escuchando `map.on('sendero:basemap')` (regla 15 de
-`CLAUDE.md`); no lo rompas al tocar el mapa. Y `.plan-card` la comprueba `tests/e2e_spa.py`.
-
----
-
 ### 2. Rediseñar el editor de rutas
 **Por qué**: es la pantalla más densa de la app y la que más gana con los paneles nuevos. El
 propio prototipo lo ofrecía como continuación natural del handoff.

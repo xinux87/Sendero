@@ -1,62 +1,102 @@
-{# Detalle de ruta planificada (sección de la SPA). Markup extraído de
-   templates/plan_detalle.html; el JS vive en static/js/sec/plan.js y el CSS en
-   static/css/plan.css. Los ids llevan prefijo pl- (ver plan.css). #}
-<section id="sec-plan" class="sec hidden">
-<div class="bar">
-  <button class="btn ghost sm" data-nav="/planificacion">← Planificación</button>
-</div>
+{# Detalle de una ruta planificada (sección de la SPA), con el mismo rediseño
+   que el detalle de ruta: MAPA CABECERA (.pl-hero, 360 px) con el título, el
+   chip de actividad y el badge de fuente encima del velo; banda de métricas; y
+   cuerpo a dos columnas (perfil de elevación ‖ datos técnicos + fuente +
+   notas).
 
-<div class="detail-head">
-  <div>
+   El JS vive en static/js/sec/plan.js y el CSS en static/css/plan.css. Los ids
+   genéricos llevan prefijo pl- para no chocar con las otras cinco secciones del
+   mismo documento.
+
+   OJO con tests/e2e_spa.py: espera un <canvas> y UN <select> (el de capas base)
+   dentro de #pl-map, y pulsa #pl-offline-btn directamente — ese botón tiene que
+   seguir visible, no escondido tras el ⋯. #}
+<section id="sec-plan" class="sec hidden">
+
+{# ── CABECERA-MAPA ───────────────────────────────────────────────────────────
+   Igual que .d-hero del detalle: el mapa ocupa el bloque entero y encima van el
+   velo y el título. .pl-hero-info es pointer-events:none para no robarle el
+   arrastre al mapa; solo lo recuperan el chip de actividad y los botones. #}
+<div class="pl-hero-wrap">
+<div class="pl-hero">
+  <div id="pl-map"></div>
+  <div class="pl-hero-veil"></div>
+  <div class="pl-hero-info">
+    <div class="pl-hero-top">
+      <span id="pl-activity-badge-sm"></span>
+      <span id="pl-d-source"></span>
+    </div>
     <h1 id="pl-d-name"></h1>
-    <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
-      <div id="pl-d-date" class="mono" style="color:var(--muted);font-size:13px"></div>
-      <div id="pl-d-source"></div>
+    <div class="pl-hero-meta">
+      <span class="mono">Ruta planificada</span>
+      <span class="sep">|</span>
+      <span id="pl-d-date" class="mono"></span>
     </div>
   </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
-    <button class="btn sm" id="pl-download-btn" onclick="SEC.plan.downloadGpx()" style="display:none">
-      ⬇ Descargar GPX
-    </button>
+</div>
+  {# Las acciones van FUERA de .pl-hero (que recorta con overflow:hidden) para
+     que en pantalla estrecha caigan debajo del mapa en flujo normal. #}
+  <div class="pl-hero-actions">
+    <button class="btn ghost sm" id="pl-download-btn" onclick="SEC.plan.downloadGpx()"
+            style="display:none">↓ Descargar GPX</button>
     <button class="btn ghost sm" id="pl-offline-btn" onclick="SEC.plan.downloadMap()"
             title="Guarda en este dispositivo las teselas del mapa a lo largo de la ruta">
       ⬇ Mapa sin conexión
     </button>
-    <button class="btn ghost sm" onclick="SEC.plan.renamePlan()">Renombrar</button>
-    <button class="btn ghost sm" onclick="SEC.plan.removePlan()"
-      style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
+    <button class="btn ghost sm" id="pl-more-btn" aria-label="Más acciones"
+            onclick="$('#pl-actions-more').classList.toggle('open')">⋯</button>
+    <div id="pl-actions-more" class="pl-more">
+      <button class="btn ghost sm" onclick="SEC.plan.renamePlan()">Renombrar</button>
+      <button class="btn ghost sm" onclick="SEC.plan.removePlan()"
+              style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
+    </div>
   </div>
-  <div id="pl-offline-info" class="offline-map-info hidden"></div>
 </div>
 
-<div id="pl-map"></div>
+<div id="pl-offline-info" class="offline-map-info hidden"></div>
+
+{# ── BANDA DE MÉTRICAS (la 1ª con el acento de la actividad) ─────────────── #}
 <div class="stats-row" id="pl-stats"></div>
 
-<div class="section">
-  <h2>Perfil de elevación</h2>
-  <div class="chart-box"><canvas id="pl-elev"></canvas></div>
-</div>
+<div class="pl-body">
+  <div class="pl-col">
 
-<div class="section">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-    <h2>Resumen</h2>
-    <div id="pl-activity-badge-sm"></div>
+    <div class="panel" id="pl-elev-panel">
+      <div class="panel-head">
+        <span class="panel-title">Perfil de elevación</span>
+        <span id="pl-elev-sub" class="panel-sub mono"></span>
+      </div>
+      <div class="chart-box"><canvas id="pl-elev"></canvas></div>
+    </div>
+
   </div>
-  <div id="pl-auto" class="auto"></div>
-  <textarea id="pl-notes" placeholder="Escribe aquí tus notas sobre esta ruta: descripción del terreno, puntos de agua, dificultad estimada…"></textarea>
-  <div style="margin-top:10px"><button class="btn sm" onclick="SEC.plan.saveNotes()">Guardar notas</button></div>
-</div>
+  <div class="pl-col pl-col-side">
 
-<div id="pl-source-section" class="section hidden">
-  <h2>Fuente</h2>
-  <div id="pl-source-info"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Datos técnicos</span></div>
+      <div id="pl-tech" class="kv"></div>
+    </div>
+
+    <div class="panel hidden" id="pl-source-section">
+      <div class="panel-head"><span class="panel-title">Fuente</span></div>
+      <div id="pl-source-info" class="pl-source-info"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Notas</span></div>
+      <div id="pl-auto" class="auto"></div>
+      <textarea id="pl-notes" placeholder="Escribe aquí tus notas sobre esta ruta: descripción del terreno, puntos de agua, dificultad estimada…"></textarea>
+      <div style="margin-top:10px"><button class="btn sm" onclick="SEC.plan.saveNotes()">Guardar notas</button></div>
+    </div>
+
+  </div>
 </div>
 
 <!-- MODAL: selector de actividad -->
 <div id="pl-activity-modal" class="overlay hidden">
   <div class="modal">
     <div class="modal-head">
-      <h2 style="font-family:var(--display);font-size:24px">Tipo de actividad</h2>
+      <h2>Tipo de actividad</h2>
       <button class="btn ghost sm" onclick="SEC.plan.closeActivityPicker()">Cerrar</button>
     </div>
     <div id="pl-act-picker-grid" class="act-picker-grid"></div>

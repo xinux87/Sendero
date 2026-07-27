@@ -1,11 +1,24 @@
-{# "Mis Planes" (sección de la SPA). Markup extraído de templates/app.html; la
-   lógica vive en static/js/sec/planes.js y el CSS en static/css/planes.css.
-   El botón "+ Planificar ruta" de la cabecera está en shell.html. #}
+{# "Mis Planes" (sección de la SPA), con el rediseño de la v0.9.x: título de
+   vista + resumen de la colección, mapa de los planes, y las tarjetas con el
+   mismo lenguaje que las de "Mis Rutas" (borde izquierdo del color de la
+   actividad, título en Oswald, fecha y datos en mono, distancia en ámbar).
+
+   Un plan NO tiene miniatura PNG (thumb_file es de `routes`, no de
+   `planned_routes`) ni geojson en el listado, así que el equivalente visual de
+   la traza es el glifo de la actividad al 7 % anclado a la derecha: el mismo
+   truco de máscara que .card-thumb, con lo único que el listado sí trae.
+
+   La lógica vive en static/js/sec/planes.js y el CSS en static/css/planes.css.
+   El botón "+ Planificar ruta" de la cabecera está en shell.html.
+   #sec-planes .plan-card, #plan-map y #add-modal los comprueba
+   tests/e2e_spa.py: si los renombras, actualiza el test. #}
 <section id="sec-planes" class="sec hidden">
+
+  {# ── MODAL: alta de una ruta planificada ─────────────────────────────────── #}
   <div id="add-modal" class="overlay hidden">
     <div class="modal">
       <div class="modal-head">
-        <h2 style="font-family:var(--display);font-size:26px">Planificar ruta</h2>
+        <h2>Planificar ruta</h2>
         <button class="btn ghost sm" onclick="SEC.planes.closeAddModal()">Cerrar</button>
       </div>
       <div id="drop-plan" class="drop-plan" onclick="$('#plan-file').click()">
@@ -13,14 +26,15 @@
         <div id="drop-chosen" class="chosen hidden"></div>
         <input id="plan-file" type="file" accept=".gpx" class="hidden">
       </div>
-      <button class="btn" style="width:100%" onclick="SEC.planes.uploadPlanGpx()">Añadir ruta planificada</button>
-      <button class="btn ghost" style="width:100%;margin-top:8px" onclick="SEC.planes.openPlanner()">✏ Dibujar ruta nueva ↗</button>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4">
+      <button class="btn modal-cta" onclick="SEC.planes.uploadPlanGpx()">Añadir ruta planificada</button>
+      <button class="btn ghost modal-cta" onclick="SEC.planes.openPlanner()">✏ Dibujar ruta nueva ↗</button>
+      <div class="modal-hint">
         Abre el planificador externo en otra ventana. Dibuja la ruta, expórtala como GPX
         y arrástrala aquí arriba para importarla.
       </div>
     </div>
   </div>
+
   <div id="plan-loader" class="upload-loader hidden">
     <div class="upload-loader-title">
       <span id="loader-title">Procesando…</span>
@@ -29,9 +43,27 @@
     <div class="upload-bar-bg"><div id="loader-bar" class="upload-bar-fill"></div></div>
     <div id="loader-msg" class="upload-filename"></div>
   </div>
+
+  {# ── TÍTULO DE VISTA + resumen de la colección ───────────────────────────── #}
+  <div class="view-head">
+    <div>
+      <h2>Mis Planes</h2>
+      <div class="sub">Rutas preparadas, pendientes de pisar</div>
+    </div>
+    <div class="pg-kpis" id="pg-kpis"></div>
+  </div>
+
   <div id="plan-map"></div>
+
+  <div class="pg-list-head">
+    <span class="panel-title">Rutas planificadas</span>
+    <span id="pg-count" class="pg-count"></span>
+    <span class="rule"></span>
+  </div>
+
   <div id="plan-grid" class="plan-grid"></div>
   <div id="no-plans" class="empty hidden">No hay rutas planificadas todavía.</div>
+
   <button class="fab" title="Planificar ruta" aria-label="Planificar ruta"
           onclick="SEC.planes.openAddModal()">＋</button>
 </section>

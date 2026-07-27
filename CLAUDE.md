@@ -207,14 +207,18 @@ El router (`static/js/core/router.js`) monta la sección según `location.pathna
 así que **navegar entre vistas no pide ningún documento**: solo el JSON que haga
 falta, y a menudo ni eso (lo tiene el Store).
 
-**Tres de las seis vistas siguen el rediseño de `redesign/`** (v0.9.0): `detalle`,
-`rutas` y `dashboard`, con la opción **2a** en pantalla grande y la **2d** en móvil
-(`redesign/README.md` tiene los tokens y las medidas; `redesign/screenshots/` el
-resultado esperado). `planes`, `plan` y `editor` NO se rediseñaron a mano: heredan
-la paleta y la tipografía porque lo que cambió fue el **valor** de las variables de
-`base.html`, no su nombre. Si rediseñas una de esas tres, el patrón a seguir es el
-de las otras (panel `--panel` + borde `--line` + radio 12, título de panel en
-`.panel-title`, cifras en Oswald, datos en mono).
+**Cinco de las seis vistas siguen el rediseño**, con la opción **2a** en pantalla
+grande y la **2d** en móvil: `detalle`, `rutas` y `dashboard` desde la v0.9.0, y
+`planes` + `plan` desde la v0.9.3. La única que falta es `editor`, que hereda la
+paleta y la tipografía porque lo que cambió fue el **valor** de las variables de
+`base.html`, no su nombre. El patrón a seguir es el de las otras: panel `--panel`
++ borde `--line` + radio 12, título de panel en `.panel-title`, cifras en Oswald,
+datos en mono.
+
+> **La carpeta `redesign/` ya no existe** (ni en disco ni en git; era local y se
+> perdió). Las referencias que quedaban a `redesign/README.md` y
+> `redesign/screenshots/` no llevan a ninguna parte: la fuente de verdad del
+> patrón son las vistas ya hechas, sobre todo `sec/detalle.*` y `sec/rutas.*`.
 
 ### Tokens de diseño — están en `templates/base.html` y en ningún otro sitio
 | Token | Valor | Uso |

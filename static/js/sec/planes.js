@@ -97,25 +97,57 @@
     if (mapLoaded || map.loaded()) fit(); else map.once('load', fit);
   }
 
-  /* ── tarjetas ──────────────────────────────────────────────────────────── */
+  /* ── tarjetas ────────────────────────────────────────────────────────────
+     Mismo lenguaje que .card de `rutas`: borde izquierdo del color de la
+     actividad, título en Oswald, fecha larga en mono y la línea .card-meta con
+     la distancia en ámbar. Donde la ruta pone su miniatura PNG, el plan pone el
+     glifo de la actividad como marca de agua: `planned_routes` no tiene
+     thumb_file, y PLANNED_LIST_COLS no trae geojson ni elevation, así que la
+     actividad es el único dato dibujable que llega en el listado. */
   function makeCard(p) {
     const a = activityOf(p.activity_type);
     const div = document.createElement('div');
     div.className = 'plan-card';
     div.style.borderLeftColor = a ? a.color : 'var(--line-strong)';
     div.onclick = () => go('/Plan/' + encodeURIComponent(p.public_id));
-    div.innerHTML = `<div class="plan-act">${a ? iconSvg(a, 26) : genericIconSvg(26)}</div>
-      <h3>${esc(p.name)}</h3><div class="date">${fmtDate(p.created_at)}</div>
-      <span class="source-badge source-gpx">GPX</span>
-      <div class="plan-metrics">
-        <div class="pm"><span class="v">${fmtKm(p.distance_m)}</span><span class="l">km</span></div>
-        ${p.ascent_m ? `<div class="pm"><span class="v">${Math.round(p.ascent_m)}<small> m</small></span><span class="l">↑ Desnivel</span></div>` : ''}
+    const dist = p.distance_m ? `<span class="card-dist">${fmtKm(p.distance_m)} km</span>` : '';
+    const asc  = p.ascent_m   ? `<span class="card-asc">↑ ${fmtNum(p.ascent_m)} m</span>` : '';
+    const top  = p.ele_max != null ? `<span class="card-top">▲ ${fmtNum(p.ele_max)} m</span>` : '';
+    const meta = (dist || asc || top) ? `<div class="card-meta">${dist}${asc}${top}</div>` : '';
+    div.innerHTML = `
+      <div class="plan-glyph">${a ? iconSvg(a, 150) : genericIconSvg(150)}</div>
+      <div class="plan-act">${a ? iconSvg(a, 26) : genericIconSvg(26)}</div>
+      <div class="plan-body">
+        <h3>${esc(p.name)}</h3>
+        <div class="date">${fmtDateLong(p.created_at)}</div>
+        ${meta}
+        <span class="source-badge">${p.source === 'wikiloc' ? 'Wikiloc' : 'GPX'}</span>
       </div>`;
     return div;
   }
 
+  /* Resumen de la colección, a la derecha del título de vista. Sale del listado
+     que ya tiene el Store, así que se ve igual sin conexión. */
+  function renderKpis(rows) {
+    const km  = rows.reduce((s, p) => s + (p.distance_m || 0), 0) / 1000;
+    const asc = rows.reduce((s, p) => s + (p.ascent_m   || 0), 0);
+    const items = [
+      ['Planes', String(rows.length), '', false],
+      // Con pocos planes el total cabe en decenas de km: redondear a entero
+      // convertiría "5.93" en "6" y parecería un dato inventado.
+      ['Distancia', km < 100 ? km.toFixed(1) : fmtNum(km), 'km', true],
+      ['Desnivel +', fmtNum(asc), 'm', false],
+    ];
+    q('#pg-kpis').innerHTML = items.map(([l, v, u, amber]) =>
+      `<div class="pg-kpi${amber ? ' amber' : ''}"><div class="l">${l}</div>` +
+      `<div class="v">${v}${u ? ` <small>${u}</small>` : ''}</div></div>`).join('');
+  }
+
   function render(rows) {
     const grid = q('#plan-grid'), empty = q('#no-plans');
+    renderKpis(rows);
+    q('#pg-count').textContent = rows.length === 1 ? '1 ruta' : `${rows.length} rutas`;
+    q('.pg-list-head').classList.toggle('hidden', !rows.length);
     grid.innerHTML = '';
     if (!rows.length) { empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');

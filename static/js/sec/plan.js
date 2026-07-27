@@ -55,9 +55,10 @@
     if (!map || !coords.length || map.getSource('pl-ruta')) return;
     map.addSource('pl-ruta', {type: 'geojson',
       data: {type: 'Feature', geometry: {type: 'LineString', coordinates: coords}}});
+    const actColor = (activityOf(current.activity_type) || {}).color || '#e3b23c';
     map.addLayer({id: 'pl-ruta-linea', type: 'line', source: 'pl-ruta',
       layout: {'line-join': 'round', 'line-cap': 'round'},
-      paint: {'line-color': '#e3b23c', 'line-width': 3, 'line-opacity': .9}});
+      paint: {'line-color': actColor, 'line-width': 3, 'line-opacity': .95}});
     // inicio (verde) y fin (rojo) como capas circle, no como marcadores DOM
     map.addSource('pl-ruta-extremos', {type: 'geojson', data: {type: 'FeatureCollection', features: [
       {type: 'Feature', properties: {tipo: 'Inicio'}, geometry: {type: 'Point', coordinates: coords[0]}},
@@ -129,34 +130,69 @@
     map = null;
   }
 
-  /* ── gráfico de elevación ──────────────────────────────────────────────── */
+  /* ── gráfico de elevación ────────────────────────────────────────────────
+     Mismas convenciones que el perfil del detalle de ruta (sec/detalle.js):
+     rejilla y marcas en mono apagado, sin títulos de eje (la unidad la dice el
+     título del panel), relleno con degradado del color de la ACTIVIDAD y línea
+     naranja de la serie de elevación. */
+  const GRID = 'rgba(236,229,216,.07)';
+  const TICK = {color: '#68786d', font: {family: "'IBM Plex Mono',monospace", size: 10}};
+
+  /* Relleno del perfil: degradado del color de la actividad (.38 → 0).
+     Scriptable porque necesita el chartArea, que no existe hasta el 1er layout. */
+  function areaGradient(chart, hex) {
+    const {ctx, chartArea} = chart;
+    if (!chartArea) return 'transparent';
+    const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    g.addColorStop(0, hex + '61');      // 0x61 ≈ 38 %
+    g.addColorStop(1, hex + '00');
+    return g;
+  }
+
+  /* "1 240 m salida · 2 380 m cima · pendiente máx. 21 %". La pendiente se mide
+     sobre tramos de al menos 30 m para que el ruido del GPS no dé porcentajes
+     absurdos (mismo criterio que _elevSub del detalle). */
+  function elevSub(data) {
+    if (!data.length) return '';
+    let max = data[0].e, slope = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i].e > max) max = data[i].e;
+      const dx = (data[i].d - data[i - 1].d) * 1000;
+      if (dx >= 30) slope = Math.max(slope, (data[i].e - data[i - 1].e) / dx * 100);
+    }
+    return `${fmtNum(data[0].e)} m salida · ${fmtNum(max)} m cima`
+         + (slope > 0 ? ` · pendiente máx. ${Math.round(slope)} %` : '');
+  }
+
   function drawElevation() {
+    destroyChart();
     const elev = (current && current.elevation) || [];
-    if (!elev.length) return;
-    const ctx = $('#pl-elev').getContext('2d');
-    const labels = elev.map(p => p.d);
-    const data   = elev.map(p => p.e);
-    const grad = ctx.createLinearGradient(0, 0, 0, 200);
-    grad.addColorStop(0, 'rgba(232,196,74,.35)');
-    grad.addColorStop(1, 'rgba(232,196,74,.02)');
+    const panel = $('#pl-elev-panel');
+    if (!elev.length) { panel.classList.add('hidden'); return; }
+    panel.classList.remove('hidden');
+    $('#pl-elev-sub').textContent = elevSub(elev);
+    const actColor = (activityOf(current.activity_type) || {}).color || '#e8863c';
+    const ctx = $('#pl-elev');
     elevChart = new Chart(ctx, {
       type: 'line',
-      data: {labels, datasets: [{
-        data, fill: true, backgroundColor: grad,
-        borderColor: '#e3b23c', borderWidth: 2, pointRadius: 0, tension: .35,
+      data: {datasets: [{
+        data: elev.map(p => ({x: p.d, y: p.e})), fill: true,
+        backgroundColor: c => areaGradient(c.chart, actColor),
+        borderColor: '#f0b070', borderWidth: 2, pointRadius: 0, tension: .3,
       }]},
       options: {
-        responsive: true, maintainAspectRatio: false,
+        maintainAspectRatio: false,
+        interaction: {mode: 'nearest', axis: 'x', intersect: false},
         plugins: {legend: {display: false}, tooltip: {callbacks: {
-          title: i => `${i[0].label} km`,
-          label: i => `${i.raw} m`,
+          title: i => `${(+i[0].parsed.x).toFixed(2)} km`,
+          label: i => `${fmtNum(i.parsed.y)} m`,
         }}},
         scales: {
-          x: {ticks: {color: '#8b9a8f', font: {size: 10},
-              callback: (v, i) => i % Math.ceil(labels.length / 8) === 0 ? labels[i].toFixed(1) : ''},
-              grid: {color: 'rgba(236,229,216,.07)'}},
-          y: {ticks: {color: '#8b9a8f', font: {size: 10}, callback: v => `${v}m`},
-              grid: {color: 'rgba(236,229,216,.07)'}},
+          x: {type: 'linear', min: 0, max: elev[elev.length - 1].d,
+              ticks: {...TICK, maxTicksLimit: 8}, grid: {color: GRID, drawTicks: false},
+              border: {display: false}},
+          y: {ticks: {...TICK, callback: v => fmtNum(v)},
+              grid: {color: GRID, drawTicks: false}, border: {display: false}},
         },
       },
     });
@@ -168,32 +204,56 @@
     elevChart = null;
   }
 
-  /* ── stats ─────────────────────────────────────────────────────────────── */
+  /* ── banda de métricas ───────────────────────────────────────────────────
+     Igual que la del detalle de ruta: la 1ª tarjeta lleva .acc con el borde del
+     color de la actividad y la cifra en ámbar. Solo lo que el plan tiene: no
+     hay tiempos ni velocidad, que un plan no se ha hecho todavía. */
   function renderStats() {
     const r = current;
-    const stats = [
-      {v: fmtKm(r.distance_m), l: 'km'},
-      r.ascent_m  ? {v: `${Math.round(r.ascent_m)}<small> m</small>`,  l: '↑ Desnivel'} : null,
-      r.descent_m ? {v: `${Math.round(r.descent_m)}<small> m</small>`, l: '↓ Bajada'} : null,
-      r.ele_max !== null ? {v: `${Math.round(r.ele_max)}<small> m</small>`, l: 'Altitud máx.'} : null,
-      r.ele_min !== null ? {v: `${Math.round(r.ele_min)}<small> m</small>`, l: 'Altitud mín.'} : null,
-    ].filter(Boolean);
-    $('#pl-stats').innerHTML = stats.map(s =>
-      `<div class="stat"><div class="v">${s.v}</div><div class="l">${s.l}</div></div>`
+    const a = activityOf(r.activity_type);
+    const items = [
+      ['Distancia', fmtKm(r.distance_m), 'km', true],
+      ['Desnivel +', fmtNum(r.ascent_m), 'm'],
+      ['Desnivel −', fmtNum(r.descent_m), 'm'],
+      ['Altitud máx', fmtNum(r.ele_max), 'm'],
+      ['Altitud mín', fmtNum(r.ele_min), 'm'],
+    ];
+    $('#pl-stats').innerHTML = items.map(([l, v, u, acc]) =>
+      `<div class="stat${acc ? ' acc' : ''}"${acc ? ` style="border-left-color:${(a || {}).color || 'var(--pr-yellow)'}"` : ''}>
+         <div class="l">${l}</div>
+         <div class="v">${v}${u ? ` <small>${u}</small>` : ''}</div></div>`
     ).join('');
   }
 
-  /* ── cabecera ──────────────────────────────────────────────────────────── */
+  /* ── datos técnicos ──────────────────────────────────────────────────────
+     Solo campos que el plan tiene de verdad; lo que no está no se inventa. */
+  function renderTech() {
+    const r = current;
+    const rows = [];
+    const add = (k, v) => { if (v != null && v !== '' && v !== '–') rows.push([k, v]); };
+    const n = (r.geojson || []).length;
+    add('Puntos del track', n ? fmtNum(n) : null);
+    add('Desnivel neto', (r.ascent_m != null && r.descent_m != null)
+      ? `${r.ascent_m - r.descent_m >= 0 ? '+' : '−'}${fmtNum(Math.abs(r.ascent_m - r.descent_m))} m` : null);
+    add('Origen', r.source === 'wikiloc' ? 'Wikiloc' : (r.source === 'dibujada' ? 'Dibujada' : 'Archivo GPX'));
+    add('Archivo', r.has_gpx ? 'GPX guardado' : 'Sin archivo');
+    add('Añadida', r.created_at ? fmtDate(r.created_at) : null);
+    $('#pl-tech').innerHTML = rows.map(([k, v]) =>
+      `<div class="kv-row"><span class="kv-k">${esc(k)}</span>` +
+      `<span class="kv-v" title="${esc(String(v))}">${esc(String(v))}</span></div>`).join('');
+  }
+
+  /* ── cabecera (dentro del mapa cabecera) ───────────────────────────────── */
   function renderHead() {
     document.title = `Sendero – ${current.name}`;
     $('#pl-d-name').textContent = current.name;
     const d = current.created_at ? new Date(current.created_at) : null;
     $('#pl-d-date').textContent = d
-      ? d.toLocaleDateString('es-ES', {day: '2-digit', month: 'long', year: 'numeric'})
+      ? `Añadida el ${d.toLocaleDateString('es-ES', {day: '2-digit', month: 'long', year: 'numeric'})}`
       : '';
     $('#pl-d-source').innerHTML = current.source === 'wikiloc'
-      ? '<span class="source-badge source-wikiloc">Wikiloc</span>'
-      : '<span class="source-badge source-gpx">GPX</span>';
+      ? '<span class="source-badge">Wikiloc</span>'
+      : '<span class="source-badge">GPX</span>';
 
     $('#pl-download-btn').style.display = current.has_gpx ? '' : 'none';
 
@@ -209,27 +269,33 @@
     }
   }
 
-  /* ── actividad ─────────────────────────────────────────────────────────── */
+  /* ── actividad ───────────────────────────────────────────────────────────
+     El chip va sobre el mapa cabecera: fondo translúcido oscuro a propósito, el
+     color solo no se leería sobre una capa satélite (igual que en el detalle de
+     ruta). Pulsarlo es la ÚNICA forma de cambiar la actividad del plan. */
   function renderActivityBadge() {
     const a = activityOf(current.activity_type);
     const badge = $('#pl-activity-badge-sm');
     if (!badge) return;
     badge.innerHTML = a
-      ? `<div class="act-badge" style="color:${a.color};border-color:${a.color}"
-           onclick="SEC.plan.openActivityPicker()">${iconSvg(a, 18)} ${esc(a.label)}</div>`
-      : `<div class="act-badge" style="color:var(--muted);border-color:var(--muted)"
-           onclick="SEC.plan.openActivityPicker()">Sin tipo</div>`;
+      ? `<span class="act-badge" onclick="SEC.plan.openActivityPicker()"
+           style="background:rgba(11,18,14,.55);color:${a.color}">
+           <span class="ico">${iconSvg(a, 24)}</span>${esc(a.label)}</span>`
+      : `<span class="act-badge" onclick="SEC.plan.openActivityPicker()"
+           style="background:rgba(11,18,14,.55);border-color:var(--line-strong);color:var(--muted)">
+           + Añadir tipo de actividad</span>`;
   }
 
   function openActivityPicker() {
+    if (!current) return;
     const grid = $('#pl-act-picker-grid');
     grid.innerHTML = '';
     ACTIVITIES.forEach(a => {
       const d = document.createElement('div');
       d.className = 'act-opt' + (current.activity_type === a.id ? ' on' : '');
       d.style.borderColor = current.activity_type === a.id ? a.color : '';
-      d.innerHTML = `<div class="act-ico-lg">${iconSvg(a, 36)}</div>
-        <div class="act-lbl" style="color:${a.color}">${esc(a.label)}</div>`;
+      d.innerHTML = `${iconSvg(a, 40)}
+        <span class="act-lbl" style="color:${a.color}">${esc(a.label)}</span>`;
       d.onclick = () => pickActivity(a.id);
       grid.appendChild(d);
     });
@@ -244,7 +310,15 @@
                                 {label: 'actividad del plan'});
     if (!r.ok) { toast('Error al guardar la actividad'); return; }
     current.activity_type = actId;
+    /* La actividad tiñe el track, el acento de la 1ª métrica y el relleno del
+       perfil: los tres se repintan aquí, sin volver a pedir nada. */
+    const a = activityOf(actId);
+    if (map && a && map.getLayer('pl-ruta-linea')) {
+      map.setPaintProperty('pl-ruta-linea', 'line-color', a.color);
+    }
     renderActivityBadge();
+    renderStats();
+    drawElevation();
     toast(r.queued ? 'Actividad guardada (se enviará al recuperar conexión)'
                    : 'Actividad actualizada');
   }
@@ -303,12 +377,17 @@
   function showMessage(msg) {
     $('#pl-d-name').textContent = msg;
     $('#pl-stats').innerHTML = '';
+    $('#pl-tech').innerHTML = '';
     $('#pl-auto').textContent = '';
+    $('#pl-activity-badge-sm').innerHTML = '';
+    $('#pl-d-source').innerHTML = '';
+    $('#pl-d-date').textContent = '';
   }
 
   function render() {
     renderHead();
     renderStats();
+    renderTech();
     renderActivityBadge();
     $('#pl-auto').textContent = current.auto_summary || '';
     $('#pl-notes').value      = current.notes || '';
@@ -323,6 +402,7 @@
     const tok = ++_tok;
     pid = params.id;
     current = null;
+    $('#pl-actions-more').classList.remove('open');
     showMessage('Cargando…');
     let data;
     try {
@@ -342,6 +422,7 @@
     destroyMap();
     destroyChart();
     closeActivityPicker();
+    $('#pl-actions-more').classList.remove('open');
     current = null; pid = null;
   }
 

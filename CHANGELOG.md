@@ -5,6 +5,27 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.3] — 2026-07-27
+
+### Cambiado
+- **«Mis Planes» y el detalle de plan adoptan el rediseño**. Eran las dos vistas que más
+  cantaban al lado de Mis Rutas: compartían el patrón de tarjetas + mapa pero conservaban la
+  maquetación anterior a la 0.9.0. Heredaban la paleta y la tipografía nuevas —los tokens
+  cambiaron de valor, no de nombre— pero no la estructura.
+  - **Mis Planes**: cabecera de vista con tres cifras de la colección (planes, distancia,
+    desnivel acumulado), cabecera de lista con contador, y la tarjeta de plan alineada con
+    la `.card` de Mis Rutas: borde izquierdo del color de la actividad, título en Oswald,
+    fecha en versalitas, distancia en ámbar y datos en mono. Como un plan no tiene miniatura
+    del track —`thumb_file` es de `routes`, no de `planned_routes`—, el equivalente visual
+    es el glifo de la actividad como marca de agua, con la misma técnica de `mask-image`.
+  - **Detalle de plan**: mapa cabecera al estilo del detalle de ruta, con el título y el
+    chip de actividad sobre el velo, banda de cinco métricas, y el cuerpo en paneles
+    (perfil de elevación ‖ datos técnicos + origen + notas). Las acciones secundarias pasan
+    al menú `⋯`, y el perfil de elevación usa el degradado del color de la actividad y el
+    subtítulo de salida/cima/pendiente máxima del detalle de ruta.
+- El badge de origen del plan (GPX / Wikiloc) deja de usar colores sueltos y pasa a los
+  tokens del rediseño.
+
 ## [0.9.2] — 2026-07-26
 
 ### Añadido

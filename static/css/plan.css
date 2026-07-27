@@ -1,79 +1,184 @@
-/* Detalle de ruta planificada. Extraído de templates/plan_detalle.html.
-   Escopado bajo #sec-plan: .stat, .section, .overlay, .modal y otras 17
-   clases están definidas también en otras vistas, y en la SPA todas
-   conviven en el mismo documento (roadmap §2). Los ids que chocaban con
-   el detalle de ruta llevan prefijo pl-. */
-#sec-plan .detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
-#sec-plan #pl-map{height:380px;border-radius:11px;border:1px solid var(--line);z-index:0}
-#sec-plan .stats-row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
-#sec-plan .stat{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);
-  border-radius:9px;padding:12px 14px}
-#sec-plan .stat .v{font-family:var(--mono);font-size:23px;font-weight:700}
-#sec-plan .stat .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
-#sec-plan .stat .v small{font-size:13px;color:var(--muted)}
-#sec-plan .section{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:18px;margin-top:16px}
-#sec-plan .section h2{font-size:24px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:10px}
-#sec-plan .section h2::before{content:"";width:10px;height:24px;border-radius:2px;
-  background:linear-gradient(var(--pr-yellow) 0 50%,#fff 50% 100%)}
-#sec-plan textarea{width:100%;min-height:120px;background:var(--bg);color:var(--ink);
-  border:1px solid var(--line);border-radius:8px;padding:12px;font-family:inherit;font-size:14px;resize:vertical}
+/* Detalle de ruta planificada — rediseño de la v0.9.x, calcado del detalle de
+   ruta (static/css/detalle.css): mapa cabecera de 360 px con el título encima
+   del velo, banda de métricas y cuerpo a dos columnas (1fr | 350 px).
+
+   Escopado bajo #sec-plan: .stat, .panel, .overlay, .modal, .act-badge y una
+   docena más existen también en otras vistas, y en la SPA las seis secciones
+   comparten documento. Los ids que chocarían llevan prefijo pl-.
+
+   Nada de hex sueltos: todo sale de las variables de base.html (los rgba() de
+   velos, sombras y separadores son los del propio rediseño). */
+
+/* ── CABECERA-MAPA ───────────────────────────────────────────────────────────
+   El envoltorio existe para las acciones: dentro de .pl-hero (overflow:hidden)
+   no podrían salir del mapa, y en pantalla estrecha tienen que caer debajo. */
+#sec-plan .pl-hero-wrap{position:relative}
+#sec-plan .pl-hero{position:relative;height:360px;
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  background:radial-gradient(120% 150% at 25% 20%,#16281c 0%,#0f1c15 48%,#0a1310 100%)}
+#sec-plan #pl-map{position:absolute;inset:0;z-index:0}
+#sec-plan .pl-hero-veil{position:absolute;inset:0;z-index:2;pointer-events:none;
+  background:linear-gradient(to top,rgba(7,12,9,.94) 0%,rgba(7,12,9,.4) 40%,transparent 72%)}
+/* pointer-events:none para no robarle el arrastre al mapa; lo recuperan solo el
+   chip de actividad y los botones. */
+#sec-plan .pl-hero-info{position:absolute;left:24px;right:24px;bottom:20px;z-index:3;
+  pointer-events:none;padding-right:min(40%,340px)}
+#sec-plan .pl-hero-top{display:flex;align-items:center;gap:9px;margin-bottom:8px;flex-wrap:wrap}
+#sec-plan #pl-d-name{font-size:38px;font-weight:500;line-height:1.05;letter-spacing:.01em;
+  text-transform:uppercase;margin:0 0 8px;text-shadow:0 2px 12px rgba(7,12,9,.75)}
+/* Sombra en el texto que va sobre el mapa: con una capa clara (topográfica o
+   satélite) el crema sobre crema no se leería. */
+#sec-plan .pl-hero-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  font-size:12.5px;color:#a9b8ac;text-shadow:0 1px 6px rgba(7,12,9,.9)}
+#sec-plan .pl-hero-meta .sep{opacity:.35}
+#sec-plan .pl-hero-actions{position:absolute;right:24px;bottom:20px;z-index:4;
+  display:flex;gap:8px;align-items:flex-end}
+#sec-plan .pl-hero-actions .btn.ghost{background:rgba(11,18,14,.8);
+  border-color:rgba(236,229,216,.2);backdrop-filter:blur(2px);white-space:nowrap}
+/* Acciones secundarias tras el ⋯, también en escritorio: sobre el mapa se
+   quedan solo las dos principales (y "Mapa sin conexión" tiene que seguir
+   visible, la pulsa tests/e2e_spa.py). */
+#sec-plan .pl-more{display:none;position:absolute;right:0;bottom:calc(100% + 8px);z-index:10;
+  flex-direction:column;gap:6px;background:var(--panel);border:1px solid var(--line-strong);
+  border-radius:12px;padding:10px;box-shadow:0 8px 28px #00000080;min-width:170px}
+#sec-plan .pl-more.open{display:flex}
+#sec-plan .pl-more .btn{text-align:left;justify-content:flex-start}
+
+/* ── BANDA DE MÉTRICAS ────────────────────────────────────────────────────── */
+#sec-plan .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:10px;margin:14px 0 0}
+#sec-plan .stat{background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:12px 14px;min-width:0}
+#sec-plan .stat .l{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted-dim);margin-bottom:6px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+#sec-plan .stat .v{font-family:var(--display);font-weight:500;font-size:25px;line-height:1;
+  white-space:nowrap}
+#sec-plan .stat .v small{font-size:12px;color:var(--muted);font-family:var(--display)}
+#sec-plan .stat.acc{border-left-width:3px;border-left-style:solid}
+#sec-plan .stat.acc .v{color:var(--pr-yellow)}
+
+/* ── CUERPO: dos columnas (1fr | 350px) ───────────────────────────────────── */
+#sec-plan .pl-body{display:grid;grid-template-columns:1fr 350px;gap:16px;margin-top:16px}
+#sec-plan .pl-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+#sec-plan .panel{background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:14px 16px}
+/* El .hidden global (0,0,1,0) pierde contra el selector escopado de arriba, así
+   que la variante oculta va aquí con la misma especificidad. */
+#sec-plan .panel.hidden{display:none}
+#sec-plan .panel-head{display:flex;align-items:baseline;justify-content:space-between;
+  gap:12px;margin-bottom:6px}
+#sec-plan .panel-sub{font-size:11px;color:var(--muted-dim);text-align:right}
+/* Altura explícita: el chart va con maintainAspectRatio:false. */
+#sec-plan .chart-box{position:relative;height:280px}
+
+/* lista clave/valor de "Datos técnicos" */
+#sec-plan .kv .kv-row{display:flex;justify-content:space-between;gap:10px;
+  padding:7px 0;border-bottom:1px solid rgba(236,229,216,.07);font-size:13px}
+#sec-plan .kv .kv-row:last-child{border-bottom:0}
+#sec-plan .kv .kv-k{color:var(--muted)}
+#sec-plan .kv .kv-v{font-family:var(--mono);text-align:right;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
+
+/* ── NOTAS Y FUENTE ───────────────────────────────────────────────────────── */
+#sec-plan textarea{width:100%;min-height:120px;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--line-strong);border-radius:8px;padding:12px;font-family:inherit;
+  font-size:13.5px;resize:vertical}
 #sec-plan .auto{color:var(--muted);font-style:italic;margin-bottom:12px;padding:10px 12px;
-  background:var(--bg);border-radius:8px;border-left:3px solid var(--pr-yellow)}
-/* MapLibre (antes Leaflet: unificado para poder vendorizar una sola librería
-   de mapas y compartir buildStyle()/capa offline con el resto de las vistas) */
-#sec-plan .maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;
-  padding:8px 12px;font-family:inherit;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
-#sec-plan .maplibregl-popup-tip{border-top-color:var(--panel);border-bottom-color:var(--panel)}
-#sec-plan .maplibregl-ctrl-group{background:var(--panel)!important;border-color:var(--line)!important}
-#sec-plan .maplibregl-ctrl button{background:var(--panel)!important;color:var(--ink)!important}
-#sec-plan .maplibregl-ctrl button .maplibregl-ctrl-icon{filter:brightness(0) invert(1)}
-#sec-plan #pl-d-name{font-size:34px}
-/* contenedor de la gráfica con altura explícita (el chart usa
-   maintainAspectRatio:false; sin esto en móvil quedaría enana) */
-#sec-plan .chart-box{position:relative;height:260px}
-@media(max-width:600px){
-#sec-plan .stat .v{font-size:19px}
-#sec-plan #pl-d-name{font-size:24px}
-#sec-plan #pl-map{height:45vh;height:45dvh;min-height:280px}
-#sec-plan .section{padding:14px}
-#sec-plan .section h2{font-size:20px}
-#sec-plan .chart-box{height:180px}
-}
-@media(hover:none) and (pointer:coarse){
-#sec-plan .act-badge{min-height:40px}
-#sec-plan .act-opt:hover{transform:none}
-}
-/* badge actividad */
-#sec-plan .act-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 10px;
-  border-radius:20px;font-size:13px;font-weight:700;border:2px solid;cursor:pointer;
-  transition:filter .15s;letter-spacing:.03em;white-space:nowrap}
-#sec-plan .act-badge:hover{filter:brightness(1.18)}
-#sec-plan .act-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;padding-top:6px}
+  font-size:13px;background:var(--bg);border-radius:8px;border-left:3px solid var(--pr-yellow)}
+#sec-plan .auto:empty{display:none}
+#sec-plan .pl-source-info{font-size:13px;color:var(--muted);line-height:1.6}
+#sec-plan .pl-source-info a{color:var(--pr-yellow)}
+
+/* ── badge de fuente ──────────────────────────────────────────────────────────
+   Chip mono neutro sobre el velo del mapa: los colores saturados están
+   reservados a las actividades. */
+#sec-plan .source-badge{display:inline-flex;align-items:center;gap:5px;pointer-events:auto;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:#c3cfc6;background:rgba(11,18,14,.55);border:1px solid rgba(236,229,216,.2);
+  border-radius:999px;padding:4px 11px}
+
+/* ── actividad ────────────────────────────────────────────────────────────── */
+#sec-plan .act-badge{display:inline-flex;align-items:center;gap:7px;padding:4px 12px 4px 5px;
+  border-radius:999px;font-family:var(--mono);font-size:11.5px;font-weight:500;
+  letter-spacing:.12em;text-transform:uppercase;cursor:pointer;pointer-events:auto;
+  border:1px solid transparent;transition:filter .15s;white-space:nowrap}
+#sec-plan .act-badge:hover{filter:brightness(1.15)}
+#sec-plan .act-badge .ico{line-height:0}
+#sec-plan .act-picker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
+  gap:10px;padding-top:6px}
 #sec-plan .act-opt{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;
-  border-radius:11px;border:2px solid var(--line);cursor:pointer;
+  border-radius:11px;border:1px solid var(--line-strong);cursor:pointer;
   transition:border-color .15s,transform .15s;background:var(--bg)}
 #sec-plan .act-opt:hover{transform:translateY(-2px)}
 #sec-plan .act-opt.on{background:var(--panel-2)}
-#sec-plan .act-ico-lg{font-size:36px;line-height:1}
-#sec-plan .act-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;text-align:center}
-/* badge fuente */
-#sec-plan .source-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
-  letter-spacing:.06em;padding:3px 10px;border-radius:10px;text-transform:uppercase}
-#sec-plan .source-gpx{background:#1e3a2a;color:#43b97f;border:1px solid #2e5a3a}
-#sec-plan .source-wikiloc{background:#1a2e3e;color:#4aade8;border:1px solid #2a4e6e}
-/* modal actividad */
-#sec-plan .overlay{position:fixed;inset:0;background:rgba(8,14,11,.78);display:flex;align-items:center;
-  justify-content:center;padding:16px;z-index:1000}
-#sec-plan .overlay.hidden{display:none}
-#sec-plan .modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;width:100%;
-  max-width:500px;padding:18px;overflow:hidden}
-#sec-plan .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+#sec-plan .act-lbl{font-family:var(--mono);font-size:10.5px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.08em;text-align:center}
 
-/* Aviso/progreso de la descarga del mapa sin conexión (roadmap §6.2). */
+/* ── modal de actividad ──────────────────────────────────────────────────────
+   .overlay.hidden va INMEDIATAMENTE detrás de .overlay y con especificidad
+   doble (misma trampa que el modal de Immich del detalle). */
+#sec-plan .overlay{position:fixed;inset:0;background:rgba(7,12,9,.82);display:flex;
+  align-items:center;justify-content:center;padding:16px;z-index:1000}
+#sec-plan .overlay.hidden{display:none}
+#sec-plan .modal{background:var(--panel);border:1px solid var(--line-strong);border-radius:13px;
+  width:100%;max-width:500px;padding:18px;overflow:hidden}
+#sec-plan .modal-head{display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:6px}
+#sec-plan .modal-head h2{font-size:24px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.03em}
+
+/* ── MapLibre dentro del mapa cabecera ────────────────────────────────────── */
+#sec-plan .maplibregl-ctrl-icon{filter:brightness(0) invert(1)}
+
+/* Aviso/progreso de la descarga del mapa sin conexión. */
 #sec-plan .offline-map-info{margin-top:10px;font-size:12px;color:var(--muted);
-  background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
-#sec-plan .offline-map-info .bar{background:var(--line);border-radius:4px;height:5px;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+#sec-plan .offline-map-info .bar{background:rgba(236,229,216,.09);border-radius:4px;height:5px;
   margin:8px 0 0;overflow:hidden}
 #sec-plan .offline-map-info .bar i{display:block;height:100%;width:0;
   background:var(--pr-yellow);border-radius:4px;transition:width .2s linear}
-#sec-plan .offline-map-info.ok{color:var(--pr-yellow);border-color:rgba(232,196,74,.4)}
+#sec-plan .offline-map-info.ok{color:var(--pr-yellow);border-color:rgba(227,178,60,.4)}
+
+/* ── 768-1199 px: una columna ─────────────────────────────────────────────── */
+@media(max-width:1199px){
+  #sec-plan .pl-body{grid-template-columns:1fr}
+  #sec-plan .pl-hero-info{padding-right:0}
+  #sec-plan .pl-hero-actions{position:static;justify-content:flex-end;margin-top:10px;
+    flex-wrap:wrap}
+  #sec-plan .pl-hero-actions .btn.ghost{background:transparent;
+    border-color:var(--line-strong);backdrop-filter:none}
+  #sec-plan .pl-more{bottom:auto;top:calc(100% + 6px)}
+  #sec-plan #pl-d-name{font-size:30px}
+  #sec-plan .stats-row{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
+}
+@media(max-width:767px){
+  #sec-plan .pl-hero{height:236px}
+  #sec-plan .pl-hero-info{left:14px;right:14px;bottom:12px}
+  #sec-plan #pl-d-name{font-size:23px;line-height:1.08;margin-bottom:5px}
+  #sec-plan .pl-hero-meta{font-size:11.5px;gap:8px}
+  #sec-plan .panel-head{flex-direction:column;align-items:flex-start;gap:2px}
+  #sec-plan .panel-sub{text-align:left}
+  #sec-plan .stats-row{grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  #sec-plan .stat{padding:9px 11px;border-radius:9px}
+  #sec-plan .stat .l{font-size:9px;letter-spacing:.12em;margin-bottom:4px}
+  #sec-plan .stat .v{font-size:19px}
+  #sec-plan .panel{padding:12px 14px}
+  #sec-plan .chart-box{height:190px}
+  #sec-plan #pl-activity-modal .modal{max-height:88vh;max-height:88dvh;overflow-y:auto}
+}
+/* A 600 px el mapa cabecera va a ancho completo y sin radio (el negativo
+   cancela el padding de .wrap en móvil), como en el detalle de ruta. */
+@media(max-width:600px){
+  #sec-plan .pl-hero{margin:0 -14px;border-radius:0;border-left:0;border-right:0}
+  #sec-plan .pl-hero-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+  #sec-plan .pl-hero-actions .btn{width:100%}
+  /* Son tres botones, no cuatro: el ⋯ ocupa la segunda fila entera en vez de
+     quedarse suelto en media columna. */
+  #sec-plan #pl-more-btn,
+  #sec-plan .pl-more{grid-column:1 / -1}
+}
+@media(hover:none) and (pointer:coarse){
+  #sec-plan .act-badge{min-height:34px}
+  #sec-plan .act-opt:hover{transform:none}
+}

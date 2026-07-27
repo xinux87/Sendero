@@ -1,39 +1,112 @@
-/* Sección `planes` ("Mis Planes"). Extraído de templates/app.html (roadmap §2-§3).
-   Escopado bajo #sec-planes: .overlay, .modal y .modal-head existen también en la
-   sección `detalle` (modal de Immich), así que sin escopar se pisarían.
-   Lo común a varios mapas, los loaders flotantes, .tabbar y .fab: base.html. */
-#sec-planes .plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
-#sec-planes .plan-card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:11px;
-  padding:10px 16px;cursor:pointer;transition:filter .15s,transform .15s;border-left-width:4px}
-#sec-planes .plan-card:hover{filter:brightness(1.06);transform:translateY(-2px)}
-#sec-planes .plan-card h3{font-size:20px;font-weight:600;padding-right:34px;line-height:1.2;
-  height:2.4em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-#sec-planes .plan-card .date{color:var(--muted);font-size:12px;margin:2px 0 4px;text-transform:uppercase;letter-spacing:.08em}
-#sec-planes .plan-act{position:absolute;top:12px;right:12px;line-height:0}
-#sec-planes .plan-metrics{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
-#sec-planes .pm{display:flex;flex-direction:column}
-#sec-planes .pm .v{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--ink)}
-#sec-planes .pm .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
-#sec-planes .source-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
-  letter-spacing:.06em;padding:2px 8px;border-radius:10px;text-transform:uppercase;margin-top:4px}
-#sec-planes .source-gpx{background:#1e3a2a;color:#43b97f;border:1px solid #2e5a3a}
-/* La regla .overlay.hidden va inmediatamente después de .overlay a propósito
-   (misma trampa que el modal de Immich): sin ella el modal aparece al cargar. */
-#sec-planes .overlay{position:fixed;inset:0;background:rgba(8,14,11,.82);display:flex;align-items:center;
-  justify-content:center;padding:16px;z-index:1000}
+/* Sección `planes` ("Mis Planes") — rediseño de la v0.9.x, mismo lenguaje que
+   `rutas`: panel var(--panel) + borde var(--line) + radio 12, títulos de panel
+   en .panel-title (mono, versalitas, salvia), cifras en Oswald y datos en mono.
+
+   Escopado bajo #sec-planes: .overlay, .modal, .modal-head, .card-meta y
+   compañía existen también en `detalle` y `rutas`, y en la SPA las seis
+   secciones comparten documento, así que sin escopar se pisarían.
+   Lo común a varios mapas, los loaders flotantes, .view-head, .panel-title,
+   .tabbar y .fab están en base.html.
+
+   Nada de hex sueltos: todo sale de las variables de base.html (los rgba() de
+   velos y separadores son los del propio rediseño). */
+
+/* ── resumen de la colección, a la derecha del título de vista ─────────────── */
+#sec-planes .pg-kpis{display:flex;gap:26px;flex-wrap:wrap}
+#sec-planes .pg-kpi{display:flex;flex-direction:column;gap:3px;min-width:0}
+#sec-planes .pg-kpi .l{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted-dim)}
+#sec-planes .pg-kpi .v{font-family:var(--display);font-weight:500;font-size:24px;line-height:1;
+  white-space:nowrap}
+#sec-planes .pg-kpi .v small{font-size:12px;color:var(--muted);font-family:var(--display)}
+#sec-planes .pg-kpi.amber .v{color:var(--pr-yellow)}
+
+/* ── mapa de los planes ───────────────────────────────────────────────────── */
+#sec-planes #plan-map{height:340px;border-radius:12px;border:1px solid var(--line);
+  margin-bottom:6px;overflow:hidden}
+
+/* ── cabecera de la lista (mismo patrón que .d-block-head del detalle) ─────── */
+#sec-planes .pg-list-head{display:flex;align-items:center;gap:14px;margin:22px 0 12px}
+/* Igual que con .overlay: el .hidden global (0,0,1,0) pierde contra el selector
+   escopado, así que la variante oculta va aquí mismo y con la misma
+   especificidad. */
+#sec-planes .pg-list-head.hidden{display:none}
+#sec-planes .pg-count{font-family:var(--mono);font-size:11px;color:var(--muted-faint);
+  text-transform:uppercase;letter-spacing:.06em}
+#sec-planes .pg-list-head .rule{flex:1;height:1px;background:rgba(236,229,216,.1)}
+
+/* ── tarjeta de plan ──────────────────────────────────────────────────────────
+   Copia deliberada de .card de `rutas`: borde izquierdo de 4 px con el color de
+   la actividad, título en Oswald, fecha larga en mono y la línea .card-meta con
+   la distancia en ámbar. La única diferencia es el fondo: un plan no tiene
+   miniatura PNG del track (thumb_file es de `routes`), así que el hueco lo llena
+   el glifo de la actividad, que es el único dato "dibujable" del listado. */
+#sec-planes .plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+#sec-planes .plan-card{position:relative;background:var(--panel);border:1px solid var(--line);
+  border-left:4px solid var(--line-strong);border-radius:10px;padding:14px 16px;cursor:pointer;
+  transition:background .15s,transform .15s;overflow:hidden}
+#sec-planes .plan-card:hover{background:var(--panel-2);transform:translateY(-2px)}
+#sec-planes .plan-card h3{font-family:var(--display);font-size:19px;font-weight:500;line-height:1.2;
+  padding-right:34px;max-height:2.4em;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+#sec-planes .plan-card .date{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  color:var(--muted-faint);margin:5px 0 9px}
+#sec-planes .card-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  font-family:var(--mono);font-size:13px;color:var(--muted)}
+#sec-planes .card-dist{color:var(--pr-yellow)}
+/* Marca de agua: el glifo de la actividad a tamaño grande, con el mismo
+   desvanecido por MÁSCARA que la miniatura de "Mis Rutas" (así funciona con la
+   tarjeta normal y en hover, que tienen fondos distintos). */
+#sec-planes .plan-glyph{position:absolute;top:0;right:-34px;bottom:0;width:52%;z-index:0;
+  pointer-events:none;display:flex;align-items:center;justify-content:flex-end;opacity:.08;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,.35) 48%,#000 100%);
+          mask-image:linear-gradient(90deg,transparent 0,rgba(0,0,0,.35) 48%,#000 100%)}
+#sec-planes .plan-glyph svg{width:186px;height:186px;flex:none}
+#sec-planes .plan-body{position:relative;z-index:1}
+#sec-planes .plan-act{position:absolute;top:12px;right:14px;line-height:0;z-index:1}
+
+/* Badge de fuente: chip mono neutro, no un color plano (los colores saturados
+   están reservados a las actividades). */
+#sec-planes .source-badge{display:inline-flex;align-items:center;gap:5px;margin-top:10px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted-dim);border:1px solid var(--line-strong);border-radius:999px;padding:2px 9px}
+
+/* ── modal de alta ───────────────────────────────────────────────────────────
+   La regla .overlay.hidden va INMEDIATAMENTE después de .overlay y con
+   especificidad doble (misma trampa que el modal de Immich): si se separan, el
+   modal aparece al cargar la sección. */
+#sec-planes .overlay{position:fixed;inset:0;background:rgba(7,12,9,.82);display:flex;
+  align-items:center;justify-content:center;padding:16px;z-index:1000}
 #sec-planes .overlay.hidden{display:none}
-#sec-planes .modal{background:var(--panel);border:1px solid var(--line);border-radius:13px;
-  width:100%;max-width:520px;padding:22px;overflow:hidden}
-#sec-planes .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
-#sec-planes .drop-plan{border:1.5px dashed var(--line);border-radius:9px;padding:22px;text-align:center;
-  color:var(--muted);cursor:pointer;margin-bottom:12px;transition:border-color .15s}
-#sec-planes .drop-plan.over{border-color:var(--pr-yellow)}
-#sec-planes .drop-plan .chosen{color:var(--ink);font-size:13px}
-#sec-planes #plan-map{height:320px;border-radius:11px;border:1px solid var(--line);margin-bottom:18px;overflow:hidden}
+#sec-planes .modal{background:var(--panel);border:1px solid var(--line-strong);border-radius:13px;
+  width:100%;max-width:520px;padding:18px;overflow:hidden}
+#sec-planes .modal-head{display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:14px}
+#sec-planes .modal-head h2{font-size:24px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.03em}
+#sec-planes .modal-cta{width:100%;margin-top:8px}
+#sec-planes .modal-hint{font-family:var(--mono);font-size:11px;color:var(--muted-dim);
+  margin-top:10px;line-height:1.6}
+#sec-planes .drop-plan{border:1.5px dashed var(--line-strong);border-radius:12px;padding:22px;
+  text-align:center;color:var(--muted);cursor:pointer;font-size:13px;margin-bottom:6px;
+  transition:border-color .15s,color .15s}
+#sec-planes .drop-plan.over{border-color:var(--gr-red);color:var(--ink)}
+#sec-planes .drop-plan .chosen{font-family:var(--mono);color:var(--pr-yellow);font-size:12px;
+  margin-top:8px}
+
+@media(max-width:1199px){
+  #sec-planes .plan-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:900px){
+  #sec-planes .pg-kpis{gap:18px}
+}
 @media(max-width:600px){
   #sec-planes #plan-map{height:38vh;height:38dvh;min-height:240px}
+  #sec-planes .plan-grid{grid-template-columns:1fr}
   #sec-planes .plan-card h3{font-size:17px}
-  #sec-planes .modal{padding:16px}
+  #sec-planes .plan-glyph{width:38%}
+  #sec-planes .pg-kpi .v{font-size:20px}
+  #sec-planes .modal{padding:14px}
 }
 @media(hover:none) and (pointer:coarse){
   #sec-planes .plan-card:hover{transform:none}
