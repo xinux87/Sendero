@@ -400,17 +400,26 @@ def init_db():
         ON route_versions(route_id, version_n DESC, summary, distance_m,
                           ascent_m, n_points, created_at, file)""")
 
-    # Columna heredada del planner interno (ya eliminado): nada la lee ni la
-    # escribe, pero se conserva la migración para no reconstruir la tabla.
-    # Puede ejecutarse dos veces en paralelo (regla 13).
+    # Limpieza del planner interno (implementado y revertido el mismo día): la
+    # columna draw_anchors nunca llegó a leerse ni escribirse, y hasta la v0.9.6
+    # aquí se AÑADÍA para no reconstruir la tabla. Ahora se quita: no está en
+    # ningún índice ni la nombra ningún trigger, así que el DROP no arrastra nada
+    # (comprobado con 200 filas: gpx_data sale intacto byte a byte, los dos
+    # índices sobreviven, el listado sigue resolviéndose por
+    # idx_planned_list_cov y los 3 triggers de sync siguen moviendo el cursor).
+    # Va por PRAGMA + try/except porque el segundo worker lanza "no such column"
+    # (regla 13), y las bases nuevas ya nacen sin ella.
     plan_cols = [r[1] for r in con.execute("PRAGMA table_info(planned_routes)").fetchall()]
-    if "draw_anchors" not in plan_cols:
+    if "draw_anchors" in plan_cols:
         try:
-            con.execute("ALTER TABLE planned_routes ADD COLUMN draw_anchors TEXT")
+            con.execute("ALTER TABLE planned_routes DROP COLUMN draw_anchors")
             con.commit()
-        except sqlite3.OperationalError as e:
-            if "duplicate column" not in str(e):
-                raise
+        except sqlite3.OperationalError:
+            # Se tragan TODAS a propósito: "no such column" es el otro worker
+            # adelantándose, y en SQLite < 3.35 el DROP no existe siquiera. En
+            # ambos casos la columna sobrando no rompe nada (nadie la lee) y
+            # tumbar el arranque por una limpieza cosmética sí.
+            pass
 
     con.executescript("""
         CREATE TABLE IF NOT EXISTS settings (

@@ -5,6 +5,20 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.6] — 2026-07-27
+
+### Eliminado
+- **La columna muerta `planned_routes.draw_anchors`**, último resto del planificador interno
+  (dibujo por anclas con BRouter) que se implementó y se revirtió el mismo día. Era siempre
+  NULL, nadie la escribía y `api/planned.py` la quitaba del dict al servir. No molestaba,
+  pero confundía al leer el esquema.
+- La comprobación previa era que la tabla lleva el BLOB `gpx_data` y dos índices de
+  cobertura. Sale limpia: la columna no está en ningún índice ni la nombra ningún trigger,
+  así que el `DROP COLUMN` no arrastra nada. Verificado sobre una base con datos —el GPX
+  sale con los mismos bytes, los índices y los tres triggers de sincronización sobreviven,
+  el listado se sigue resolviendo por `idx_planned_list_cov` y `integrity_check` da `ok`—
+  y con dos `init_db()` en paralelo, que es como arrancan los dos workers de gunicorn.
+
 ## [0.9.5] — 2026-07-27
 
 ### Añadido

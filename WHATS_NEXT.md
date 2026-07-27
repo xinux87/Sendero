@@ -11,15 +11,7 @@ Al terminar cualquiera de estos puntos: bórralo de aquí y cuéntalo en `CHANGE
 
 ## Para hacer
 
-### 1. Quitar la columna muerta `draw_anchors`
-**Qué**: resto del planificador interno (dibujo por anclas con BRouter) que se implementó y
-se revirtió el mismo día. Hoy `planned_routes.draw_anchors` es siempre NULL, `api/planned.py`
-la borra del dict al servir (`d.pop`) y nadie la escribe.
-
-**Cómo**: SQLite admite `ALTER TABLE … DROP COLUMN` desde 3.35, pero la tabla lleva el BLOB
-`gpx_data` y varios índices de cobertura; comprueba que siguen bien después. Si sale
-regular, la alternativa honesta es dejarla y documentar que no se toca (que es lo que hay
-hoy). No es urgente: no molesta a nadie, solo confunde al leer el esquema.
+(Nada pendiente: los cinco puntos de la lista original están hechos.)
 
 ---
 

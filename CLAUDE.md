@@ -474,8 +474,9 @@ confirmación; y "Mis Rutas" refleja la distancia nueva.
 Hubo además un **planificador interno** (dibujo por anclas con routing BRouter,
 `/planificacion/crear`, `POST /api/planned/draw`, `BROUTER_URL`): se implementó y se
 revirtió el mismo día. Hoy "Dibujar ruta nueva" abre una web externa configurable
-(`PLANNER_URL`). El único resto es la columna `draw_anchors` de `planned_routes`, que
-no lee ni escribe nadie. Si vuelve a plantearse, es un rediseño, no un revert.
+(`PLANNER_URL`). Desde la v0.9.6 no queda ningún resto en el código: la columna
+`draw_anchors` de `planned_routes` se eliminó. Si vuelve a plantearse, es un
+rediseño, no un revert.
 
 **Paridad cliente/servidor**: el cliente mantiene el estado con `idxMap`
 (orden/supervivencia) + `posOverride`/`eleOverride` (valores editados por índice
@@ -1174,10 +1175,12 @@ cada petición, y con volumen pasa a `SCAN photos` (34 ms vs 1,4 ms con 500 ruta
 canónica `/Plan/<public_id>`, la clave de `/api/planned/<public_id>` y la clave
 estable de la sincronización; índice UNIQUE `idx_planned_public_id` + índice de
 cobertura del listado `idx_planned_list_cov`, regla 12 — estas columnas pequeñas
-vienen físicamente DESPUÉS del BLOB `gpx_data`),
-`draw_anchors` (columna heredada del planner interno ya eliminado; siempre NULL
-en filas nuevas, no se lee ni se escribe — la migración se conserva por no
-reconstruir la tabla, ver `init_db()`)
+vienen físicamente DESPUÉS del BLOB `gpx_data`).
+
+La v0.9.6 eliminó `draw_anchors` (resto del planificador interno revertido). El
+`DROP COLUMN` de una tabla con BLOB e índices de cobertura sale limpio **si la
+columna no está en ningún índice ni la nombra ningún trigger**; compruébalo antes
+de repetir la jugada con otra.
 
 Las columnas que devuelve el listado están en **una sola constante**,
 `PLANNED_LIST_COLS` (`api/planned.py`), porque las leen `list_planned()` **y**
