@@ -101,7 +101,7 @@ def test_el_listado_de_planes_sale_de_su_indice_de_cobertura(tmp_path, monkeypat
     con = sqlite3.connect(cfg.DB_PATH)
     plan = " | ".join(r[-1] for r in
                       con.execute("EXPLAIN QUERY PLAN " + PLANNED_QUERY))
-    assert "idx_planned_list_cov2" in plan, plan
+    assert "idx_planned_list_cov3" in plan, plan
     # el subselect de la ruta que cumplió el plan, por la PK de routes
     assert "SCAN routes" not in plan, plan
 
@@ -114,14 +114,23 @@ def test_el_listado_de_planes_lleva_el_estado_de_realizada():
     assert "completed_route_id" not in PLANNED_LIST_COLS.split(" AS ")[0].split(",")
 
 
+def test_el_listado_de_planes_lleva_el_indice_ibp():
+    """La chapa de la tarjeta necesita el índice Y el acrónimo de la modalidad; el
+    JSON con las tres puntuaciones (`ibp_all`) NO va en el listado a propósito: solo
+    lo leen el PATCH y el endpoint de cálculo, siempre por id."""
+    assert "ibp_index" in PLANNED_LIST_COLS
+    assert "ibp_modality" in PLANNED_LIST_COLS
+    assert "ibp_all" not in PLANNED_LIST_COLS
+
+
 def test_el_indice_de_cobertura_de_planes_anterior_se_descarta(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "sendero.db")
     init_db()
     con = sqlite3.connect(cfg.DB_PATH)
     idx = {r[0] for r in con.execute(
         "SELECT name FROM sqlite_master WHERE type='index'")}
-    assert "idx_planned_list_cov2" in idx
-    assert "idx_planned_list_cov" not in idx
+    assert "idx_planned_list_cov3" in idx
+    assert not (idx & {"idx_planned_list_cov", "idx_planned_list_cov2"})
 
 
 def test_init_db_es_idempotente(tmp_path, monkeypatch):

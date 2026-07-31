@@ -459,6 +459,8 @@ header .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;marg
                 onclick="cfgSection('editor',this)">Editor</button>
         <button id="cfg-nav-mapas" class="cfg-nav-item"
                 onclick="cfgSection('mapas',this)">Mapas</button>
+        <button id="cfg-nav-ibp" class="cfg-nav-item"
+                onclick="cfgSection('ibp',this)">IBP Index</button>
         <button id="cfg-nav-mifit" class="cfg-nav-item"
                 onclick="cfgSection('mifit',this)">Mi Fit / Zepp</button>
         <button id="cfg-nav-offline" class="cfg-nav-item"
@@ -628,6 +630,55 @@ header .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;marg
         </div>
 
         <button class="btn" onclick="saveMapSettings()">Guardar ajustes</button>
+      </div>
+
+      <!-- ── IBP INDEX ─────────────────────────────────────────────────────────
+           Dificultad de las rutas PLANIFICADAS (solo de esas: ver core/ibp.py).
+           El aviso de que el track sale de la LAN va aquí arriba y no en un hint
+           pequeño a propósito: es el único sitio de Sendero donde eso pasa. -->
+      <div id="cfg-sec-ibp" class="cfg-sec-content hidden">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.6">
+          El <strong style="color:var(--ink)">índice IBP</strong> puntúa la dificultad de una
+          ruta (0 → ∞) a partir de su perfil: rampas, desniveles y kilómetros en altura.
+          Sendero lo muestra en <strong style="color:var(--ink)">Mis Planes</strong>, para
+          comparar lo que tienes pendiente antes de salir.
+        </p>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.6">
+          Su algoritmo no es público, así que el número lo calcula
+          <a href="https://www.ibpindex.com" target="_blank" rel="noopener"
+             style="color:var(--sage)">ibpindex.com</a>: al activarlo,
+          <strong style="color:var(--pr-yellow)">el track completo de cada plan se sube a
+          su servidor</strong> — el único caso en que Sendero manda tus recorridos fuera
+          de casa. Sin clave no se sube nada.
+        </p>
+        <div class="cfg-field">
+          <label class="cfg-label" for="cfg-ibp-key">Clave de la API</label>
+          <div style="display:flex;gap:6px">
+            <input id="cfg-ibp-key" class="cfg-input" type="password"
+                   placeholder="tu_api_key" style="flex:1">
+            <button class="btn ghost sm" style="flex-shrink:0;padding:0 10px"
+              onclick="const i=$('#cfg-ibp-key');i.type=i.type==='password'?'text':'password'">👁</button>
+          </div>
+          <div class="cfg-hint">Se pide gratis registrándose en
+            <a href="https://www.ibpindex.com/index.php/es/ibp-services/ibp-index-api-v2-0"
+               target="_blank" rel="noopener" style="color:var(--sage)">ibpindex.com → IBP
+            Index API</a>. <strong style="color:var(--ink)">Vacía = desactivado</strong>: el
+            índice deja de calcularse y de subirse nada, pero los ya obtenidos se
+            conservan.</div>
+        </div>
+        <div class="cfg-field" style="margin-bottom:24px">
+          <div class="cfg-hint">Los planes nuevos se puntúan al importarlos. Para los que ya
+            tenías, o si has cambiado de clave, están el botón de abajo y el
+            «Calcular índice IBP» del detalle de cada plan.</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn" onclick="saveSettings()">Guardar ajustes</button>
+          <button class="btn ghost sm" id="ibp-backfill-btn" onclick="ibpBackfill()">
+            Calcular los planes que falten
+          </button>
+          <span id="ibp-backfill-state" class="mono"
+                style="font-size:12px;color:var(--muted)"></span>
+        </div>
       </div>
 
       <!-- ── SIN CONEXIÓN ─────────────────────────────────────────────────── -->

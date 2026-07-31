@@ -30,8 +30,11 @@ const Store = (() => {
      pintarían sin esos campos hasta que su rev cambiara por otro motivo.
      4 = el listado de PLANES trae `completed_at` y `completed_route_public`
      («marcar como realizada»): los planes ya guardados se pintarían siempre como
-     pendientes hasta que su rev cambiara. */
-  const DB_VERSION = 4;
+     pendientes hasta que su rev cambiara.
+     5 = el listado de PLANES trae `ibp_index` e `ibp_modality` (índice IBP): sin
+     vaciar, los planes ya guardados no enseñarían la chapa hasta que su rev
+     cambiara por otro motivo. */
+  const DB_VERSION = 5;
   const STORES = {
     meta:     {keyPath: 'k'},
     routes:   {keyPath: 'public_id'},

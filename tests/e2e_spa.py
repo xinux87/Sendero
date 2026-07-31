@@ -794,6 +794,13 @@ def main():
         page.goto(f"{BASE}/Plan/{pid_plan}", wait_until="load")
         page.wait_for_selector("#sec-plan:not(.hidden)", timeout=15000)
         page.wait_for_function("() => document.querySelector('#pl-map canvas') !== null", timeout=20000)
+        # El panel de dificultad IBP se pinta siempre, aunque no haya clave: en esa
+        # situación —la de esta suite— explica cómo activarlo en vez de quedarse en
+        # blanco o ofrecer un botón que fallaría (ver core/ibp.py).
+        cuerpo_ibp = (page.text_content("#pl-ibp-body") or "").strip()
+        check(page.locator("#pl-ibp-panel").count() == 1 and len(cuerpo_ibp) > 0,
+              f"el plan pinta el panel de dificultad IBP: «{cuerpo_ibp[:60]}»")
+
         # cuántas teselas necesita este track, con el mismo código que usa la app
         page.evaluate("""async pid => {
             const d = await (await fetch('/api/planned/' + pid)).json();

@@ -5,6 +5,33 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.11] — 2026-07-31
+
+### Añadido
+- **Índice IBP en «Mis Planes»**: la puntuación de dificultad de
+  [ibpindex.com](https://www.ibpindex.com) en la chapa de cada tarjeta y en un panel del
+  detalle del plan, para comparar de un vistazo lo que tienes pendiente. Va con el
+  acrónimo de la modalidad (HKG a pie, BYC en bici, RNG corriendo), porque el mismo
+  track no puntúa igual según cómo lo hagas; el panel enseña también las otras dos.
+  **Solo en los planes**, no en las rutas ya hechas: el IBP sirve para decidir si te
+  metes en una ruta.
+- Ajustes → **IBP Index**, con la clave de su API (gratuita, se pide registrándose) y un
+  botón para **calcular los planes que ya tenías**. Los planes nuevos se puntúan al
+  importarlos. **Vacía = desactivado**, y es el valor de fábrica: mientras no haya clave
+  no se calcula nada ni se sube nada.
+- El aviso de que esto **saca el track de tu red** está en la propia pantalla de Ajustes:
+  su algoritmo no es público, así que el número lo calcula su servidor y el GPX de cada
+  plan viaja hasta allí. Es el único caso en que Sendero manda tus recorridos fuera de
+  casa, y por eso hay que activarlo a mano.
+- Cambiar la actividad de un plan cambia el índice a la modalidad que toca **sin volver a
+  subir nada** (la llamada trae las tres), así que también funciona sin conexión.
+
+### Notas
+- Si el servicio no responde, un plan se importa igual y se queda con su botón
+  «Calcular índice IBP» en el detalle: nunca rompe la importación.
+- Los índices ya obtenidos se guardan en la base de datos y no se recalculan solos, así
+  que siguen ahí aunque el servicio deje de estar disponible.
+
 ## [0.9.10] — 2026-07-27
 
 ### Añadido

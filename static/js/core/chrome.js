@@ -383,7 +383,9 @@ async function openSettings(){
     $('#cfg-dem-url').value       = c.DEM_URL           || '';
     $('#cfg-planner-url').value   = c.PLANNER_URL       || '';
     $('#cfg-geocode-url').value   = c.GEOCODE_URL       || '';
+    $('#cfg-ibp-key').value       = c.IBP_API_KEY       || '';
   }catch(e){}
+  $('#ibp-backfill-state').textContent='';
   try{
     const r=await fetch('/api/settings/gpx-types');
     _gpxTypesCustom=await r.json();
@@ -469,10 +471,47 @@ async function saveSettings(){
       DEM_URL:           $('#cfg-dem-url').value.trim(),
       PLANNER_URL:       $('#cfg-planner-url').value.trim(),
       GEOCODE_URL:       $('#cfg-geocode-url').value.trim(),
+      IBP_API_KEY:       $('#cfg-ibp-key').value.trim(),
     }),
   });
   if(res.ok){ closeSettings(); toast('Ajustes guardados'); }
   else toast('Error al guardar los ajustes');
+}
+
+/* ── IBP Index: calcular los planes que falten ─────────────────────────────
+   No hay endpoint de lote ni proceso de fondo a propósito: los planes son unas
+   decenas y cada uno es una subida a un tercero, así que se van pidiendo de uno
+   en uno desde aquí (secuencial, sin ráfagas). Se guarda el token de la clave
+   primero, para que el botón respete lo que hay en pantalla aunque no hayas
+   pulsado "Guardar ajustes". */
+async function ibpBackfill(){
+  const btn=$('#ibp-backfill-btn'), est=$('#ibp-backfill-state');
+  const key=$('#cfg-ibp-key').value.trim();
+  if(!key){ toast('Primero pega la clave de la API'); return; }
+  btn.disabled=true; est.textContent='guardando la clave…';
+  try{
+    await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({IBP_API_KEY:key})});
+    est.textContent='buscando planes sin índice…';
+    const j=await (await fetch('/api/planned')).json();
+    const faltan=(j.items||[]).filter(p=>p.ibp_index==null);
+    if(!faltan.length){ est.textContent='todos los planes ya tienen índice'; return; }
+    let ok=0, err=0, ultimo='';
+    for(let i=0;i<faltan.length;i++){
+      est.textContent=`${i+1} / ${faltan.length}…`;
+      try{
+        const r=await fetch(`/api/planned/${encodeURIComponent(faltan[i].public_id)}/ibp`,
+                            {method:'POST'});
+        if(r.ok) ok++;
+        else { err++; ultimo=((await r.json().catch(()=>({}))).error)||''; }
+      }catch(e){ err++; ultimo='sin conexión'; }
+    }
+    est.textContent=`${ok} calculado${ok===1?'':'s'}`+(err?`, ${err} con error`:'');
+    toast(err ? `IBP: ${ok} de ${faltan.length}. ${ultimo}` : `IBP calculado en ${ok} plan${ok===1?'':'es'}`);
+    // El índice viaja en el listado, así que la copia local tiene que releerlo
+    // para que las tarjetas de "Mis Planes" lo enseñen sin recargar.
+    if(typeof Store!=='undefined') Store.syncNow({force:true});
+  } finally { btn.disabled=false; }
 }
 
 /* ── Mapas (capa por defecto + mapa offline PMTiles) ─────────────────────── */

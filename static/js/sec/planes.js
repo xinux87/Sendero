@@ -233,6 +233,14 @@
     /* Pie de la tarjeta: la chapa de fuente y, a la derecha, la acción. Los
        botones van con stopPropagation porque la tarjeta entera navega al plan. */
     const badges = [`<span class="source-badge">${p.source === 'wikiloc' ? 'Wikiloc' : 'GPX'}</span>`];
+    /* Dificultad IBP, si este plan la tiene calculada (Ajustes → IBP Index). Va con
+       el acrónimo de la modalidad porque el mismo track no puntúa igual a pie que en
+       bici, y sin él dos chapas no serían comparables. */
+    if (p.ibp_index != null) {
+      badges.push(`<span class="ibp-badge" title="Índice IBP de dificultad (ibpindex.com)">`
+        + `IBP ${fmtNum(p.ibp_index)}`
+        + (p.ibp_modality ? ` <small>${esc(p.ibp_modality)}</small>` : '') + `</span>`);
+    }
     if (done) badges.push(`<span class="done-badge">✔ Realizada ${esc(fmtDateShort(p.completed_at))}</span>`);
     const accion = done
       ? `<button class="plan-act-btn undo" title="Volver a marcarla como pendiente"

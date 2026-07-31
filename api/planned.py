@@ -5,6 +5,8 @@ from flask import Blueprint, abort, redirect, request, jsonify, render_template,
 
 import core.config as cfg
 from core.database import db, plan_id_from_public, set_public_id
+from core.ibp import (ACRONYMS as IBP_ACRONYMS, IbpError, analyse as ibp_analyse,
+                      modality_for as ibp_modality_for)
 from core.parsers import analyse_gpx, _detect_activity, _gpx_type_lookup
 from core.summaries import auto_summary_planned
 from core.sync import decimate
@@ -19,7 +21,7 @@ planned_bp = Blueprint("planned", __name__)
 # porque así una ruta borrada da NULL sola: "realizada, sin ruta".
 PLANNED_LIST_COLS = ("id,public_id,name,source,source_url,activity_type,"
                      "distance_m,ascent_m,descent_m,ele_max,start_lat,start_lon,"
-                     "created_at,completed_at,"
+                     "created_at,completed_at,ibp_index,ibp_modality,"
                      "(SELECT public_id FROM routes WHERE routes.id="
                      "planned_routes.completed_route_id) AS completed_route_public")
 
@@ -33,6 +35,13 @@ def _build_plan_dict(pid):
     d["elevation"] = json.loads(d.get("elevation") or "[]")
     d["has_gpx"]   = bool(d.get("gpx_data"))
     d["gpx_data"]  = None
+    # Las tres modalidades del IBP como objeto: el panel del detalle enseña la que
+    # toca en grande y las otras dos al lado (vienen de la misma llamada, así que
+    # mostrarlas no cuesta nada).
+    try:
+        d["ibp_all"] = json.loads(d.get("ibp_all") or "{}")
+    except (TypeError, ValueError):
+        d["ibp_all"] = {}
     # public_id de la ruta que cumplió el plan, para enlazarla (el id interno no
     # se expone). Igual que dup_suspect_public en el detalle de una ruta.
     d["completed_route_public"] = None
@@ -43,6 +52,68 @@ def _build_plan_dict(pid):
             d["completed_route_public"] = row["public_id"]
     d["auto_summary"] = auto_summary_planned(d)
     return d
+
+
+# ── índice IBP (ibpindex.com) ───────────────────────────────────────────────
+# Solo en los planes (ver core/ibp.py). Se guarda en la BD y no se recalcula al
+# vuelo: es un servicio de terceros y si desaparece, los índices ya obtenidos
+# tienen que seguir ahí.
+
+# Paciencia al importar un plan (segundos). Más corta que cfg.IBP_TIMEOUT porque
+# ahí el usuario espera a que su GPX entre; quedarse sin índice se arregla con el
+# botón del detalle.
+IBP_IMPORT_TIMEOUT = 25
+
+
+def _save_ibp(con, pid, res):
+    """Escribe el resultado de core.ibp.analyse() en el plan.
+
+    Va en su propio UPDATE para que el trigger de sincronización mueva el `rev`
+    del plan: así el listado de los clientes se entera del índice nuevo sin nada
+    más (regla 14).
+    """
+    con.execute(
+        "UPDATE planned_routes SET ibp_index=?, ibp_modality=?, ibp_all=?, ibp_at=? "
+        "WHERE id=?",
+        (res["index"], res["acronym"], json.dumps(res["all"]),
+         dt.datetime.now().isoformat(), pid),
+    )
+    con.commit()
+
+
+def _ibp_filename(name):
+    """Nombre con el que se sube el GPX. El servicio lo devuelve en el JSON y lo
+    usa en su propia web, así que se manda el del plan y no 'ruta.gpx'."""
+    return (re.sub(r'[^\w\-]', '_', name or "")[:80] or "ruta") + ".gpx"
+
+
+@planned_bp.route("/api/planned/<pid>/ibp", methods=["POST"])
+def compute_planned_ibp(pid):
+    """Calcula (o recalcula) el índice IBP de un plan subiendo su GPX a la API.
+
+    Necesita conexión y clave, y por eso NO se encola sin red: el número lo decide
+    un tercero, el cliente no puede simularlo. La UI avisa en vez de fallar en
+    silencio, igual que reescanear o Immich en el detalle de una ruta.
+    """
+    pid = plan_id_from_public(pid)
+    con = db()
+    r = con.execute(
+        "SELECT name, activity_type, gpx_data FROM planned_routes WHERE id=?", (pid,)
+    ).fetchone()
+    if not r:
+        abort(404)
+    if not r["gpx_data"]:
+        return jsonify({"error": "Este plan no tiene archivo GPX que analizar"}), 400
+    try:
+        res = ibp_analyse(r["gpx_data"], r["activity_type"], _ibp_filename(r["name"]))
+    except IbpError as e:
+        # 400 si es cosa de la configuración (falta la clave), 502 si el problema
+        # está al otro lado: el cliente enseña el mensaje tal cual en los dos casos.
+        code = 400 if not cfg.IBP_API_KEY else 502
+        return jsonify({"error": str(e)}), code
+    _save_ibp(con, pid, res)
+    return jsonify({"ibp_index": res["index"], "ibp_modality": res["acronym"],
+                    "ibp_all": res["all"]})
 
 
 @planned_bp.route("/planificacion")
@@ -168,9 +239,25 @@ def create_planned():
          gpx_bytes,
          dt.datetime.now().isoformat()),
     )
-    pub = set_public_id(con, "planned_routes", cur.lastrowid)
+    pid = cur.lastrowid
+    pub = set_public_id(con, "planned_routes", pid)
     con.commit()
-    return jsonify({"id": pub, "public_id": pub, "name": name}), 201
+
+    # Índice IBP: best-effort y solo si hay clave (mismo criterio que la localidad
+    # o el thumbnail de una ruta). Si el servicio no está, tarda o falla, el plan
+    # se importa igual y queda con el botón "Calcular" en su detalle. El timeout es
+    # más corto que el del endpoint a propósito: aquí el usuario está esperando a
+    # que su GPX entre, y quedarse sin índice se arregla con un clic.
+    ibp = None
+    if cfg.IBP_API_KEY:
+        try:
+            res = ibp_analyse(gpx_bytes, activity_type, _ibp_filename(name),
+                              timeout=IBP_IMPORT_TIMEOUT)
+            _save_ibp(con, pid, res)
+            ibp = res["index"]
+        except IbpError:
+            pass
+    return jsonify({"id": pub, "public_id": pub, "name": name, "ibp_index": ibp}), 201
 
 
 @planned_bp.route("/api/planned/<pid>", methods=["GET"])
@@ -216,6 +303,24 @@ def update_planned(pid):
         # sentido ya. Se limpia aquí para que no quede colgando.
         fields.append("completed_route_id=?")
         vals.append(None)
+    if "activity_type" in data:
+        # El IBP depende de la modalidad: la misma ruta a pie y en bici no puntúa
+        # igual. La llamada a la API trajo las TRES, así que cambiar la actividad
+        # cambia el índice efectivo SIN red (y por tanto también cuando este PATCH
+        # llega desde el outbox). Si la actividad nueva no tiene equivalente IBP
+        # (esquí, otros, ninguna), se deja lo que hubiera: la modalidad que detectó
+        # el servicio es tan buena como cualquier suposición nuestra.
+        mod = ibp_modality_for(data["activity_type"])
+        if mod:
+            row = con.execute("SELECT ibp_all FROM planned_routes WHERE id=?",
+                              (pid,)).fetchone()
+            try:
+                todos = json.loads((row and row["ibp_all"]) or "{}")
+            except (TypeError, ValueError):
+                todos = {}
+            if isinstance(todos, dict) and mod in todos:
+                fields += ["ibp_index=?", "ibp_modality=?"]
+                vals   += [todos[mod], IBP_ACRONYMS[mod]]
     if not fields:
         return jsonify({"error": "nada que actualizar"}), 400
     vals.append(pid)

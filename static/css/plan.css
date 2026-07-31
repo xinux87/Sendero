@@ -90,6 +90,26 @@
 #sec-plan .pl-source-info{font-size:13px;color:var(--muted);line-height:1.6}
 #sec-plan .pl-source-info a{color:var(--pr-yellow)}
 
+/* ── DIFICULTAD IBP ───────────────────────────────────────────────────────────
+   La cifra es el dato del panel, así que va en Oswald y en ámbar como el resto de
+   cifras clave, con el acrónimo de la modalidad al lado en mono: sin él el número
+   no dice de qué modalidad es. Las otras dos modalidades van apagadas, que son
+   contexto, no el dato. */
+#sec-plan .pl-ibp-fig{display:flex;align-items:baseline;gap:9px}
+#sec-plan .pl-ibp-n{font-family:var(--display);font-size:34px;font-weight:600;
+  line-height:1;color:var(--pr-yellow)}
+#sec-plan .pl-ibp-mod{font-size:12px;letter-spacing:.14em;color:var(--muted-dim)}
+#sec-plan .pl-ibp-otras{margin-top:10px;font-size:11.5px;color:var(--muted-faint);
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+#sec-plan .pl-ibp-alt{color:var(--muted-dim)}
+#sec-plan .pl-ibp-alt small{font-size:10px;letter-spacing:.12em}
+#sec-plan .pl-ibp-none{font-size:13px;color:var(--muted);line-height:1.6}
+#sec-plan .pl-ibp-warn{margin-top:8px;font-size:11px;color:var(--muted-faint);line-height:1.5}
+#sec-plan .pl-ibp-foot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+#sec-plan .pl-ibp-link{color:var(--sage);text-decoration:none;font-size:12px;
+  border-bottom:1px solid transparent}
+#sec-plan .pl-ibp-link:hover{border-bottom-color:var(--sage)}
+
 /* ── badge de fuente ──────────────────────────────────────────────────────────
    Chip mono neutro sobre el velo del mapa: los colores saturados están
    reservados a las actividades. */

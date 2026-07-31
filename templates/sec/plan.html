@@ -77,6 +77,17 @@
       <div id="pl-tech" class="kv"></div>
     </div>
 
+    {# Dificultad IBP (ibpindex.com). Solo en los planes, no en las rutas hechas:
+       sirve para decidir si te metes en una ruta. El cuerpo lo pinta
+       SEC.plan.renderIbp() según haya índice, clave, o ninguna de las dos. #}
+    <div class="panel" id="pl-ibp-panel">
+      <div class="panel-head">
+        <span class="panel-title">Dificultad IBP</span>
+        <span id="pl-ibp-sub" class="panel-sub mono"></span>
+      </div>
+      <div id="pl-ibp-body"></div>
+    </div>
+
     <div class="panel hidden" id="pl-source-section">
       <div class="panel-head"><span class="panel-title">Fuente</span></div>
       <div id="pl-source-info" class="pl-source-info"></div>

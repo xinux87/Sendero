@@ -20,7 +20,7 @@ DB_PATH = DATA / "sendero.db"
 # /api/config. Al publicar, deben coincidir con este número: el tag de git
 # (vX.Y.Z), la etiqueta de la imagen Docker (xinux87/sendero:X.Y.Z) y el default
 # de SENDERO_VERSION en los compose (${SENDERO_VERSION:-X.Y.Z}) y en .env.example.
-APP_VERSION = "0.9.10"
+APP_VERSION = "0.9.11"
 
 for d in (DATA, GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR, TILES_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -65,6 +65,19 @@ try:
 except (ValueError, TypeError):
     GEOCODE_TIMEOUT = 8
 
+# Índice IBP (ibpindex.com) de las rutas PLANIFICADAS. Su algoritmo es cerrado, así
+# que el número solo se puede obtener subiendo el GPX a su API — o sea que el track
+# entero sale de la LAN, único sitio de Sendero donde eso pasa. Por eso la clave se
+# pone a mano en Ajustes → IBP Index y vacía = desactivado: sin ella no se sube nada.
+# IBP_URL es solo para pruebas (no se edita desde la UI).
+IBP_API_KEY = os.environ.get("IBP_API_KEY", "")
+IBP_URL = os.environ.get("IBP_URL", "https://www.ibpindex.com/api/")
+try:
+    IBP_TIMEOUT = int(os.environ.get("IBP_TIMEOUT", "60"))
+except (ValueError, TypeError):
+    IBP_TIMEOUT = 60
+IBP_ENABLED = bool(IBP_API_KEY)
+
 # Auto-importación desde Mi Fit / Zepp (Huami). El servicio aparte mifit_sync.py
 # lee estas claves de settings y descarga los entrenamientos nuevos como GPX.
 # MIFIT_TOKEN es el apptoken de Huami (lo pega el usuario o lo escribe mifit-auth).
@@ -85,7 +98,8 @@ _SETTINGS_KEYS = {"IMMICH_URL", "IMMICH_API_KEY", "IMMICH_MARGIN_MIN", "IMMICH_D
                   "MAP_OFFLINE_FILE", "MAP_DEFAULT_LAYER", "MAP_OFFLINE_ATTRIBUTION",
                   "MAP_OFFLINE_MAXZOOM",
                   "MIFIT_ENABLED", "MIFIT_TOKEN", "MIFIT_ENDPOINT", "MIFIT_INTERVAL_MIN",
-                  "MIFIT_SINCE_DATE"}
+                  "MIFIT_SINCE_DATE",
+                  "IBP_API_KEY"}
 _CUSTOM_GPX_TYPES: dict = {}
 
 # Umbrales por defecto para detectar tramos GPS incorrectos (core/gps_analysis.py):
@@ -114,6 +128,7 @@ def gps_thresholds_for(activity_type):
 def refresh_config():
     global IMMICH_URL, IMMICH_API_KEY, IMMICH_MARGIN_MIN, IMMICH_DIST_M, IMMICH_ENABLED, _CUSTOM_GPX_TYPES, _GPS_THRESHOLDS_CUSTOM, DEM_URL, PLANNER_URL, GEOCODE_URL
     global MIFIT_ENABLED, MIFIT_TOKEN, MIFIT_ENDPOINT, MIFIT_INTERVAL_MIN, MIFIT_SINCE_DATE
+    global IBP_API_KEY, IBP_ENABLED
     global MAP_OFFLINE_FILE, MAP_DEFAULT_LAYER, MAP_OFFLINE_ATTRIBUTION, MAP_OFFLINE_MAXZOOM
     try:
         con = sqlite3.connect(DB_PATH)
@@ -161,6 +176,8 @@ def refresh_config():
     MIFIT_ENDPOINT = (rows.get("MIFIT_ENDPOINT") or os.environ.get("MIFIT_ENDPOINT", "")
                       or "https://api-mifit.huami.com").rstrip("/")
     MIFIT_SINCE_DATE = rows.get("MIFIT_SINCE_DATE") or os.environ.get("MIFIT_SINCE_DATE", "")
+    IBP_API_KEY = (rows.get("IBP_API_KEY") or os.environ.get("IBP_API_KEY", "")).strip()
+    IBP_ENABLED = bool(IBP_API_KEY)
     try:
         MIFIT_INTERVAL_MIN = int(
             rows.get("MIFIT_INTERVAL_MIN") or os.environ.get("MIFIT_INTERVAL_MIN", "360")

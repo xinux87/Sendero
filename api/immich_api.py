@@ -17,6 +17,9 @@ def config():
         "immich":            cfg.IMMICH_ENABLED,
         "immich_margin_min": cfg.IMMICH_MARGIN_MIN,
         "immich_dist_m":     cfg.IMMICH_DIST_M,
+        # ¿hay clave del IBP? Lo mira el detalle de un plan para ofrecer el botón
+        # de calcular el índice, o explicar que falta configurarlo.
+        "ibp":               cfg.IBP_ENABLED,
         "map":               map_cfg(),
     })
 

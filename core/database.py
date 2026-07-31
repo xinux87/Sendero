@@ -448,7 +448,18 @@ def init_db():
     # propósito: PRAGMA foreign_keys está apagado (regla 14) y si esa ruta se
     # borra, el subselect de PLANNED_LIST_COLS devuelve NULL y la tarjeta queda
     # como "realizada, sin ruta" en vez de romperse.
-    for _col, _type in (("completed_at", "TEXT"), ("completed_route_id", "INTEGER")):
+    # ── índice IBP del plan (core/ibp.py) ───────────────────────────────────
+    # `ibp_index` es la puntuación de la modalidad que toca por la actividad del
+    # plan y `ibp_modality` su acrónimo (HKG/BYC/RNG): sin él el número no dice de
+    # qué modalidad es y dos planes no serían comparables. `ibp_all` guarda las
+    # TRES que devuelve la API en la misma llamada, para que cambiar la actividad
+    # del plan elija otra sin volver a subir el track. `ibp_at` es cuándo se
+    # calculó (el índice puede cambiar si ellos afinan el algoritmo).
+    # ibp_all NO se lee en el listado a propósito: solo lo mira el PATCH y el
+    # endpoint de cálculo, siempre por id, así que no necesita índice (regla 12).
+    for _col, _type in (("completed_at", "TEXT"), ("completed_route_id", "INTEGER"),
+                        ("ibp_index", "INTEGER"), ("ibp_modality", "TEXT"),
+                        ("ibp_all", "TEXT"), ("ibp_at", "TEXT")):
         if _col not in plan_cols:
             try:
                 con.execute(f"ALTER TABLE planned_routes ADD COLUMN {_col} {_type}")
@@ -459,14 +470,15 @@ def init_db():
     # Índice de cobertura del listado (regla 12): public_id y las demás columnas
     # pequeñas se leen juntas en /api/planned, y en esta tabla vienen físicamente
     # DESPUÉS de geojson/elevation/gpx_data (un BLOB con el GPX entero).
-    # cov2 sustituye a cov (añade completed_at/completed_route_id): dejar los dos
-    # duplicaría el coste de escritura.
+    # cov3 sustituye a cov2 (que sustituyó a cov): añade ibp_index/ibp_modality.
+    # Dejar los anteriores duplicaría el coste de escritura sin usarlos nunca.
     con.execute("DROP INDEX IF EXISTS idx_planned_list_cov")
-    con.execute("""CREATE INDEX IF NOT EXISTS idx_planned_list_cov2 ON planned_routes(
+    con.execute("DROP INDEX IF EXISTS idx_planned_list_cov2")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_planned_list_cov3 ON planned_routes(
         created_at DESC,
         id, name, source, source_url, activity_type, distance_m, ascent_m,
         descent_m, ele_max, start_lat, start_lon, public_id,
-        completed_at, completed_route_id
+        completed_at, completed_route_id, ibp_index, ibp_modality
     )""")
     # Mismo cuidado que con idx_routes_list_cov5 (ver arriba): si la BD tiene
     # estadísticas, un índice recién creado no está en sqlite_stat1 y el
@@ -475,7 +487,7 @@ def init_db():
     if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
                    "AND name='sqlite_stat1'").fetchone():
         if not con.execute("SELECT 1 FROM sqlite_stat1 WHERE idx=?",
-                           ("idx_planned_list_cov2",)).fetchone():
+                           ("idx_planned_list_cov3",)).fetchone():
             try:
                 con.execute("ANALYZE planned_routes")
                 con.commit()

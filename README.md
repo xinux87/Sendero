@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.9.10-2e7d32?style=for-the-badge" alt="Versión 0.9.10">
+  <img src="https://img.shields.io/badge/versión-0.9.11-2e7d32?style=for-the-badge" alt="Versión 0.9.11">
   <img src="https://img.shields.io/badge/100%25-autoalojado-17241c?style=for-the-badge" alt="100% autoalojado">
   <img src="https://img.shields.io/badge/Docker-xinux87%2Fsendero-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Hub: xinux87/sendero">
   <img src="https://img.shields.io/badge/Flask%20+%20SQLite-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Flask + SQLite">
@@ -125,6 +125,7 @@ Un editor de tracks completo con versionado *append-only*: cada guardado crea un
 > - **✓ Marcar realizada** en cada tarjeta: te pregunta **qué ruta la cumplió** —arriba las que empiezan a menos de 3 km del plan, y buscador para el resto— o puedes marcarla sin asociar ninguna. La tarjeta queda apagada, con la chapa **«✔ Realizada»** y su fecha, y enlaza a esa ruta; **Desmarcar** la devuelve a pendiente.
 > - **Filtro Pendientes · Realizadas · Todas** con el recuento de cada estado. Arranca en *Pendientes* —la vista es la lista de lo que te queda por hacer— y filtra también el mapa.
 > - **⬇ Mapa sin conexión** en la ficha del plan, para llevártelo al monte antes de salir de casa.
+> - **Dificultad IBP** (opcional): la puntuación de [ibpindex.com](https://www.ibpindex.com) en la chapa de cada tarjeta y en la ficha del plan, para comparar de un vistazo lo que tienes pendiente. Su algoritmo no es público, así que el número lo calcula su servicio: hay que pegar una clave de API (gratuita) en **Ajustes → IBP Index** y, mientras esté puesta, **el track de cada plan se sube a su servidor** — el único caso en que Sendero manda tus recorridos fuera de casa. Sin clave, ni se calcula ni se sube nada. Solo aplica a los planes, no a las rutas ya hechas.
 >
 > Marcar y desmarcar **funciona sin conexión**: el cambio se guarda con la fecha del día en que lo marcaste y se envía al recuperar la red.
 
@@ -292,7 +293,7 @@ En las URLs, `{id}` es el **identificador público** de la ruta o el plan (una c
 | `POST` | `/api/routes/{id}/photos` | subir fotos locales (campo `photos`) |
 | `GET`  | `/api/stats` | estadísticas globales (récords incluidos) |
 | `GET`  | `/api/storage` | espacio en disco por carpeta: base, tracks, fotos, miniaturas y mapas |
-| `GET`  | `/api/config` | indica si Immich está activo, la distancia de autoselección y la versión |
+| `GET`  | `/api/config` | indica si Immich y el IBP están activos, la distancia de autoselección y la versión |
 | `GET`  | `/api/settings` | leer ajustes actuales |
 | `POST` | `/api/settings` | guardar ajustes (misma función que el modal Ajustes) |
 | `GET`  | `/api/routes/{id}/immich/candidates` | fotos de Immich en la ventana del track |
@@ -303,6 +304,7 @@ En las URLs, `{id}` es el **identificador público** de la ruta o el plan (una c
 | `PATCH`| `/api/planned/{id}` | renombrar / notas / actividad y **marcar realizada**: `{"completed_at": "2026-07-27T18:30:00", "completed_route": "<id de la ruta>"}`; con los dos a `null` se desmarca |
 | `DELETE`| `/api/planned/{id}` | borrar plan |
 | `GET`  | `/api/planned/{id}/gpx` | descargar el GPX del plan |
+| `POST` | `/api/planned/{id}/ibp` | calcula (o recalcula) el índice IBP del plan; necesita la clave de Ajustes → IBP Index |
 | `GET`/`POST` | `/api/mifit/settings` | ajustes de Mi Fit/Zepp (token, región, intervalo, fecha) |
 | `POST` | `/api/mifit/sync` | lanza una sincronización con Mi Fit (`{reset:true}` para reimportar) |
 | `GET`  | `/api/mifit/status` | estado y fecha de la última sincronización |

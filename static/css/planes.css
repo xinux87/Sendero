@@ -94,6 +94,14 @@
   font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--muted-dim);border:1px solid var(--line-strong);border-radius:999px;padding:2px 9px}
 
+/* Dificultad IBP: misma forma de chip que la fuente, pero en verde salvia para no
+   competir con el ámbar de «realizada» (que es un estado) ni con la distancia. */
+#sec-planes .ibp-badge{display:inline-flex;align-items:baseline;gap:5px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--sage);border:1px solid var(--sage);border-radius:999px;padding:2px 9px;
+  white-space:nowrap}
+#sec-planes .ibp-badge small{font-size:9px;letter-spacing:.08em;color:var(--muted-dim)}
+
 /* ── plan realizado ───────────────────────────────────────────────────────────
    La tarjeta realizada se APAGA (no se esconde: sigue siendo parte de la
    colección y se puede desmarcar), y al pasar el ratón vuelve a legibilidad

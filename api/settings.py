@@ -18,6 +18,7 @@ def get_settings():
         "DEM_URL":           cfg.DEM_URL,
         "PLANNER_URL":       cfg.PLANNER_URL,
         "GEOCODE_URL":       cfg.GEOCODE_URL,
+        "IBP_API_KEY":       cfg.IBP_API_KEY,
     })
 
 

@@ -47,10 +47,10 @@ sincronización delta. Lo que eso significa en la práctica:
 # desarrollo
 pip install -r requirements-dev.txt   # incluye requirements.txt + pytest
 python app.py                      # http://localhost:8080, init_db() automático
-python -m pytest                   # 99 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
-                                   #   dedup, geocode, sync y las columnas de los dos listados
+python -m pytest                   # 111 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
+                                   #   dedup, geocode, ibp, sync y las columnas de los dos listados
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
-node tests/sec_smoke.js            # sec/detalle.js carga contra los ids reales del markup
+node tests/sec_smoke.js            # sec/detalle.js y sec/plan.js cargan contra los ids reales del markup
 node tests/tiles_smoke.js          # geometría del corredor de teselas (§6.2)
 node tests/speedfix_smoke.js       # velocidad excesiva y convergencia de «Corregir todo»
 node tests/gps_parity_smoke.js     # el detector de avisos GPS del cliente == el del servidor
@@ -144,6 +144,11 @@ core/
                   compatible Nominatim configurable (GEOCODE_URL, Ajustes → Editor;
                   vacío = desactivado). _format_locality() es pura (tests/test_geocode.py)
   immich.py     — cliente HTTP para Immich (immich_get, immich_search, min_dist_to_track)
+  ibp.py        — índice IBP (ibpindex.com) de las rutas PLANIFICADAS. Su algoritmo es
+                  cerrado: analyse() sube el GPX a su API (clave en Ajustes → IBP Index,
+                  vacía = desactivado) y parse_response() —pura, tests/test_ibp.py— elige
+                  la modalidad que toca de las tres que devuelve. Lanza IbpError con
+                  mensaje en español; el importador lo captura y sigue
   mifit/        — cliente Huami (Mi Fit/Zepp) vendorizado de MiFitDataExport:
                   api.py (HTTP+modelos), points.py (decodifica el detalle crudo),
                   gpx.py (build_gpx/workout_filename), sync.py (iter_new_workouts).
@@ -154,8 +159,11 @@ api/
   editor.py     — editor de rutas: página, /points, guardado por ops, versiones
   photos.py     — subida y borrado de fotos locales; proxy de fotos Immich
   planned.py    — CRUD de rutas planificadas, /api/planned/geojson (las trazas para
-                  el mapa de la sección) y el estado de "realizada" del PATCH
-                  (completed_at + completed_route → completed_route_id)
+                  el mapa de la sección), el estado de "realizada" del PATCH
+                  (completed_at + completed_route → completed_route_id) y el índice
+                  IBP: /api/planned/<id>/ibp lo calcula, create_planned lo intenta
+                  best-effort al importar, y el PATCH de actividad reelige la
+                  modalidad desde ibp_all sin tocar la red
   immich_api.py — candidatos Immich, selección, proxy de miniaturas
   settings.py   — lectura/escritura de ajustes (Immich, tipos GPX personalizados) y
                   /api/storage (tamaño de /data por carpeta, con un stat por archivo)
@@ -184,8 +192,11 @@ Si tocas una op del editor o el aplanado, añade/ajusta el test correspondiente.
 Además hay cinco pruebas de humo de JavaScript que se lanzan con **Node a pelo** (sin npm
 ni dependencias, regla 1; pytest ignora los `.js`): `node tests/sw_smoke.js` ejecuta
 `static/sw.js` con `caches`/`fetch` simulados y comprueba install/activate y qué
-estrategia le toca a cada URL; `node tests/sec_smoke.js` carga `static/js/sec/detalle.js`
-contra los ids reales de `templates/sec/detalle.html` (pilla un selector que ya no existe);
+estrategia le toca a cada URL; `node tests/sec_smoke.js` carga `static/js/sec/detalle.js` y
+`static/js/sec/plan.js` contra los ids reales de su markup **más el de `shell.html`** (el
+documento real es la suma de los dos: las acciones de cabecera viven en el shell), los
+monta con el Store devolviendo `null` y así pilla un selector que ya no existe. Si añades
+una sección al array `SECCIONES`, hereda la comprobación;
 `node tests/tiles_smoke.js` mide el corredor de teselas; y `node tests/speedfix_smoke.js`
 extrae del propio `sec/editor.js` la geometría de la corrección de velocidad excesiva
 (`planSpeedFix`/`detectSpeedErr`) y la ejecuta contra tracks sintéticos con saltos de GPS.
@@ -314,10 +325,10 @@ archivo, nunca en `mount()`.
 | `templates/base.html` | — | CSS global, header (con el badge `#net-badge` de estado de conexión), toast, modal de Ajustes, `<link rel="manifest">` y `theme-color`. Carga `static/vendor/*`, `static/fonts/fonts.css`, `static/shared.js` y `static/js/core/chrome.js` (que registra el Service Worker). No redeclares en una plantilla nada que ya esté en `shared.js`/`chrome.js` (dos `const` globales con el mismo nombre en scripts distintos = SyntaxError) |
 | `templates/shell.html` | **todas** las vistas (`/dashboard`, `/rutas`, `/planificacion`, `/Sendero/<id>`, `/Sendero/<id>/editor`, `/Plan/<id>`, `/app-shell`) | Shell de la SPA: incluye los 6 `templates/sec/*.html`, la tab bar, las acciones de cabecera por sección (`data-sec-actions`), carga `core/loader.js`+`store.js`+`router.js` y llama a `Router.start()`. Cero datos inyectados salvo el `bootstrap_json` opcional de la primera carga (`/app-shell` lo sirve **sin** él: es el que precachea el SW) |
 | `templates/sec/detalle.html` | (sección `detalle` del shell) | Detalle de ruta con el rediseño 2a/2d: **mapa cabecera** (`.d-hero`, 360 px, con el título y el chip de actividad encima del velo), banda de 7 métricas (`#d-stats`), y cuerpo a dos columnas (perfil + velocidad + FC + fotos ‖ datos técnicos + calidad del track + resumen). En móvil el cuerpo son pestañas: `data-tab` en la sección y `data-dtab` en cada bloque (ver «Pestañas del detalle en móvil»). Los ids genéricos llevan prefijo `d-` (`#d-map`, `#d-stats`, `#d-elev`, `#d-notes`…) para no chocar con otras secciones del mismo documento |
-| `templates/sec/plan.html` | (sección `plan` del shell) | Detalle de ruta planificada. Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
+| `templates/sec/plan.html` | (sección `plan` del shell) | Detalle de ruta planificada, con el panel de **dificultad IBP** (`#pl-ibp-panel`). Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
 | `templates/sec/dashboard.html` | (sección `dashboard`) | "Analítica global": selector de año, 5 KPIs, desnivel por mes, zonas más visitadas, almacenamiento, mapa de todas las rutas, "Por actividad", "Rutas por año" y récords. Lógica en `static/js/sec/dashboard.js` |
 | `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros (actividad, fechas y **buscador**), mapa de visión general, tres vistas (⊞ Cuadrícula · ☰ Tabla · ▤ Panel), modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
-| `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa (marcadores de salida **y** la traza de cada plan, ver abajo), alta por GPX, **marcar un plan como realizado** (botón por tarjeta + selector `#done-modal` de la ruta que lo cumplió) y el filtro de estado `#pg-filters` (Pendientes · Realizadas · Todas, que filtra también el mapa). Lógica en `static/js/sec/planes.js` |
+| `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa (marcadores de salida **y** la traza de cada plan, ver abajo), alta por GPX, **marcar un plan como realizado** (botón por tarjeta + selector `#done-modal` de la ruta que lo cumplió), la chapa del **índice IBP** y el filtro de estado `#pg-filters` (Pendientes · Realizadas · Todas, que filtra también el mapa). Lógica en `static/js/sec/planes.js` |
 | `templates/sec/editor.html` | (sección `editor`) | Editor de rutas. Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` |
 
 ### Navegación
@@ -388,7 +399,8 @@ archivo, nunca en `mount()`.
 | PATCH | `/api/planned/<id>` | actualiza nombre/notas/actividad del plan y su estado de **realizada**: `{completed_at, completed_route}` (fecha ISO que pone el CLIENTE y `public_id` de la ruta que lo cumplió, opcional; `{completed_at:null, completed_route:null}` desmarca y limpia la ruta). 400 si el `completed_route` no existe |
 | DELETE | `/api/planned/<id>` | borra plan |
 | GET | `/api/planned/<id>/gpx` | descarga GPX del plan |
-| GET | `/api/config` | estado Immich (enabled, margin, dist) |
+| POST | `/api/planned/<id>/ibp` | calcula (o recalcula) el índice IBP del plan subiendo su GPX a ibpindex.com. 400 sin clave o sin GPX, 502 si el servicio falla (con SU mensaje), 200 `{ibp_index, ibp_modality, ibp_all}`. NO se encola sin conexión: el número lo decide un tercero |
+| GET | `/api/config` | estado Immich (enabled, margin, dist) y si el IBP tiene clave (`ibp`) |
 | GET | `/api/settings` | ajustes actuales |
 | POST | `/api/settings` | guarda ajustes Immich |
 | GET/POST | `/api/settings/gpx-types` | tipos GPX personalizados |
@@ -998,6 +1010,50 @@ que no son opcionales si lo tocas:
 - Los KPIs de la cabecera **no** se filtran: describen la colección entera (el
   recuento por estado ya lo dan las píldoras).
 
+### Índice IBP de un plan (`core/ibp.py` + `api/planned.py` + `sec/plan.js`)
+La puntuación de dificultad de [ibpindex.com](https://www.ibpindex.com) (0 → ∞) de las
+rutas **planificadas**. Cuatro cosas que definen el diseño, y ninguna es negociable sin
+rehacerlo:
+
+- **El algoritmo es cerrado y no se puede reimplementar.** Ni su web ni su documentación
+  publican la fórmula (su calculadora sube el archivo y recibe el número). Se usa su
+  **API v2.0**: `POST https://www.ibpindex.com/api/` multipart con `file` + `key`, y
+  devuelve **HTTP 200 con `{"error": ...}`** cuando la clave no vale — mirar el código de
+  estado no basta, de ahí `parse_response()`. Si alguna vez se plantea "calcularlo
+  nosotros": no es el mismo número y deja de ser comparable, que es su única utilidad.
+- **Aquí sale el track completo de la LAN**, único sitio de Sendero donde eso pasa (el
+  geocoder manda un punto). Por eso la clave se pega a mano en Ajustes → IBP Index,
+  **vacía = desactivado de fábrica**, y el aviso está en esa pantalla, no en un hint.
+- **Solo planes, no rutas.** No lo añadas a `routes` sin motivo nuevo: son 500 subidas a
+  un tercero de recorridos ya hechos, y para eso la ruta ya tiene sus datos reales.
+- **El valor se guarda y no se recalcula solo**: si el servicio desaparece, los índices
+  obtenidos siguen ahí. Solo se recalcula si lo pides (`↻ Recalcular` o el botón de lote).
+
+Cómo se reparte:
+- `core/ibp.py` — `analyse()` (red) y `parse_response()` (pura, `tests/test_ibp.py`).
+  Lanza `IbpError` con mensaje **en español** en vez de devolver None: sin clave, clave
+  inválida, sin red y GPX ilegible se arreglan de formas distintas y el usuario tiene que
+  saber cuál es. Quien va best-effort lo captura.
+- `create_planned` lo intenta al importar (solo si hay clave) y **nunca rompe la
+  importación**: el plan entra igual y se queda con su botón en el detalle.
+- **La modalidad importa**: la misma ruta no puntúa igual a pie (`HKG`), en bici (`BYC`) o
+  corriendo (`RNG`), así que el número **siempre va con su acrónimo**. La API devuelve las
+  tres de una vez ⇒ se guardan las tres en `ibp_all` y **cambiar la actividad del plan
+  reelige el índice sin red** (lo hace el PATCH en el servidor y `pickActivity()` en el
+  cliente, con `IBP_MOD_BY_ACT`, que es copia de `_MODALITY_BY_ACTIVITY`: si tocas una,
+  toca la otra).
+- **No se interpreta la cifra en una escala de dificultad**: ibpindex.com no publica los
+  cortes, así que inventarlos sería peor que no decir nada.
+- UI: chapa `.ibp-badge` en `makeCard()` de `sec/planes.js`, panel `#pl-ibp-panel` en el
+  detalle (tres estados: con índice, sin índice pero con clave, y sin configurar — el
+  tercero explica cómo activarlo en vez de ofrecer un botón que fallaría), y el botón de
+  lote de Ajustes (`ibpBackfill()` en `chrome.js`), que **recorre los planes de uno en uno
+  desde el cliente**: no hay endpoint de lote ni proceso de fondo porque los planes son
+  unas decenas, no cientos.
+- Tras calcular hay que escribir **las dos** copias locales: `Store.putDetail` (el panel) y
+  `Store.patchPlanRow` (la chapa de la tarjeta). Con solo la primera, la tarjeta no enseña
+  el índice hasta la siguiente sincronización con cambios.
+
 ### Analítica del dashboard (`static/js/sec/dashboard.js`)
 Desde el rediseño, **casi todo se calcula en el cliente** con el listado que ya tiene el
 Store (`allRows`, que incluye `distance_m`, `ascent_m`, `moving_s`, `started_at` y
@@ -1250,8 +1306,9 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 11. **Caché de rutas en el cliente** — si cambias los campos que devuelve `/api/routes`
     **o `/api/planned`**, sube `DB_VERSION` en `static/js/core/store.js`: su
     `onupgradeneeded` vacía los almacenes de IndexedDB y los clientes se rehacen la copia.
-    (Va por 4: el 3 fue el resumen de `gps_issues`/`n_photos` del listado de rutas y el 4,
-    `completed_at`/`completed_route_public` en el de planes.) **Subirla no es gratis**: una
+    (Va por 5: el 3 fue el resumen de `gps_issues`/`n_photos` del listado de rutas, el 4,
+    `completed_at`/`completed_route_public` en el de planes, y el 5, `ibp_index`/
+    `ibp_modality` en el de planes.) **Subirla no es gratis**: una
     ventana abierta con el código anterior retiene la BD y bloquea la migración, así que
     `store.js` tiene que seguir soltando la conexión en `versionchange` y avisando en
     `onblocked` — ver "Bugs corregidos" y el bloque 17 de `tests/e2e_spa.py`.
@@ -1362,14 +1419,14 @@ cada petición, y con volumen pasa a `SCAN photos` (34 ms vs 1,4 ms con 500 ruta
 `public_id` (opaco no secuencial, igual que en `routes`/`photos`: es la URL
 canónica `/Plan/<public_id>`, la clave de `/api/planned/<public_id>` y la clave
 estable de la sincronización; índice UNIQUE `idx_planned_public_id` + índice de
-cobertura del listado `idx_planned_list_cov2`, regla 12 — estas columnas pequeñas
+cobertura del listado `idx_planned_list_cov3`, regla 12 — estas columnas pequeñas
 vienen físicamente DESPUÉS del BLOB `gpx_data`).
 
 **Plan realizado** (v0.9.8): `completed_at` (ISO, cuándo se marcó; NULL =
 pendiente) y `completed_route_id` (id interno de la ruta real que lo cumplió;
 NULL = marcada sin ruta). Las dos se leen en el listado → van en
-`idx_planned_list_cov2` (regla 12; sustituye a `idx_planned_list_cov`, que se
-descarta). **Sin FK a propósito**: `PRAGMA foreign_keys` está apagado (regla 14) y
+`idx_planned_list_cov3` (regla 12; sustituye a `idx_planned_list_cov2`, que a su
+vez sustituyó a `idx_planned_list_cov`: los dos anteriores se descartan). **Sin FK a propósito**: `PRAGMA foreign_keys` está apagado (regla 14) y
 si esa ruta se borra el subselect de `PLANNED_LIST_COLS` da NULL solo, así que la
 tarjeta queda «realizada, sin ruta» en vez de romperse. El listado NO expone el id
 interno: manda `completed_route_public` (subselect del `public_id`), que es lo que
@@ -1377,6 +1434,14 @@ la tarjeta enlaza, y el nombre lo pone el cliente desde su copia de `routes` —
 un renombrado se refleja sin denormalizar nada. La **fecha la manda el cliente**,
 no `now()` del servidor: el PATCH se encola en el outbox sin conexión y al
 reenviarse llevaría la fecha en que volvió la red.
+
+**Índice IBP** (v0.9.11, ver «Índice IBP de un plan»): `ibp_index` (la puntuación
+de la modalidad que toca; NULL = sin calcular), `ibp_modality` (su acrónimo:
+`HKG`/`BYC`/`RNG`), `ibp_all` (JSON con las TRES que devuelve la API en la misma
+llamada) e `ibp_at` (cuándo se calculó). Las dos primeras se leen en el listado →
+van en `idx_planned_list_cov3` (regla 12); `ibp_all` **no**, a propósito: solo lo
+miran el PATCH de actividad y el endpoint de cálculo, siempre por id, así que la
+fila se lee entera de todas formas.
 
 La v0.9.6 eliminó `draw_anchors` (resto del planificador interno revertido). El
 `DROP COLUMN` de una tabla con BLOB e índices de cobertura sale limpio **si la
@@ -1418,6 +1483,8 @@ Clave-valor: `IMMICH_URL`, `IMMICH_API_KEY`, `IMMICH_MARGIN_MIN`, `IMMICH_DIST_M
 brouter-web), `GEOCODE_URL` (servicio Nominatim-compatible para la localidad de
 cada ruta; por defecto el Nominatim público de OSM, vacío = desactivado — a
 diferencia de PLANNER_URL, un valor vacío SÍ desactiva, no cae al default),
+`IBP_API_KEY` (clave de la API del índice IBP, Ajustes → IBP Index; vacía =
+desactivado, y es el valor de fábrica — sin ella no se sube ningún track),
 `GPX_TYPE_CUSTOM` (JSON), `GPS_THRESHOLDS_CUSTOM` (JSON),
 `stats_cache` (JSON con estadísticas globales). Los ajustes de settings
 sobreescriben los de `.env`/variables de entorno.
@@ -1573,6 +1640,13 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   respetando los filtros de actividad/fecha vía `applyLineFilter()`, o se te ha colado un
   caso que las muestra sin filtrar? ¿sigue usando `fitMap(true)` en el primer encuadre
   (sin animación de vuelo)?
+- Si tocaste el índice IBP (`core/ibp.py`, `/api/planned/<id>/ibp`, el panel de
+  `sec/plan.js`): `python -m pytest tests/test_ibp.py` y `node tests/sec_smoke.js`. Y
+  comprueba las tres cosas que se rompen sin ruido: que **sin clave** no se sube nada y el
+  panel explica cómo activarlo (no un botón que falla); que **importar un plan con el
+  servicio caído sigue devolviendo 201**; y que cambiar la actividad reelige la modalidad
+  **sin pedir red** (viene de `ibp_all`). Si añades una actividad nueva, mírala en
+  `_MODALITY_BY_ACTIVITY` y en `IBP_MOD_BY_ACT` (son la misma tabla en dos idiomas).
 - Si tocaste `sec/planes.js`: ¿el filtro por estado sigue afectando a la lista **y** al mapa
   (una sola fuente, `visiblePlans()`)? ¿`syncMarkers()` sigue QUITANDO el marcador del plan
   que el filtro deja fuera? ¿marcar como realizada sin conexión sigue encolándose, avisando

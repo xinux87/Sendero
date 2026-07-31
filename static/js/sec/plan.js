@@ -20,6 +20,10 @@
   'use strict';
 
   let map = null, elevChart = null, current = null, pid = null;
+  /* ¿hay clave de la API del IBP en Ajustes? Lo dice /api/config, y sin ella el
+     panel explica cómo activarlo en vez de ofrecer un botón que fallaría. Se
+     pregunta una vez por carga de página (_cfgLoaded), como IMMICH en `detalle`. */
+  let IBP = false, _cfgLoaded = false;
   /* Capa base que se está viendo. En el ámbito del módulo, no dentro de
      initMap(), porque el botón "Mapa sin conexión" necesita saber de qué capa
      descargar las teselas. */
@@ -219,6 +223,9 @@
       ['Altitud máx', fmtNum(r.ele_max), 'm'],
       ['Altitud mín', fmtNum(r.ele_min), 'm'],
     ];
+    /* El IBP solo si lo tiene: la unidad es el acrónimo de la modalidad (HKG/BYC/
+       RNG), porque el mismo track puntúa distinto a pie y en bici. */
+    if (r.ibp_index != null) items.push(['IBP', fmtNum(r.ibp_index), r.ibp_modality || '']);
     $('#pl-stats').innerHTML = items.map(([l, v, u, acc]) =>
       `<div class="stat${acc ? ' acc' : ''}"${acc ? ` style="border-left-color:${(a || {}).color || 'var(--pr-yellow)'}"` : ''}>
          <div class="l">${l}</div>
@@ -242,6 +249,101 @@
     $('#pl-tech').innerHTML = rows.map(([k, v]) =>
       `<div class="kv-row"><span class="kv-k">${esc(k)}</span>` +
       `<span class="kv-v" title="${esc(String(v))}">${esc(String(v))}</span></div>`).join('');
+  }
+
+  /* ── dificultad IBP (ibpindex.com) ───────────────────────────────────────
+     Solo lo llevan los planes: el IBP sirve para decidir si te metes en una ruta.
+     El número lo calcula un tercero (su algoritmo es cerrado, ver core/ibp.py), así
+     que el panel tiene tres estados y ninguno miente: con índice, sin índice pero
+     con clave (botón), y sin configurar (cómo activarlo). Y NO se interpreta la
+     cifra en una escala de dificultad: ibpindex.com no publica los cortes, así que
+     inventarlos sería peor que no decir nada. */
+  const IBP_ACRO = {hiking: 'HKG', bicycle: 'BYC', running: 'RNG'};
+  /* Actividad de Sendero → modalidad del IBP. Copia de _MODALITY_BY_ACTIVITY de
+     core/ibp.py: el servidor hace el mismo cambio al recibir el PATCH, esto es
+     para que la vista lo refleje al instante (y sin conexión, cuando el PATCH
+     está en la cola). Si cambias una, cambia la otra. */
+  const IBP_MOD_BY_ACT = {senderismo: 'hiking', caminata: 'hiking',
+                          correr: 'running', bicicleta: 'bicycle'};
+  const IBP_WEB = 'https://www.ibpindex.com/index.php/es/';
+
+  async function loadConfig() {
+    if (_cfgLoaded) return;
+    try {
+      const c = await (await fetch('/api/config')).json();
+      IBP = !!c.ibp;
+      _cfgLoaded = true;
+    } catch (e) {}                 // sin conexión: se queda como estaba
+  }
+
+  function renderIbp() {
+    const body = $('#pl-ibp-body'), sub = $('#pl-ibp-sub');
+    if (!body || !current) return;
+    const n = current.ibp_index;
+    if (n != null) {
+      sub.textContent = current.ibp_at ? `calculado el ${fmtDate(current.ibp_at)}` : '';
+      // Las otras dos modalidades vinieron en la misma llamada: enseñarlas es
+      // gratis y explica por qué el número cambia al cambiar la actividad.
+      const otras = Object.entries(current.ibp_all || {})
+        .filter(([m]) => IBP_ACRO[m] && IBP_ACRO[m] !== current.ibp_modality)
+        .map(([m, v]) => `<span class="pl-ibp-alt">${fmtNum(v)} <small>${IBP_ACRO[m]}</small></span>`)
+        .join('');
+      body.innerHTML = `
+        <div class="pl-ibp-fig">
+          <span class="pl-ibp-n">${fmtNum(n)}</span>
+          <span class="pl-ibp-mod mono">${esc(current.ibp_modality || '')}</span>
+        </div>
+        ${otras ? `<div class="pl-ibp-otras mono">Otras modalidades ${otras}</div>` : ''}
+        <div class="pl-ibp-foot">
+          <button class="btn ghost sm" onclick="SEC.plan.computeIbp()">↻ Recalcular</button>
+          <a class="pl-ibp-link" href="${IBP_WEB}" target="_blank" rel="noopener">¿Qué es el IBP? ↗</a>
+        </div>`;
+      return;
+    }
+    sub.textContent = '';
+    body.innerHTML = IBP
+      ? `<div class="pl-ibp-none">Este plan aún no tiene índice.</div>
+         <div class="pl-ibp-foot">
+           <button class="btn sm" onclick="SEC.plan.computeIbp()">Calcular índice IBP</button>
+         </div>
+         <div class="pl-ibp-warn mono">Sube el GPX de este plan a ibpindex.com.</div>`
+      : `<div class="pl-ibp-none">Sin configurar. El índice lo calcula
+           <a class="pl-ibp-link" href="${IBP_WEB}" target="_blank" rel="noopener">ibpindex.com</a>:
+           pega su clave de API en <strong>Ajustes → IBP Index</strong>.</div>`;
+  }
+
+  /* Pedir el índice es de las acciones que EXIGEN conexión (como reescanear o
+     Immich en el detalle de una ruta): el número lo decide un servidor ajeno, el
+     cliente no puede simularlo, así que no se encola. */
+  async function computeIbp() {
+    if (!Store.isOnline()) { toast('Calcular el IBP necesita conexión'); return; }
+    const tok = _tok;
+    $('#pl-ibp-body').innerHTML = '<div class="pl-ibp-none">Analizando en ibpindex.com…</div>';
+    let res, j = {};
+    try {
+      res = await fetch(`/api/planned/${encodeURIComponent(pid)}/ibp`, {method: 'POST'});
+      j = await res.json().catch(() => ({}));
+    } catch (e) {
+      if (tok === _tok) { toast('Calcular el IBP necesita conexión'); renderIbp(); }
+      return;
+    }
+    if (tok !== _tok) return;               // se navegó a otro plan mientras tanto
+    if (!res.ok) { toast(j.error || 'No se pudo calcular el IBP'); renderIbp(); return; }
+    current.ibp_index    = j.ibp_index;
+    current.ibp_modality = j.ibp_modality;
+    current.ibp_all      = j.ibp_all || {};
+    current.ibp_at       = new Date().toISOString();
+    /* Copia local del detalle Y de la fila del listado: sin la segunda, la chapa
+       de la tarjeta en «Mis Planes» no aparecería hasta la siguiente
+       sincronización con cambios. */
+    try {
+      await Store.putDetail(pid, current);
+      await Store.patchPlanRow(pid, {ibp_index: j.ibp_index, ibp_modality: j.ibp_modality});
+    } catch (e) {}
+    Store.syncNow({force: true});
+    renderIbp();
+    renderStats();
+    toast(`IBP ${j.ibp_index} ${j.ibp_modality}`);
   }
 
   /* ── cabecera (dentro del mapa cabecera) ───────────────────────────────── */
@@ -317,8 +419,18 @@
     if (map && a && map.getLayer('pl-ruta-linea')) {
       map.setPaintProperty('pl-ruta-linea', 'line-color', a.color);
     }
+    /* El IBP es por modalidad: al cambiar la actividad, el índice efectivo pasa a
+       ser el de la modalidad nueva si la API lo trajo (las tres vienen en la misma
+       llamada, así que no hace falta red). El servidor hace lo mismo al aplicar
+       este PATCH. */
+    const mod = IBP_MOD_BY_ACT[actId];
+    if (mod && current.ibp_all && current.ibp_all[mod] != null) {
+      current.ibp_index    = current.ibp_all[mod];
+      current.ibp_modality = IBP_ACRO[mod];
+    }
     renderActivityBadge();
     renderStats();
+    renderIbp();
     drawElevation();
     toast(r.queued ? 'Actividad guardada (se enviará al recuperar conexión)'
                    : 'Actividad actualizada');
@@ -383,12 +495,15 @@
     $('#pl-activity-badge-sm').innerHTML = '';
     $('#pl-d-source').innerHTML = '';
     $('#pl-d-date').textContent = '';
+    $('#pl-ibp-body').innerHTML = '';
+    $('#pl-ibp-sub').textContent = '';
   }
 
   function render() {
     renderHead();
     renderStats();
     renderTech();
+    renderIbp();
     renderActivityBadge();
     $('#pl-auto').textContent = current.auto_summary || '';
     $('#pl-notes').value      = current.notes || '';
@@ -416,6 +531,9 @@
     if (!data) { showMessage('Ruta no encontrada.'); return; }
     current = data;
     render();
+    /* Saber si el IBP está configurado no bloquea el pintado: el panel se repinta
+       cuando llegue la respuesta (sin conexión no llega y se queda como estaba). */
+    loadConfig().then(() => { if (tok === _tok) renderIbp(); });
   }
 
   function unmount() {
@@ -440,6 +558,6 @@
   window.SEC.plan = {
     mount, unmount,
     openActivityPicker, closeActivityPicker, pickActivity,
-    saveNotes, downloadGpx, renamePlan, removePlan, downloadMap,
+    saveNotes, downloadGpx, renamePlan, removePlan, downloadMap, computeIbp,
   };
 })();
