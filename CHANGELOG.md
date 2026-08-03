@@ -12,9 +12,9 @@ panel de Ajustes y en `GET /api/config`.
   escritorio (antes 360) y 472 px en móvil (antes 236).
 
 ### Añadido
-- Botón **⛶ «Mapa a todo el alto de la pantalla»** en los mapas del detalle de ruta y
-  de plan: expande el mapa a la altura del viewport sin quitar el scroll de la página;
-  el mismo botón (▣) lo devuelve a su altura normal.
+- Botón **«Ampliar el mapa»** en los mapas del detalle de ruta y de plan: expande el
+  mapa al 80 % del alto de la pantalla sin quitar el scroll de la página; el mismo
+  botón lo devuelve a su altura normal.
 
 ## [0.9.11] — 2026-07-31
 

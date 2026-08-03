@@ -16,10 +16,11 @@
 #sec-plan .pl-hero{position:relative;height:504px;
   border:1px solid var(--line);border-radius:12px;overflow:hidden;
   background:radial-gradient(120% 150% at 25% 20%,#16281c 0%,#0f1c15 48%,#0a1310 100%)}
-/* Mapa a todo el alto de la pantalla (botón ⛶ del propio mapa). Doble clase =
-   más especificidad que la regla de móvil de abajo, así gana en cualquier ancho.
-   El mapa sigue en el flujo del documento: la página no pierde el scroll. */
-#sec-plan .pl-hero.pl-hero-full{height:100vh;height:100dvh}
+/* Mapa ampliado al 80 % del alto de la pantalla (botón del propio mapa). Doble
+   clase = más especificidad que la regla de móvil de abajo, así gana en
+   cualquier ancho. El mapa sigue en el flujo del documento: la página no
+   pierde el scroll. */
+#sec-plan .pl-hero.pl-hero-full{height:80vh;height:80dvh}
 #sec-plan #pl-map{position:absolute;inset:0;z-index:0}
 #sec-plan .pl-hero-veil{position:absolute;inset:0;z-index:2;pointer-events:none;
   background:linear-gradient(to top,rgba(7,12,9,.94) 0%,rgba(7,12,9,.4) 40%,transparent 72%)}
