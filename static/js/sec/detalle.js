@@ -339,6 +339,35 @@
         c.appendChild(b); return c;
       }, onRemove() {},
     }, 'top-left');
+    // botón mapa a todo el alto de la pantalla (top-left, debajo del centrar).
+    // Alterna la clase d-hero-full: el mapa sigue en el flujo del documento,
+    // así que la página no pierde el scroll. El estado vive en el DOM (.d-hero
+    // sobrevive a renderMap), por eso paint() lo lee en vez de guardarlo aquí.
+    // Iconos en SVG inline (no glifos Unicode: ⛶ falta en muchas fuentes).
+    const ICO_FULL = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 1.5h11M2 13.5h11M7.5 4.5v6M5.5 6.5l2-2 2 2M5.5 8.5l2 2 2-2"/></svg>';
+    const ICO_BACK = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5h11M7.5 1.5v3M5.5 3l2 2 2-2M7.5 13.5v-3M5.5 12l2-2 2 2"/></svg>';
+    map.addControl({
+      onAdd() {
+        const c = document.createElement('div');
+        c.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+        const b = document.createElement('button');
+        b.style.cssText = 'width:29px;height:29px;cursor:pointer;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center';
+        const paint = () => {
+          const full = q('.d-hero').classList.contains('d-hero-full');
+          b.innerHTML = full ? ICO_BACK : ICO_FULL;
+          b.title = full ? 'Restaurar la altura del mapa' : 'Mapa a todo el alto de la pantalla';
+        };
+        b.onclick = () => {
+          const hero = q('.d-hero');
+          const full = hero.classList.toggle('d-hero-full');
+          paint();
+          if (map) map.resize();
+          if (full) hero.scrollIntoView({behavior: 'smooth', block: 'start'});
+        };
+        paint();
+        c.appendChild(b); return c;
+      }, onRemove() {},
+    }, 'top-left');
 
     const tok = _tok;
     map.on('load', () => {
@@ -1086,6 +1115,9 @@
   function resetView() {
     destroyMap();
     destroyCharts();
+    // El modo pantalla completa del mapa no debe heredarse al navegar a otra ruta.
+    const hero = q('.d-hero');
+    if (hero) hero.classList.remove('d-hero-full');
     closeActivityPicker();
     closeLightbox();
     q('#immich-modal').classList.add('hidden');

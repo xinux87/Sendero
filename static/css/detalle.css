@@ -16,14 +16,18 @@
 #sec-detalle .dup-banner a{color:var(--gr-red);font-weight:500}
 
 /* ── CABECERA-MAPA ───────────────────────────────────────────────────────────
-   360 px de alto dentro del padding de página (no full-bleed). El mapa ocupa
+   504 px de alto dentro del padding de página (no full-bleed). El mapa ocupa
    todo; encima van el velo y el título. */
 /* El envoltorio existe para las acciones: dentro de .d-hero (overflow:hidden) no
    podrían salir del mapa, y en pantalla estrecha tienen que caer debajo. */
 #sec-detalle .d-hero-wrap{position:relative}
-#sec-detalle .d-hero{position:relative;height:360px;
+#sec-detalle .d-hero{position:relative;height:504px;
   border:1px solid var(--line);border-radius:12px;overflow:hidden;
   background:radial-gradient(120% 150% at 25% 20%,#16281c 0%,#0f1c15 48%,#0a1310 100%)}
+/* Mapa a todo el alto de la pantalla (botón ⛶ del propio mapa). Doble clase =
+   más especificidad que la regla de móvil de abajo, así gana en cualquier ancho.
+   El mapa sigue en el flujo del documento: la página no pierde el scroll. */
+#sec-detalle .d-hero.d-hero-full{height:100vh;height:100dvh}
 #sec-detalle #d-map{position:absolute;inset:0;z-index:0}
 #sec-detalle .d-hero-veil{position:absolute;inset:0;z-index:2;pointer-events:none;
   background:linear-gradient(to top,rgba(7,12,9,.94) 0%,rgba(7,12,9,.4) 40%,transparent 72%)}
@@ -261,7 +265,7 @@
    El cuerpo pasa a pestañas en vez de dos columnas: solo se ve el panel de la
    pestaña activa (data-tab en la sección, data-dtab en cada bloque). */
 @media(max-width:767px){
-  #sec-detalle .d-hero{height:236px}
+  #sec-detalle .d-hero{height:472px}
   #sec-detalle .d-hero-info{left:14px;right:14px;bottom:12px}
   #sec-detalle #d-name{font-size:23px;line-height:1.08;margin-bottom:5px}
   /* La línea meta se queda en fecha y hora: el archivo y el dispositivo no caben

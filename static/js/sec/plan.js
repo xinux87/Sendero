@@ -98,6 +98,35 @@
         c.appendChild(btn); return c;
       }, onRemove() {},
     }, 'top-left');
+    // botón mapa a todo el alto de la pantalla (mismo idioma que sec/detalle.js).
+    // Alterna la clase pl-hero-full: el mapa sigue en el flujo del documento,
+    // así que la página no pierde el scroll. El estado vive en el DOM (.pl-hero
+    // sobrevive a initMap), por eso paint() lo lee en vez de guardarlo aquí.
+    // Iconos en SVG inline (no glifos Unicode: ⛶ falta en muchas fuentes).
+    const ICO_FULL = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 1.5h11M2 13.5h11M7.5 4.5v6M5.5 6.5l2-2 2 2M5.5 8.5l2 2 2-2"/></svg>';
+    const ICO_BACK = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5h11M7.5 1.5v3M5.5 3l2 2 2-2M7.5 13.5v-3M5.5 12l2-2 2 2"/></svg>';
+    map.addControl({
+      onAdd() {
+        const c = document.createElement('div');
+        c.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+        const btn = document.createElement('button');
+        btn.style.cssText = 'width:29px;height:29px;cursor:pointer;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center';
+        const paint = () => {
+          const full = $('#sec-plan .pl-hero').classList.contains('pl-hero-full');
+          btn.innerHTML = full ? ICO_BACK : ICO_FULL;
+          btn.title = full ? 'Restaurar la altura del mapa' : 'Mapa a todo el alto de la pantalla';
+        };
+        btn.onclick = () => {
+          const hero = $('#sec-plan .pl-hero');
+          const full = hero.classList.toggle('pl-hero-full');
+          paint();
+          if (map) map.resize();
+          if (full) hero.scrollIntoView({behavior: 'smooth', block: 'start'});
+        };
+        paint();
+        c.appendChild(btn); return c;
+      }, onRemove() {},
+    }, 'top-left');
     // selector de capas base
     map.addControl({
       onAdd() {
@@ -519,6 +548,9 @@
     pid = params.id;
     current = null;
     $('#pl-actions-more').classList.remove('open');
+    // El modo pantalla completa del mapa no debe heredarse al montar otro plan.
+    const hero = $('#sec-plan .pl-hero');
+    if (hero) hero.classList.remove('pl-hero-full');
     showMessage('Cargando…');
     let data;
     try {

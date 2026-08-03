@@ -5,6 +5,17 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.12] — 2026-08-03
+
+### Cambiado
+- **Mapa cabecera más alto** en el detalle de ruta y en el detalle de plan: 504 px en
+  escritorio (antes 360) y 472 px en móvil (antes 236).
+
+### Añadido
+- Botón **⛶ «Mapa a todo el alto de la pantalla»** en los mapas del detalle de ruta y
+  de plan: expande el mapa a la altura del viewport sin quitar el scroll de la página;
+  el mismo botón (▣) lo devuelve a su altura normal.
+
 ## [0.9.11] — 2026-07-31
 
 ### Añadido
