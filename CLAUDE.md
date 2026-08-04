@@ -243,7 +243,7 @@ panel en vez de en el eje de la gráfica.
 | Token | Valor | Uso |
 |---|---|---|
 | `--bg` / `--bg-deep` | `#0b120e` / `#070c09` | fondo de app / lienzo |
-| `--panel` / `--panel-2` | `#101a14` / `#16241c` | tarjetas y paneles / inputs y filas realzadas |
+| `--panel` / `--panel-2` / `--panel-3` | `#101a14` / `#16241c` / `#22332a` | tarjetas y paneles / inputs y filas realzadas / brillo del shimmer de carga |
 | `--line` / `--line-strong` | `rgba(236,229,216,.09)` / `.16` | borde de tarjeta / de control |
 | `--ink` | `#ece5d8` | texto principal (crema) |
 | `--muted` / `--muted-dim` / `--muted-faint` | `#8b9a8f` / `#7f9184` / `#68786d` | texto secundario / etiquetas / ejes y fechas |
@@ -928,6 +928,40 @@ terreno, con la leyenda de la escala en la cabecera del perfil. La escala vive e
   resto de colores de serie, y la leyenda se genera de la misma tabla (`slopeLegendHtml()`),
   así que **no puede desfasarse**: si cambias los cortes, la leyenda cambia sola.
 
+### Estado de carga de los dos detalles (shimmer, tope de tiempo y reintentar)
+Hasta la v0.9.14, mientras el detalle estaba en vuelo se veían **los paneles vacíos**, y si
+el servidor aceptaba la conexión y no contestaba la vista se quedaba así **para siempre**:
+`fetch` no trae tope propio (el del navegador son minutos) y no había ninguno, así que
+`mount()` no terminaba nunca. Sin error, sin aviso y sin nada que pulsar — el síntoma era
+«se queda con el esqueleto sin hacer nada», y se confundía con código viejo pegado.
+
+Tres piezas, y las tres hacen falta:
+- **Tope de tiempo en el Store**: `DETAIL_TIMEOUT_MS` (15 s) en `store.js`, aplicado con un
+  `AbortController` **solo a `route()` y `plan()`**. No es general a propósito: subir fotos,
+  calcular el IBP o recalcular contra un DEM tardan legítimamente más. Agotar el tiempo
+  **no** marca la app como sin conexión (si lo hiciera, una red lenta se anunciaría como
+  caída y el resto de la app entraría en modo offline sin motivo): el error lleva
+  `timeout:true` en vez de `offline:true`.
+- **Shimmer** mientras carga: `skeletonOn()/Off()/Soon()` en cada sección pintan tarjetas y
+  filas de esqueleto y marcan la sección con `.is-loading`, que es lo que hace brillar las
+  cajas de las gráficas (un `<canvas>` no se rellena con HTML: el shimmer va en su caja y
+  el lienzo, transparente hasta que Chart.js pinte, lo deja ver). Se retrasa
+  `SKEL_DELAY_MS` (140 ms) porque un detalle que ya está en IndexedDB se pinta en menos que
+  eso y un parpadeo gris se ve peor que nada. `resetView()`/`unmount()` lo apagan: si se
+  escapara, la sección se quedaría con las gráficas brillando debajo de los datos.
+- **Salida**: `#d-load-error` / `#pl-load-error` con el motivo y «↻ Reintentar»
+  (`SEC.detalle.retry()`, que repite el `mount()` con los mismos params guardados en
+  `_lastParams`). Los mensajes distinguen los tres casos —sin red, el servidor no contesta,
+  y otra ventana retiene la copia local— porque se arreglan de formas distintas.
+
+Lo cubre el bloque 19 de `tests/e2e_spa.py`. Para simular el cuelgue **hay que envolver
+`window.fetch` en la página**, no usar `page.route`: el Service Worker atiende los fetch y
+`route` no los ve, y si su handler no responde Playwright continúa la petición él solo. La
+envoltura tiene que **respetar el `AbortSignal`**, que es lo que hace la red de verdad y lo
+único que prueba el tope. Y para que el detalle se pida de verdad hay que **vaciar el
+almacén `detail` de IndexedDB** antes: si hay copia local, `route()` la devuelve y no hay
+carga que ver.
+
 ### Rendimiento del hover: qué NO hacer en un `Chart` que se repinta en cada mousemove
 El hover sincronizado repinta las gráficas en **cada movimiento del ratón**, así que
 cualquier cosa que Chart.js resuelva por punto se multiplica por 500 y sesenta veces por
@@ -1283,6 +1317,13 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
   el tiempo**. Lo cubre el bloque 17 de `tests/e2e_spa.py` (comprobado que FALLA si se
   revierte). Si vuelves a subir `DB_VERSION`, no toques nada de esto sin volver a pasar ese
   bloque.
+
+- **El detalle se quedaba «cargando» para siempre si el servidor no contestaba** (0.9.14).
+  `netFetch` no tenía tope de tiempo, así que un servidor que acepta la conexión y calla
+  dejaba el `await` de `mount()` pendiente sin límite: paneles vacíos, ningún error y ni
+  siquiera el `go()` del router volvía. Hoy `route()`/`plan()` van con `DETAIL_TIMEOUT_MS` y
+  la vista tiene aviso con «Reintentar» (ver «Estado de carga de los dos detalles»). Si
+  añades otra vista que cargue de red, dale las tres piezas: tope, shimmer y salida.
 
 - **Re-detección de actividad borraba la elegida a mano y falseaba los umbrales GPS**
   — `_reanalyse_and_update` (rescan + todos los guardados del editor) recalculaba
@@ -1682,7 +1723,7 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tocaste el CSS del modal Immich (`static/css/detalle.css`): comprueba que
   `#sec-detalle .overlay.hidden` sigue ocultando el modal al cargar la ruta.
 - Con Playwright disponible, la comprobación de verdad es `python tests/e2e_spa.py`
-  (181 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
+  (190 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
   Worker, modo sin conexión y cola de escrituras). Necesita un servidor con
   `SENDERO_DATA` **de pruebas** y `python tests/e2e_seed.py` para sembrarlo.
 - Si tocaste `/actualizar` o el Service Worker: comprueba que la página sigue llegando de
@@ -1775,6 +1816,12 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   y sobreviviendo a un `unmount()`+`mount()` (la copia local la escribe
   `Store.patchPlanRow`)? ¿la lista vacía por el filtro sigue distinguiéndose de la lista
   vacía de verdad?
+- Si tocaste el arranque de un detalle (`mount()` de `sec/detalle.js` o `sec/plan.js`) o
+  `netFetch`/`route()`/`plan()` del Store: ¿sigue habiendo tope de tiempo, shimmer y aviso
+  con «Reintentar»? Sin el tope, un servidor que acepta y no contesta deja la vista muerta
+  sin ningún error (bloque 19 de `tests/e2e_spa.py`; ver «Estado de carga de los dos
+  detalles»). Y `skeletonOff()` tiene que llamarse en TODAS las salidas: datos, error,
+  «no encontrada», `resetView()` y `unmount()`.
 - Si tocaste la escala de pendiente (`SLOPE_*` en `static/shared.js`) o el color de la traza
   o del perfil: `node tests/slope_smoke.js`. Y si has tocado cómo se le pasa el color al
   `Chart`, lee «Rendimiento del hover»: una opción scriptable ahí cuesta 1020 recálculos por

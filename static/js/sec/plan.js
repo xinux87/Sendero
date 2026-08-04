@@ -721,6 +721,56 @@
   }
 
   /* ── montaje ───────────────────────────────────────────────────────────── */
+  /* ── estado de carga ──────────────────────────────────────────────────────
+     Mismo diseño que en sec/detalle.js, y por el mismo motivo: los paneles vacíos
+     parecían la app colgada y con un servidor que acepta y no contesta lo estaban
+     de verdad (ver el tope de tiempo de store.js). El shimmer se retrasa para que
+     un plan que ya está en IndexedDB no dé un parpadeo gris. */
+  const SKEL_DELAY_MS = 140;
+  let _skelTimer = null, _lastParams = null;
+
+  function skeletonOn() {
+    const sec = document.getElementById('sec-plan');
+    if (sec) sec.classList.add('is-loading');
+    const st = $('#pl-stats');
+    if (st) st.innerHTML = Array.from({length: 5}, () =>
+      '<div class="skel-stat"><div class="skel"></div><div class="skel b"></div></div>').join('');
+    const tech = $('#pl-tech');
+    if (tech) tech.innerHTML = Array.from({length: 5}, () =>
+      '<div class="skel-row"><span class="skel k"></span><span class="skel v"></span></div>').join('');
+    const ibp = $('#pl-ibp-body');
+    if (ibp) ibp.innerHTML = '<div class="skel-row"><span class="skel k"></span><span class="skel v"></span></div>';
+  }
+  function skeletonOff() {
+    if (_skelTimer) { clearTimeout(_skelTimer); _skelTimer = null; }
+    const sec = document.getElementById('sec-plan');
+    if (sec) sec.classList.remove('is-loading');
+  }
+  function skeletonSoon(tok) {
+    if (_skelTimer) clearTimeout(_skelTimer);
+    _skelTimer = setTimeout(() => { if (tok === _tok) skeletonOn(); }, SKEL_DELAY_MS);
+  }
+  function loadErrorMsg(e) {
+    if (e && e.timeout)   return 'El servidor tardó demasiado en responder.';
+    if (e && e.dbBlocked) return 'Otra ventana de Sendero retiene la copia local. Ciérrala y reintenta.';
+    if (e && e.offline)   return 'Sin conexión, y este plan no está guardado en este dispositivo.';
+    return 'No se pudo cargar este plan.';
+  }
+  function showLoadError(e) {
+    skeletonOff();
+    const box = $('#pl-load-error');
+    if (!box) return;
+    box.querySelector('.le-msg').textContent = loadErrorMsg(e);
+    box.classList.remove('hidden');
+  }
+  function hideLoadError() {
+    const box = $('#pl-load-error');
+    if (box) box.classList.add('hidden');
+  }
+  function retry() {
+    if (_lastParams) mount(_lastParams, {});
+  }
+
   function showMessage(msg) {
     $('#pl-d-name').textContent = msg;
     $('#pl-stats').innerHTML = '';
@@ -751,22 +801,27 @@
   async function mount(params, opts) {
     const tok = ++_tok;
     pid = params.id;
+    _lastParams = params;
     current = null;
+    skeletonOff();
+    hideLoadError();
     $('#pl-actions-more').classList.remove('open');
     // El modo pantalla completa del mapa no debe heredarse al montar otro plan.
     const hero = $('#sec-plan .pl-hero');
     if (hero) hero.classList.remove('pl-hero-full');
     showMessage('Cargando…');
+    skeletonSoon(tok);
     let data;
     try {
       data = await Store.plan(pid, {bootstrap: (opts && opts.bootstrap) || null});
     } catch (e) {
-      if (tok === _tok) showMessage('No se pudo cargar este plan sin conexión.');
+      if (tok === _tok) { showMessage('No se pudo cargar el plan'); showLoadError(e); }
       return;
     }
     if (tok !== _tok) return;              // se navegó a otra vista mientras cargaba
-    if (!data) { showMessage('Ruta no encontrada.'); return; }
+    if (!data) { skeletonOff(); showMessage('Ruta no encontrada.'); return; }
     current = data;
+    skeletonOff();
     render();
     /* Saber si el IBP está configurado no bloquea el pintado: el panel se repinta
        cuando llegue la respuesta (sin conexión no llega y se queda como estaba). */
@@ -775,6 +830,8 @@
 
   function unmount() {
     _tok++;                                // invalida cualquier carga en vuelo
+    skeletonOff();
+    hideLoadError();
     destroyMap();
     destroyChart();
     closeActivityPicker();
@@ -793,7 +850,7 @@
   });
 
   window.SEC.plan = {
-    mount, unmount,
+    mount, unmount, retry,
     openActivityPicker, closeActivityPicker, pickActivity,
     saveNotes, downloadGpx, renamePlan, removePlan, downloadMap, computeIbp,
   };

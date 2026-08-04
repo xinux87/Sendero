@@ -159,14 +159,40 @@ const Store = (() => {
 
   /* fetch que distingue "el servidor dice que no" de "no hay servidor".
      Un 4xx/5xx es una respuesta y se propaga; un fallo de red marca offline. */
-  async function netFetch(url, opts) {
+  /* Tope de tiempo de una petición de DETALLE (ruta o plan).
+
+     Sin él, un servidor que ACEPTA la conexión y no contesta —un contenedor
+     reiniciándose, un proxy a medias, el gunicorn huérfano del quirk de WSL2— deja
+     el `await` pendiente para siempre: `mount()` no termina nunca y la vista se
+     queda con el esqueleto vacío, sin error, sin aviso y sin más salida que
+     recargar. Fetch no trae tope propio (el del navegador son minutos).
+
+     Se aplica SOLO a los detalles a propósito: subir fotos, calcular el IBP o
+     recalcular la elevación contra un DEM tardan legítimamente más que esto. */
+  const DETAIL_TIMEOUT_MS = 15000;
+
+  async function netFetch(url, opts, timeoutMs) {
+    let ctl = null, timer = null;
+    if (timeoutMs) {
+      ctl = new AbortController();
+      timer = setTimeout(() => ctl.abort(), timeoutMs);
+      opts = Object.assign({}, opts, {signal: ctl.signal});
+    }
     try {
       const res = await fetch(url, opts);
       setOnline(true);
       return res;
     } catch (e) {
-      setOnline(false);
-      throw Object.assign(new Error('sin conexión'), {offline: true, cause: e});
+      /* Agotar el tiempo NO es estar sin conexión: si tocara el badge, una red
+         lenta se anunciaría como caída y el resto de la app se pondría en modo
+         offline sin motivo. */
+      const porTiempo = !!(ctl && ctl.signal.aborted);
+      if (!porTiempo) setOnline(false);
+      throw Object.assign(new Error(porTiempo ? 'el servidor tardó demasiado en responder'
+                                              : 'sin conexión'),
+                          {offline: !porTiempo, timeout: porTiempo, cause: e});
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -371,7 +397,7 @@ const Store = (() => {
         headers['If-None-Match'] = `"${cached.rev}${cached.lite ? '-lite' : ''}"`;
       }
       const res = await netFetch(`/api/routes/${encodeURIComponent(pid)}${lite ? '?lite=1' : ''}`,
-                                {headers});
+                                {headers}, DETAIL_TIMEOUT_MS);
       if (res.status === 304 && cached) return cached.data;
       if (res.status === 404) { await del('detail', pid); return null; }
       if (!res.ok) throw new Error('detalle: ' + res.status);
@@ -412,7 +438,7 @@ const Store = (() => {
   async function plan(pid, {bootstrap = null} = {}) {
     if (bootstrap && bootstrap.public_id === pid) return bootstrap;
     try {
-      const res = await netFetch(`/api/planned/${encodeURIComponent(pid)}`);
+      const res = await netFetch(`/api/planned/${encodeURIComponent(pid)}`, null, DETAIL_TIMEOUT_MS);
       if (res.status === 404) return null;
       if (!res.ok) throw new Error('plan: ' + res.status);
       const data = await res.json();

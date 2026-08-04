@@ -55,6 +55,13 @@
 
 <div id="pl-offline-info" class="offline-map-info hidden"></div>
 
+{# Aviso de que el plan no ha podido cargarse, con salida (ver el mismo bloque
+   en sec/detalle.html). #}
+<div id="pl-load-error" class="load-error hidden">
+  <span class="le-msg"></span>
+  <button class="btn sm" onclick="SEC.plan.retry()">↻ Reintentar</button>
+</div>
+
 {# ── BANDA DE MÉTRICAS (la 1ª con el acento de la actividad) ─────────────── #}
 <div class="stats-row" id="pl-stats"></div>
 

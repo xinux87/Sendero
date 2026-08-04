@@ -25,7 +25,7 @@ import sys
 import time
 import urllib.request
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PWTimeout, sync_playwright
 
 BASE = os.environ.get("SENDERO_E2E_URL", "http://localhost:8124")
 
@@ -1114,13 +1114,110 @@ def main():
             check(page.locator(f"{leg} .sl-bar").is_visible(),
                   f"{etiqueta}: y se ve (no la tapa el panel)")
 
-        # ── 19. errores de consola ────────────────────────────────────────────
+        # ── 19. estado de carga del detalle ───────────────────────────────────
+        # Regresión de la 0.9.14: mientras el detalle estaba en vuelo se veían los
+        # paneles VACÍOS, y si el servidor aceptaba la conexión y no contestaba la
+        # vista se quedaba así PARA SIEMPRE (fetch no trae tope propio y no había
+        # ninguno), sin error y sin nada que pulsar. Ahora hay shimmer, tope de
+        # tiempo y un aviso con «Reintentar».
+        #
+        # El cuelgue se simula envolviendo window.fetch EN LA PÁGINA, no con
+        # page.route: el Service Worker (que aquí sigue activo a propósito) atiende
+        # los fetch y route no los ve; y una envoltura que respeta el AbortSignal es
+        # justo lo que hace la red de verdad.
+        seccion("Estado de carga del detalle (shimmer, tope de tiempo y reintentar)")
+        page.goto(f"{BASE}/rutas", wait_until="load")
+        page.wait_for_selector("#sec-rutas:not(.hidden)", timeout=15000)
+        page.wait_for_timeout(1200)
+        # 1) carga lenta → shimmer
+        page.evaluate("""() => {
+            const of = window.fetch;
+            window.__retraso = 1500;
+            window.fetch = (u, o) => {
+              const url = String((u && u.url) || u);
+              if (!url.includes('lite=1') || !window.__retraso) return of(u, o);
+              return new Promise(r => setTimeout(() => r(of(u, o)), window.__retraso));
+            };
+        }""")
+        page.evaluate("""() => new Promise(res => {          // vaciar los detalles guardados
+            const q = indexedDB.open('sendero');
+            q.onsuccess = () => { const db = q.result;
+              const tx = db.transaction('detail', 'readwrite');
+              tx.objectStore('detail').clear();
+              tx.oncomplete = () => { db.close(); res(); };
+              tx.onerror = () => { db.close(); res(); }; };
+            q.onerror = () => res();
+        })""")
+        page.evaluate(f"() => {{ go('/Sendero/{rid}'); }}")   # sin await: mount va a lo suyo
+        page.wait_for_timeout(500)
+        check(page.locator("#sec-detalle.is-loading").count() == 1,
+              "mientras carga, la sección se marca is-loading (shimmer)")
+        n_skel = page.locator("#d-stats .skel-stat").count()
+        check(n_skel >= 5, f"se pintan tarjetas de esqueleto en vez de vacío ({n_skel})")
+        check(page.evaluate("""() => {
+                const e = document.querySelector('#d-stats .skel');
+                return !!e && getComputedStyle(e).animationName.endsWith('shimmer');
+              }"""), "y el esqueleto está animado (shimmer, no un gris quieto)")
+        page.wait_for_selector("#d-stats .stat", timeout=20000)
+        check(page.locator("#sec-detalle.is-loading").count() == 0
+              and page.locator("#d-stats .skel-stat").count() == 0,
+              "al llegar los datos no queda ni el shimmer ni el esqueleto")
+        # 2) el servidor acepta y NO contesta → tope de tiempo, aviso y reintento
+        page.evaluate("""() => {
+            const of = window.fetch;
+            window.__colgar = true;
+            window.fetch = (u, o) => {
+              const url = String((u && u.url) || u);
+              if (!url.includes('lite=1') || !window.__colgar) return of(u, o);
+              return new Promise((res, rej) => {          // pendiente, pero respeta el abort
+                const s = o && o.signal;
+                if (s) s.addEventListener('abort',
+                  () => rej(new DOMException('Aborted', 'AbortError')));
+              });
+            };
+        }""")
+        page.evaluate("""() => new Promise(res => {
+            const q = indexedDB.open('sendero');
+            q.onsuccess = () => { const db = q.result;
+              const tx = db.transaction('detail', 'readwrite');
+              tx.objectStore('detail').clear();
+              tx.oncomplete = () => { db.close(); res(); };
+              tx.onerror = () => { db.close(); res(); }; };
+            q.onerror = () => res();
+        })""")
+        page.evaluate("() => go('/rutas')")
+        page.wait_for_timeout(600)
+        page.evaluate(f"() => {{ go('/Sendero/{rid}'); }}")
+        try:
+            page.wait_for_selector("#d-load-error:not(.hidden)", timeout=25000)
+            check(True, "si el servidor no contesta, la vista NO se queda colgada: avisa")
+            msg = page.text_content("#d-load-error .le-msg").strip()
+            check("tardó demasiado" in msg, f"y dice qué ha pasado: «{msg}»")
+            check(page.locator("#sec-detalle.is-loading").count() == 0,
+                  "el shimmer se apaga al fallar (no se queda brillando)")
+            page.evaluate("() => { window.__colgar = false; }")
+            page.click("#d-load-error button")
+            page.wait_for_selector("#d-stats .stat", timeout=20000)
+            check(page.locator("#d-load-error.hidden").count() == 1,
+                  "«Reintentar» carga la ruta y esconde el aviso")
+        except PWTimeout:
+            check(False, "si el servidor no contesta, la vista NO se queda colgada: avisa")
+        # 3) el detalle inyectado por el servidor no debe hacer parpadear el shimmer
+        page.goto(f"{BASE}/Sendero/{rid}", wait_until="load")
+        parpadeos = 0
+        for _ in range(12):
+            parpadeos += page.locator("#sec-detalle.is-loading").count()
+            page.wait_for_timeout(40)
+        check(parpadeos == 0,
+              f"con los datos inyectados el shimmer no parpadea ({parpadeos} muestras)")
+
+        # ── 20. errores de consola ────────────────────────────────────────────
         seccion("Errores de JavaScript")
         errs = con.limpias()
         check(not errs, "ningún error de JS ni excepción sin capturar"
               + (":\n     " + "\n     ".join(errs[:8]) if errs else ""))
 
-        # ── 20. copia local retenida por otra ventana (IndexedDB) ─────────────
+        # ── 21. copia local retenida por otra ventana (IndexedDB) ─────────────
         # Regresión de la 0.9.9. Al subir DB_VERSION (v3 → v4 en la 0.9.8), una
         # ventana con el código anterior retenía la BD: el open() de la ventana
         # actualizada no resolvía NUNCA —la app se veía a medias y sin error— y el

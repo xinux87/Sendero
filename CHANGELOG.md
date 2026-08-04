@@ -5,6 +5,24 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.14] — 2026-08-04
+
+### Corregido
+- **El detalle de una ruta o de un plan podía quedarse cargando para siempre.** Si el
+  servidor aceptaba la conexión y no contestaba —un contenedor reiniciándose, un proxy a
+  medias— la vista se quedaba con los paneles vacíos, sin error, sin aviso y sin más
+  salida que recargar la página: no había ningún tope de tiempo. Ahora la petición del
+  detalle se rinde a los 15 segundos y, si no hay copia guardada en el dispositivo, sale
+  un aviso que **explica qué ha pasado** (sin conexión, el servidor no contesta, u otra
+  ventana retiene la copia local) con un botón **«↻ Reintentar»**.
+
+### Añadido
+- **Shimmer de carga en los dos detalles**: mientras llegan los datos se ven las tarjetas,
+  las filas y las gráficas como bloques con un brillo que las recorre, en vez de paneles
+  vacíos que parecían la app colgada. No aparece si la ruta ya estaba guardada en el
+  dispositivo (se pinta en menos de 140 ms y un parpadeo gris se ve peor que nada), y
+  respeta «reducir movimiento» del sistema.
+
 ## [0.9.13] — 2026-08-04
 
 ### Añadido

@@ -61,6 +61,14 @@
 
 <div id="d-offline-info" class="offline-map-info hidden"></div>
 
+{# Aviso de que el detalle no ha podido cargarse, con salida. Antes esto no
+   existía: si la petición no volvía nunca (servidor que acepta y no contesta), la
+   vista se quedaba con el esqueleto vacío y sin nada que pulsar. #}
+<div id="d-load-error" class="load-error hidden">
+  <span class="le-msg"></span>
+  <button class="btn sm" onclick="SEC.detalle.retry()">↻ Reintentar</button>
+</div>
+
 {# ── BANDA DE MÉTRICAS (7 tarjetas; la 1ª con el acento de la actividad) ── #}
 <div class="stats-row" id="d-stats"></div>
 

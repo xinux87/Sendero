@@ -1113,6 +1113,64 @@
   }
 
   /* ── montaje ───────────────────────────────────────────────────────────── */
+  /* ── estado de carga ──────────────────────────────────────────────────────
+     Antes de esto, mientras el detalle estaba en vuelo se veían los paneles
+     VACÍOS: parecía la app colgada, y con un servidor que acepta la conexión y no
+     contesta lo estaba de verdad (de ahí el tope de tiempo de store.js). Ahora se
+     pinta un esqueleto con shimmer y, si la carga falla, un aviso con
+     «Reintentar» — que es lo que no había: no quedaba nada que pulsar.
+
+     El shimmer se retrasa `SKEL_DELAY_MS`: un detalle que ya está en IndexedDB se
+     pinta en menos que eso y un parpadeo gris se ve peor que nada. */
+  const SKEL_DELAY_MS = 140;
+  let _skelTimer = null, _lastParams = null;
+
+  function skeletonOn() {
+    const sec = document.getElementById('sec-detalle');
+    if (sec) sec.classList.add('is-loading');
+    const st = q('#d-stats');
+    if (st) st.innerHTML = Array.from({length: 7}, () =>
+      '<div class="skel-stat"><div class="skel"></div><div class="skel b"></div></div>').join('');
+    const tech = q('#d-tech');
+    if (tech) tech.innerHTML = Array.from({length: 6}, () =>
+      '<div class="skel-row"><span class="skel k"></span><span class="skel v"></span></div>').join('');
+  }
+  /* Quita el shimmer y cancela el que estuviera pendiente. Lo llaman el pintado,
+     el error y resetView(): si se escapara uno, la sección se quedaría con las
+     gráficas brillando debajo de los datos ya pintados. */
+  function skeletonOff() {
+    if (_skelTimer) { clearTimeout(_skelTimer); _skelTimer = null; }
+    const sec = document.getElementById('sec-detalle');
+    if (sec) sec.classList.remove('is-loading');
+  }
+  function skeletonSoon(tok) {
+    if (_skelTimer) clearTimeout(_skelTimer);
+    _skelTimer = setTimeout(() => { if (tok === _tok) skeletonOn(); }, SKEL_DELAY_MS);
+  }
+  /* Mensaje de por qué no se pudo cargar. Los tres casos se arreglan de formas
+     distintas, así que se distinguen: sin red, el servidor no contesta, y el resto. */
+  function loadErrorMsg(e) {
+    if (e && e.timeout)   return 'El servidor tardó demasiado en responder.';
+    if (e && e.dbBlocked) return 'Otra ventana de Sendero retiene la copia local. Ciérrala y reintenta.';
+    if (e && e.offline)   return 'Sin conexión, y esta ruta no está guardada en este dispositivo.';
+    return 'No se pudo cargar esta ruta.';
+  }
+  function showLoadError(e) {
+    skeletonOff();
+    const box = q('#d-load-error');
+    if (!box) return;
+    box.querySelector('.le-msg').textContent = loadErrorMsg(e);
+    box.classList.remove('hidden');
+  }
+  function hideLoadError() {
+    const box = q('#d-load-error');
+    if (box) box.classList.add('hidden');
+  }
+  /* Lo llama el botón del aviso: reintenta la MISMA ruta con los mismos params. */
+  function retry() {
+    if (_lastParams) mount(_lastParams, {});
+  }
+
   function showMessage(msg) {
     $('#d-name').textContent = msg;
     $('#d-stats').innerHTML = '';
@@ -1154,6 +1212,8 @@
      desmontar: se puede ir de un detalle a otro (enlace del aviso de duplicada)
      y el router no desmonta cuando la sección es la misma. */
   function resetView() {
+    skeletonOff();
+    hideLoadError();
     destroyMap();
     destroyCharts();
     // El modo pantalla completa del mapa no debe heredarse al navegar a otra ruta.
@@ -1174,8 +1234,10 @@
     const tok = ++_tok;
     resetView();
     pid = params.id;
+    _lastParams = params;
     current = null;
     showMessage('Cargando…');
+    skeletonSoon(tok);
     // La config de Immich hace falta antes del flujo automático, pero no debe
     // bloquear el pintado del detalle.
     const cfgP = loadConfig();
@@ -1184,12 +1246,13 @@
       const bootstrap = (opts && opts.bootstrap) || null;
       data = await Store.route(pid, {lite: true, bootstrap});
     } catch (e) {
-      if (tok === _tok) showMessage('No se pudo cargar esta ruta sin conexión.');
+      if (tok === _tok) { showMessage('No se pudo cargar la ruta'); showLoadError(e); }
       return;
     }
     if (tok !== _tok) return;                  // se navegó a otra vista mientras cargaba
-    if (!data) { showMessage('Ruta no encontrada.'); return; }
+    if (!data) { skeletonOff(); showMessage('Ruta no encontrada.'); return; }
     current = data;
+    skeletonOff();
     _lite = !!data.lite;
     renderAll();
     await cfgP;
@@ -1264,7 +1327,7 @@
   })();
 
   window.SEC.detalle = {
-    mount, unmount, setTab,
+    mount, unmount, setTab, retry,
     openActivityPicker, closeActivityPicker, setActivity,
     toggle3D, saveNotes, rescanRoute, renameRoute, removeRoute, downloadGpx, downloadMap,
     openEditor, dismissDup, delPhoto,
