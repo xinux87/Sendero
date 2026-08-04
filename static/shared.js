@@ -273,3 +273,216 @@ function applyBasemap(map,capa){
   map.once('styledata',()=>map.fire('sendero:basemap',{capa}));
   return true;                  // el llamador debe repintar sus capas
 }
+
+/* ── Escala de pendiente (verde → rojo) ─────────────────────────────────────
+   Colorea la traza del mapa y el perfil de elevación del detalle de una RUTA y
+   del de un PLAN por lo empinado del terreno: verde llano, rojo pared. La usan
+   sec/detalle.js y sec/plan.js, y por eso vive aquí y no en una de las dos.
+
+   Cuatro decisiones, para no rediscutirlas:
+   - **Pendiente ABSOLUTA**: bajar al 25 % pinta igual que subirlo. Es lo duro del
+     terreno, no el esfuerzo de ascenso; y así "verde = llano, rojo = empinado" se
+     lee sin pensar.
+   - **Ventana de SLOPE_WINDOW_M metros**, centrada: entre dos puntos seguidos de
+     un GPS la pendiente es ruido puro (±40 % en llano). Es el mismo motivo por el
+     que _elevSub() mide la pendiente máxima sobre tramos de ≥30 m.
+   - Los colores son de la paleta del proyecto (verde de `caminata`, ámbar
+     `--pr-yellow`, naranja de `senderismo`, rojo `--gr-red`) más una lima para el
+     escalón que faltaba. Van aquí, en el JS que pinta, como el resto de colores
+     de serie: en el CSS de las secciones no debe haber hex sueltos (regla 9).
+   - Los cortes (0·5·10·15·25) son los de las escalas de cicloturismo y montaña,
+     y son los que enseña la leyenda: si los cambias, la leyenda sigue sola. */
+const SLOPE_SCALE = [
+  [0,  [ 67, 185, 127]],   // #43b97f  llano
+  [5,  [163, 201,  78]],   // #a3c94e  suave
+  [10, [227, 178,  60]],   // #e3b23c  exigente (--pr-yellow)
+  [15, [232, 134,  60]],   // #e8863c  duro
+  [25, [226,  73,  44]],   // #e2492c  muy duro (--gr-red)
+];
+const SLOPE_WINDOW_M = 50;
+
+/* |pendiente %| → color, interpolando entre las paradas de la escala. Con `a`
+   devuelve rgba() (lo usa el relleno del perfil, que va translúcido). */
+function slopeColor(pct, a){
+  const p=Math.abs(Number(pct)||0), S=SLOPE_SCALE;
+  const salida=c => a==null ? `rgb(${c.join(',')})` : `rgba(${c.join(',')},${a})`;
+  if(p<=S[0][0]) return salida(S[0][1]);
+  for(let i=1;i<S.length;i++){
+    if(p<=S[i][0]){
+      const [x,cx]=S[i-1], [y,cy]=S[i], t=(p-x)/(y-x);
+      return salida(cx.map((v,k)=>Math.round(v+(cy[k]-v)*t)));
+    }
+  }
+  return salida(S[S.length-1][1]);
+}
+
+/* Perfil de pendientes alineado 1:1 con la serie de elevación [{d,e}] (d en km,
+   e en m): devuelve un array de porcentajes, uno por punto. Cada uno se mide
+   sobre una ventana centrada de al menos `win` metros, no contra el punto de al
+   lado: sin eso el color parpadearía con el ruido del GPS en vez de describir el
+   terreno. */
+function slopeProfile(elev, win){
+  const n=(elev||[]).length, out=new Array(n).fill(0);
+  if(n<2) return out;
+  const half=(win||SLOPE_WINDOW_M)/2/1000;      // en km, a cada lado
+  let a=0, b=0;
+  for(let i=0;i<n;i++){
+    while(a<i   && elev[i].d-elev[a].d>half)   a++;
+    while(a>0   && elev[i].d-elev[a].d<half)   a--;
+    while(b<n-1 && elev[b].d-elev[i].d<half)   b++;
+    while(b>i   && elev[b].d-elev[i].d>half)   b--;
+    /* En los extremos la ventana centrada se queda a medias (en el punto 0 solo
+       hay lado derecho), y media ventana da el doble de ruido justo donde
+       empieza el track. Se estira por el lado que quede. */
+    let a2=a, b2=b;
+    while(elev[b2].d-elev[a2].d < half*2 && (a2>0 || b2<n-1)){
+      if(a2>0) a2--; else b2++;
+    }
+    if(b2<=a2){ out[i]=i>0?out[i-1]:0; continue; }
+    const dx=(elev[b2].d-elev[a2].d)*1000;
+    out[i]=dx>0 ? (elev[b2].e-elev[a2].e)/dx*100 : 0;
+  }
+  return out;
+}
+
+/* Media de |pendiente| en `B` cubos de igual LONGITUD del track.
+
+   Por DISTANCIA y no por índice, y esto es el meollo: la serie de elevación NO
+   es uniforme en distancia. El GPX muestrea por tiempo, así que una subida lenta
+   acumula puntos y una bajada rápida casi ninguno, y `resample()` del modo ligero
+   toma un paso constante en índice, que conserva ese sesgo. Medido en rutas
+   reales, el punto nº 50 % de la serie puede estar en el km 37 % del track: quien
+   pinte "el color del punto k/n en la fracción k/n del eje" acaba con la subida
+   pintada encima de un llano. Lo usan la traza del mapa y el perfil, para que los
+   dos digan lo mismo en el mismo sitio. */
+function slopeBuckets(elev, B){
+  const n=(elev||[]).length;
+  if(n<2 || B<1) return null;
+  const d0=elev[0].d, total=elev[n-1].d-d0;
+  if(!(total>0)) return null;
+  const prof=slopeProfile(elev);
+  const suma=new Array(B).fill(0), cuenta=new Array(B).fill(0);
+  for(let i=0;i<n;i++){
+    const k=Math.min(B-1, Math.floor((elev[i].d-d0)/total*B));
+    suma[k]+=Math.abs(prof[i]); cuenta[k]++;
+  }
+  const out=new Array(B); let prev=0;
+  for(let k=0;k<B;k++){ out[k]=cuenta[k] ? suma[k]/cuenta[k] : prev; prev=out[k]; }
+  return out;
+}
+
+/* Expresión `line-gradient` para la traza del mapa, a partir de la serie de
+   elevación. Devuelve null si no hay datos suficientes (entonces la traza se
+   queda del color de la actividad, como antes).
+
+   La fracción de cada parada es d/dTotal, o sea la MISMA magnitud que
+   ['line-progress'] salvo por la deformación de Mercator, que en un track de
+   unos kilómetros es de milésimas. La fuente necesita `lineMetrics:true` o
+   MapLibre ignora el degradado.
+
+   La pendiente se promedia en SLOPE_BUCKETS cubos de igual longitud antes de
+   emitir paradas, y las de igual color se funden: sin eso saldría una parada por
+   punto de la serie (cientos o miles) y la expresión sería impagable. */
+const SLOPE_Q = 1.5;          // cuantización del color, en puntos de %
+const SLOPE_BUCKETS = 200;    // tope de paradas de la expresión
+function slopeGradientExpr(elev){
+  const n=(elev||[]).length;
+  if(n<2) return null;
+  const d0=elev[0].d, total=elev[n-1].d-d0;
+  if(!(total>0)) return null;
+  const B=Math.max(2, Math.min(SLOPE_BUCKETS, n));
+  const cubos=slopeBuckets(elev, B);
+  if(!cubos) return null;
+  const expr=['interpolate',['linear'],['line-progress']];
+  let ult=null;
+  for(let k=0;k<B;k++){
+    const q=Math.round(Math.min(cubos[k],40)/SLOPE_Q)*SLOPE_Q;
+    if(q===ult) continue;                               // mismo color: no hace parada
+    const f=k===0 ? 0 : (k+0.5)/B;
+    if(expr.length>3 && f<=expr[expr.length-2]) continue;
+    expr.push(f, slopeColor(q));
+    ult=q;
+  }
+  /* Una sola parada = toda la ruta con la misma pendiente (una rampa constante,
+     o un llano). MapLibre necesita dos, así que se repite el color: la traza sale
+     entera de ese color, que es justo lo que toca. */
+  if(expr.length===5) expr.push(1, expr[4]);
+  return expr.length>=7 ? expr : null;
+}
+
+/* Degradado de canvas HORIZONTAL para el perfil de elevación, con la misma
+   escala que la traza del mapa: opaco para la línea (`a` sin valor) y
+   translúcido para el relleno. Lo usan sec/detalle.js y sec/plan.js.
+
+   Dos cosas que costaron un fallo cada una:
+   - El color de cada parada sale de `slopeBuckets` (por DISTANCIA); tomarlo del
+     punto nº k/n de la serie desplazaba el color casi un kilómetro en una ruta de
+     siete, y salía la subida pintada sobre el llano.
+   - Es un degradado de canvas y NO `segment.borderColor`: con estilos por tramo
+     Chart.js parte también el RELLENO y deja una costura vertical en cada punto
+     (~80 rayas en un perfil normal).
+   Se sitúa con la escala X del gráfico, no con el chartArea, para que cada color
+   caiga justo encima de su kilómetro. */
+const SLOPE_CHART_BUCKETS = 64;   // en 700 px el ojo no distingue más
+function slopeChartGradient(chart, elev, a, cubosYa){
+  const {ctx, chartArea, scales} = chart;
+  if(!chartArea || !(elev||[]).length) return 'transparent';
+  const x0=scales.x.getPixelForValue(elev[0].d);
+  const x1=scales.x.getPixelForValue(elev[elev.length-1].d);
+  if(!(x1>x0)) return 'transparent';
+  const B=Math.max(2, Math.min(SLOPE_CHART_BUCKETS, elev.length));
+  const cubos=cubosYa || slopeBuckets(elev, B);
+  if(!cubos) return slopeColor(0, a);
+  const g=ctx.createLinearGradient(x0, 0, x1, 0);
+  g.addColorStop(0, slopeColor(cubos[0], a));
+  for(let k=0;k<B;k++) g.addColorStop((k+0.5)/B, slopeColor(cubos[k], a));
+  g.addColorStop(1, slopeColor(cubos[B-1], a));
+  return g;
+}
+
+/* Pone el degradado de pendiente en el dataset del perfil como un VALOR concreto,
+   y lo rehace solo cuando cambia el ancho del gráfico.
+
+   NO es un refinamiento, es la diferencia entre que el hover vaya fluido o no:
+   Chart.js resuelve las opciones **scriptables una vez POR PUNTO**, así que con
+   `borderColor: c => slopeChartGradient(...)` y un perfil de 510 puntos salían
+   **1020 recálculos del perfil de pendientes por repintado**… y el hover repinta en
+   cada mousemove. Medido con una ruta de 3000 puntos: 114 ms por movimiento del
+   ratón (~9 fps). Como valor concreto se calcula una vez y se reutiliza.
+
+   Va en `afterLayout` porque ahí ya están las escalas y el chartArea, y todavía no
+   se han resuelto las opciones de los elementos: el valor nuevo entra en el mismo
+   ciclo de update. */
+function slopeGradientPlugin(elev){
+  const n=(elev||[]).length;
+  const cubos=n>1 ? slopeBuckets(elev, Math.max(2, Math.min(SLOPE_CHART_BUCKETS, n))) : null;
+  let x0=null, x1=null;
+  return {id:'slopeGradient',
+    afterLayout(chart){
+      if(!cubos) return;
+      const nx0=chart.scales.x.getPixelForValue(elev[0].d);
+      const nx1=chart.scales.x.getPixelForValue(elev[n-1].d);
+      if(nx0===x0 && nx1===x1) return;          // mismo ancho: el degradado vale
+      x0=nx0; x1=nx1;
+      const ds=chart.data.datasets[0];
+      ds.borderColor    = slopeChartGradient(chart, elev, undefined, cubos);
+      ds.backgroundColor= slopeChartGradient(chart, elev, .34, cubos);
+    }};
+}
+
+/* Leyenda de la escala: la tira de color con sus cortes. La pintan los dos
+   detalles, y sale de SLOPE_SCALE para que no se pueda quedar desfasada. */
+function slopeLegendHtml(){
+  const S=SLOPE_SCALE, max=S[S.length-1][0];
+  const paradas=S.map(([p,c])=>`rgb(${c.join(',')}) ${p/max*100}%`).join(',');
+  const marcas=S.map(([p],i)=>{
+    const x=p/max*100;
+    // la primera marca se alinea a la izquierda y la última a la derecha, o se
+    // saldrían media etiqueta por cada punta de la tira
+    const tr=i===0?'0':(i===S.length-1?'-100%':'-50%');
+    return `<i style="left:${x}%;transform:translateX(${tr})">${p}${i===S.length-1?'&nbsp;%+':''}</i>`;
+  }).join('');
+  return `<span class="sl-lbl">Pendiente</span><span class="sl-scale">`
+       + `<span class="sl-bar" style="background:linear-gradient(90deg,${paradas})"></span>`
+       + `<span class="sl-ticks">${marcas}</span></span>`;
+}

@@ -49,6 +49,16 @@
 #sec-plan .pl-more.open{display:flex}
 #sec-plan .pl-more .btn{text-align:left;justify-content:flex-start}
 
+/* Cuadro flotante del hover sincronizado mapa↔perfil (mismas reglas que en
+   detalle.css). OJO: nace con display:none para que no aparezca antes del primer
+   hover, así que para mostrarlo hay que forzar display:block — limpiar el estilo
+   inline lo devuelve a este none. */
+#sec-plan .hover-infobox{position:absolute;z-index:6;pointer-events:none;display:none;
+  background:rgba(11,18,14,.92);border:1px solid var(--line-strong);border-radius:8px;
+  padding:6px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.6;white-space:nowrap;
+  box-shadow:0 2px 8px rgba(0,0,0,.5)}
+#sec-plan .hover-infobox .hb-km{font-weight:500;color:var(--pr-yellow);margin-bottom:2px}
+
 /* ── BANDA DE MÉTRICAS ────────────────────────────────────────────────────── */
 #sec-plan .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
   gap:10px;margin:14px 0 0}
@@ -206,4 +216,22 @@
 @media(hover:none) and (pointer:coarse){
   #sec-plan .act-badge{min-height:34px}
   #sec-plan .act-opt:hover{transform:none}
+}
+
+/* ── Leyenda de la escala de pendiente ───────────────────────────────────────
+   La tira de color y sus cortes, entre la cabecera del perfil y la gráfica. El
+   degradado y las marcas los escribe slopeLegendHtml() (static/shared.js) en
+   estilos inline: los colores de la escala viven en el JS que pinta, como el
+   resto de colores de serie, y así la leyenda no puede desfasarse de la traza. */
+#sec-plan .slope-legend{display:flex;align-items:center;gap:8px;justify-content:flex-end;
+  margin:-2px 0 8px;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted-faint)}
+#sec-plan .slope-legend.hidden{display:none}
+#sec-plan .slope-legend .sl-scale{position:relative;display:block;width:136px;height:17px}
+#sec-plan .slope-legend .sl-bar{position:absolute;top:0;left:0;right:0;height:6px;
+  border-radius:3px;border:1px solid var(--line)}
+#sec-plan .slope-legend .sl-ticks i{position:absolute;top:8px;font-style:normal;
+  letter-spacing:0;color:var(--muted-dim);white-space:nowrap}
+@media (max-width:520px){
+  #sec-plan .slope-legend .sl-lbl{display:none}
 }

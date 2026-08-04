@@ -378,10 +378,26 @@
         encoding: 'terrarium', tileSize: 256, maxzoom: 15,
       });
       if (!coords.length) return;
-      map.addSource('ruta', {type: 'geojson',
+      /* lineMetrics:true es lo que habilita ['line-progress'], o sea el degradado
+         por pendiente de abajo. Sin él MapLibre ignora line-gradient. */
+      map.addSource('ruta', {type: 'geojson', lineMetrics: true,
         data: {type: 'Feature', geometry: {type: 'LineString', coordinates: coords}}});
+      /* La traza va coloreada por lo empinado del terreno (verde llano → rojo
+         pared, ver «Escala de pendiente» en shared.js), la misma escala que el
+         perfil de abajo. Si la ruta no trae elevación se queda del color de la
+         actividad, como siempre. */
+      const grad = slopeGradientExpr(current.elevation);
+      /* Ribete oscuro DEBAJO de la traza. Con la escala de pendiente el color va
+         de verde a rojo, y un verde sobre el topográfico (que ya es verde y
+         claro) se pierde; con los colores de actividad, todos saturados, no hacía
+         falta. Es el recurso de toda la vida en cartografía. */
+      map.addLayer({id: 'ruta-linea-casing', type: 'line', source: 'ruta',
+        layout: {'line-join': 'round', 'line-cap': 'round'},
+        paint: {'line-color': '#0b120e', 'line-width': 7, 'line-opacity': .45}});
       map.addLayer({id: 'ruta-linea', type: 'line', source: 'ruta',
-        paint: {'line-color': color, 'line-width': 4, 'line-opacity': 0.9}});
+        layout: {'line-join': 'round', 'line-cap': 'round'},
+        paint: grad ? {'line-gradient': grad, 'line-width': 4, 'line-opacity': 0.95}
+                    : {'line-color': color, 'line-width': 4, 'line-opacity': 0.9}});
       // Línea invisible más ancha encima, solo para que el hover sea más fácil
       // de acertar que sobre la línea real de 4px (patrón de dash-lines-hit).
       map.addLayer({id: 'ruta-linea-hit', type: 'line', source: 'ruta',
@@ -501,15 +517,33 @@
     box.style.top = (pt.y - 10) + 'px';
   }
   /* Punto de entrada único del hover: lo llaman el mapa (mousemove sobre la
-     línea) y los 3 gráficos (onHover), así se mantienen sincronizados. */
+     línea) y los 3 gráficos (onHover), así se mantienen sincronizados.
+
+     El cerrojo NO es opcional: el update() de Chart.js REENVÍA el último evento
+     de ratón (`_lastEvent`, un replay interno) y con él vuelve a llamar a
+     onHover, o sea a esta misma función. Sin el cerrojo, setHoverD(null) —el
+     mouseleave— se deshacía a sí mismo: el replay reponía la distancia anterior y
+     el cuadro flotante se quedaba pegado en el mapa para siempre. */
+  let _syncing = false;
   function setHoverD(d) {
+    if (_syncing) return;
+    _syncing = true;
     hoverD = d;
-    if (elevChart) elevChart.update('none');
-    if (speedChart) speedChart.update('none');
-    if (hrChart) hrChart.update('none');
+    /* render() y NO update('none'): el crosshair solo necesita que se REPINTE el
+       lienzo. update() reconstruye escalas y vuelve a resolver las opciones de los
+       500 puntos de cada serie en cada mousemove, y además reenvía el último evento
+       de ratón (el replay que obliga al cerrojo de arriba). */
+    try {
+      if (elevChart) elevChart.render();
+      if (speedChart) speedChart.render();
+      if (hrChart) hrChart.render();
+    } finally { _syncing = false; }
     _updateMapHover();
   }
-  function _crosshairPlugin() {
+  /* `colorAt(i)` da el color del punto resaltado. El perfil pasa el de la
+     pendiente de ese tramo, para que el punto no cante sobre una línea que ahí
+     es verde; velocidad y FC no lo pasan y usan el color de su serie. */
+  function _crosshairPlugin(colorAt) {
     return {id: 'hoverCrosshair',
       afterDatasetsDraw(chart) {
         if (hoverD == null) return;
@@ -525,7 +559,7 @@
         c.save();
         c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 1;
         c.beginPath(); c.moveTo(x, chart.chartArea.top); c.lineTo(x, chart.chartArea.bottom); c.stroke();
-        c.fillStyle = chart.data.datasets[0].borderColor;
+        c.fillStyle = (colorAt && colorAt(lo)) || chart.data.datasets[0].borderColor;
         c.beginPath(); c.arc(x, y, 4, 0, Math.PI * 2); c.fill();
         c.strokeStyle = '#101a14'; c.lineWidth = 1.5; c.stroke();
         c.restore();
@@ -573,17 +607,6 @@
           grid: {color: GRID, drawTicks: false}, border: {display: false}},
     };
   }
-  /* Relleno del perfil: degradado del color de la actividad (.38 → 0), como el
-     prototipo. Scriptable porque necesita el chartArea, que no existe hasta el
-     primer layout. */
-  function _areaGradient(chart, hex) {
-    const {ctx, chartArea} = chart;
-    if (!chartArea) return 'transparent';
-    const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-    g.addColorStop(0, hex + '61');      // 0x61 ≈ 38 %
-    g.addColorStop(1, hex + '00');
-    return g;
-  }
   /* Subtítulo del perfil: "2 083 m salida · 3 404 m cima · pendiente máx. 34 %".
      La pendiente se mide sobre tramos de al menos 30 m para que el ruido del GPS
      no dé porcentajes absurdos. */
@@ -607,7 +630,7 @@
     if (!data.length) { panel.style.display = 'none'; return; }
     panel.style.display = '';
     q('#d-elev-sub').textContent = _elevSub(data);
-    const actColor = (activityOf(current.activity_type) || {}).color || '#e8863c';
+    q('#d-slope-legend').innerHTML = slopeLegendHtml();
 
     const svg = `<svg width="26" height="26" xmlns="http://www.w3.org/2000/svg"><circle cx="13" cy="13" r="11" fill="#e3b23c" stroke="#0b120e" stroke-width="2.5"/><g transform="translate(6.5,7.5)"><rect x="0" y="2" width="13" height="9" rx="1.5" fill="#0b120e"/><path d="M4 0h5l1 2H3z" fill="#0b120e"/><circle cx="6.5" cy="6.5" r="2.3" fill="#e3b23c"/><circle cx="6.5" cy="6.5" r="1.1" fill="#0b120e"/></g></svg>`;
     const photoIcon = new Image(26, 26);
@@ -621,10 +644,19 @@
         meta.data.forEach(el => c.drawImage(photoIcon, el.x - 13, el.y - 28, 26, 26));
       },
     };
+    /* Perfil coloreado por pendiente, igual que la traza del mapa: cada tramo va
+       del color de lo empinado que sea (ver «Escala de pendiente» en shared.js).
+       Tanto la línea como el relleno son el mismo degradado, uno opaco y otro
+       translúcido. */
+    const prof = slopeProfile(data);
     const sets = [{
-      data: data.map(d => ({x: d.d, y: d.e})), fill: true, borderColor: '#f0b070',
-      backgroundColor: c => _areaGradient(c.chart, actColor),
-      pointRadius: 0, borderWidth: 2, tension: .3,
+      data: data.map(d => ({x: d.d, y: d.e})), fill: true,
+      /* Valores de arranque: el degradado por pendiente lo pone
+         slopeGradientPlugin como VALOR concreto (una opción scriptable aquí se
+         resolvería una vez por punto en CADA repintado, y el hover repinta en
+         cada mousemove: 1020 recálculos por movimiento). */
+      borderColor: '#f0b070', backgroundColor: 'transparent',
+      pointRadius: 0, borderWidth: 2.4, tension: .3,
     }];
     if (ppts.length) sets.push({
       type: 'scatter', data: ppts.map(p => ({x: p.x, y: p.y})),
@@ -632,7 +664,7 @@
       backgroundColor: 'transparent', borderColor: 'transparent',
     });
     elevChart = new Chart(ctx, {type: 'line', data: {datasets: sets},
-      plugins: [iconPlugin, _crosshairPlugin()],
+      plugins: [iconPlugin, _crosshairPlugin(i => slopeColor(prof[i])), slopeGradientPlugin(data)],
       options: {
         maintainAspectRatio: false,
         onClick(e, els) {
@@ -641,6 +673,11 @@
           if (idx >= 0) openLightbox(idx);
         },
         onHover(e, els, chart) {
+          /* Chart.js llama a onHover TAMBIÉN con el mouseout, y encima diferido a
+             la siguiente animación: llega DESPUÉS del onmouseleave del canvas y,
+             como trae la última posición, volvería a encender el cuadro flotante.
+             Aquí es donde se apaga de verdad. */
+          if (!e || e.type === 'mouseout') { setHoverD(null); return; }
           ctx.style.cursor = els.length && els[0].datasetIndex === 1 ? 'pointer' : 'default';
           const d = chart.scales.x.getValueForPixel(e.x);
           if (d != null && !isNaN(d)) setHoverD(Math.max(chart.scales.x.min, Math.min(chart.scales.x.max, d)));
@@ -684,6 +721,8 @@
       options: {
         maintainAspectRatio: false,
         onHover(e, els, chart) {
+          // ver renderElev: el mouseout llega diferido, después del mouseleave
+          if (!e || e.type === 'mouseout') { setHoverD(null); return; }
           const d = chart.scales.x.getValueForPixel(e.x);
           if (d != null && !isNaN(d)) setHoverD(Math.max(chart.scales.x.min, Math.min(chart.scales.x.max, d)));
         },
@@ -715,6 +754,8 @@
       options: {
         maintainAspectRatio: false,
         onHover(e, els, chart) {
+          // ver renderElev: el mouseout llega diferido, después del mouseleave
+          if (!e || e.type === 'mouseout') { setHoverD(null); return; }
           const d = chart.scales.x.getValueForPixel(e.x);
           if (d != null && !isNaN(d)) setHoverD(Math.max(chart.scales.x.min, Math.min(chart.scales.x.max, d)));
         },

@@ -373,6 +373,23 @@ def main():
         check(hover["visible"], "pasar el ratón por el perfil muestra el cuadro flotante en el mapa")
         check("km" in hover["texto"] and "Alt" in hover["texto"],
               f"el cuadro trae km y altitud: «{hover['texto'][:40]}»")
+        # Salir del GRÁFICO tiene que apagarlo, y es un caso aparte de salir del
+        # mapa (el de más abajo): son dos trampas de Chart.js que estuvieron rotas
+        # sin que se notara. Su update() REENVÍA el último mousemove, así que
+        # setHoverD(null) se deshacía a sí mismo; y llama a onHover TAMBIÉN con el
+        # mouseout, diferido a la siguiente animación, o sea DESPUÉS del
+        # mouseleave del canvas. Con cualquiera de los dos sin arreglar, el cuadro
+        # se queda pegado en el mapa para siempre.
+        # Se sale por la IZQUIERDA, no hacia abajo: debajo del perfil está el
+        # gráfico de velocidad, y entrar en él dispara su propio hover, con lo que
+        # el resultado dependería de qué gráfico procesa antes su mouseout. Por el
+        # lado solo interviene el perfil, y la comprobación es determinista.
+        page.mouse.move(caja["x"] - 80, caja["y"] + caja["height"] * 0.5, steps=8)
+        page.wait_for_timeout(450)
+        check(page.evaluate("""() => {
+            const box = document.querySelector('#sec-detalle .hover-infobox');
+            return !box || getComputedStyle(box).display === 'none';
+        }"""), "al salir del GRÁFICO (no del mapa) el cuadro se apaga")
         # y el mapa → gráficos: pasar por la línea del track resalta lo mismo
         page.locator("#d-map").scroll_into_view_if_needed()
         page.wait_for_timeout(200)
@@ -1023,13 +1040,87 @@ def main():
               f"al cambiar de sección se cierra el watch del GPS "
               f"({geo['w']} abiertos, {geo['c']} cerrados)")
 
-        # ── 17. errores de consola ────────────────────────────────────────────
+        # ── 17. hover sincronizado en el detalle de un PLAN ───────────────────
+        # El detalle de un plan no lo tenía hasta la 0.9.13: el ratón por el
+        # perfil o por la traza no decía nada, mientras que en el detalle de una
+        # ruta sí. Es el mismo mecanismo (mismo cuadro .hover-infobox), con la
+        # diferencia de que un plan solo tiene elevación. Las dos trampas de
+        # Chart.js que lo dejaban pegado al salir se comprueban en el bloque de
+        # «Hover sincronizado mapa↔gráficos» y aquí.
+        seccion("Hover sincronizado en el detalle de un plan")
+        caja_pl = "#sec-plan .hover-infobox"
+        page.goto(f"{BASE}/Plan/{pid_plan}", wait_until="load")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=15000)
+        page.wait_for_function(
+            "() => document.querySelector('#pl-map canvas') !== null", timeout=15000)
+        page.wait_for_timeout(1800)
+        cv = page.locator("#pl-elev").bounding_box()
+        page.mouse.move(cv["x"] + cv["width"] * .45, cv["y"] + cv["height"] * .5)
+        page.wait_for_timeout(350)
+        if check(page.locator(caja_pl).is_visible(),
+                 "hover en el perfil enciende el cuadro flotante del mapa"):
+            t1 = page.locator(caja_pl).inner_text()
+            check("km" in t1 and "Alt" in t1,
+                  f"el cuadro dice km y altitud: «{t1.replace(chr(10), ' ')[:40]}»")
+            page.mouse.move(cv["x"] + cv["width"] * .8, cv["y"] + cv["height"] * .5)
+            page.wait_for_timeout(350)
+            check(page.locator(caja_pl).inner_text() != t1,
+                  "mover el cursor mueve la posición resaltada")
+            page.mouse.move(cv["x"] + cv["width"] * .5, cv["y"] + cv["height"] + 130,
+                            steps=8)
+            page.wait_for_timeout(450)
+            check(not page.locator(caja_pl).is_visible(),
+                  "al salir del gráfico el cuadro se apaga")
+        # mapa → perfil: barrido en rejilla hasta dar con la traza (el mapa no
+        # está expuesto en window, así que no se puede proyectar el punto)
+        m = page.locator("#pl-map").bounding_box()
+        sobre = False
+        for fx in (.5, .45, .55, .4, .6, .35, .65):
+            for fy in (.5, .45, .55, .4, .6):
+                page.mouse.move(m["x"] + m["width"] * fx, m["y"] + m["height"] * fy)
+                page.wait_for_timeout(70)
+                if page.locator(caja_pl).is_visible():
+                    sobre = True
+                    break
+            if sobre:
+                break
+        check(sobre, "hover sobre la traza del mapa enciende el cuadro")
+        check(page.locator(caja_pl).count() == 1,
+              f"un solo cuadro flotante en el DOM ({page.locator(caja_pl).count()})")
+
+        # ── 18. color por pendiente ───────────────────────────────────────────
+        # La traza del mapa y el perfil van de verde a rojo según lo empinado del
+        # terreno, en las dos vistas de detalle (v0.9.13). La lógica pura la mide
+        # `node tests/slope_smoke.js`; aquí solo se comprueba que la leyenda llega
+        # al DOM con la escala de verdad —si slopeLegendHtml() se rompe, el panel
+        # se queda mudo y el color deja de significar nada— y que el perfil sigue
+        # dibujándose.
+        seccion("Color por pendiente (leyenda de la escala)")
+        for etiqueta, url, sec, leg, lienzo in (
+            ("ruta", f"/Sendero/{rid}",   "#sec-detalle", "#d-slope-legend",  "#d-elev"),
+            ("plan", f"/Plan/{pid_plan}", "#sec-plan",    "#pl-slope-legend", "#pl-elev"),
+        ):
+            page.goto(f"{BASE}{url}", wait_until="load")
+            page.wait_for_selector(f"{sec}:not(.hidden)", timeout=15000)
+            page.wait_for_function("s => document.querySelector(s) !== null",
+                                   arg=lienzo, timeout=15000)
+            page.wait_for_timeout(1200)
+            check(page.locator(f"{leg} .sl-ticks i").count() >= 3,
+                  f"{etiqueta}: la leyenda pinta los cortes de la escala "
+                  f"({page.locator(f'{leg} .sl-ticks i').count()})")
+            fondo = page.locator(f"{leg} .sl-bar").get_attribute("style") or ""
+            check("linear-gradient" in fondo and fondo.count("rgb(") >= 3,
+                  f"{etiqueta}: la tira lleva el degradado con sus colores")
+            check(page.locator(f"{leg} .sl-bar").is_visible(),
+                  f"{etiqueta}: y se ve (no la tapa el panel)")
+
+        # ── 19. errores de consola ────────────────────────────────────────────
         seccion("Errores de JavaScript")
         errs = con.limpias()
         check(not errs, "ningún error de JS ni excepción sin capturar"
               + (":\n     " + "\n     ".join(errs[:8]) if errs else ""))
 
-        # ── 18. copia local retenida por otra ventana (IndexedDB) ─────────────
+        # ── 20. copia local retenida por otra ventana (IndexedDB) ─────────────
         # Regresión de la 0.9.9. Al subir DB_VERSION (v3 → v4 en la 0.9.8), una
         # ventana con el código anterior retenía la BD: el open() de la ventana
         # actualizada no resolvía NUNCA —la app se veía a medias y sin error— y el

@@ -66,6 +66,10 @@
         <span class="panel-title">Perfil de elevación</span>
         <span id="pl-elev-sub" class="panel-sub mono"></span>
       </div>
+      <!-- Leyenda de la escala de pendiente. La pinta slopeLegendHtml()
+           (static/shared.js) para que salga de la misma tabla de colores que la
+           traza del mapa y el perfil: si cambian los cortes, cambia sola. -->
+      <div id="pl-slope-legend" class="slope-legend"></div>
       <div class="chart-box"><canvas id="pl-elev"></canvas></div>
     </div>
 

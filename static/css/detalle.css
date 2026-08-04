@@ -322,3 +322,21 @@
   #sec-detalle .act-opt:hover{transform:none}
   #sec-detalle .d-tab{min-height:44px}
 }
+
+/* ── Leyenda de la escala de pendiente ───────────────────────────────────────
+   La tira de color y sus cortes, entre la cabecera del perfil y la gráfica. El
+   degradado y las marcas los escribe slopeLegendHtml() (static/shared.js) en
+   estilos inline: los colores de la escala viven en el JS que pinta, como el
+   resto de colores de serie, y así la leyenda no puede desfasarse de la traza. */
+#sec-detalle .slope-legend{display:flex;align-items:center;gap:8px;justify-content:flex-end;
+  margin:-2px 0 8px;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted-faint)}
+#sec-detalle .slope-legend.hidden{display:none}
+#sec-detalle .slope-legend .sl-scale{position:relative;display:block;width:136px;height:17px}
+#sec-detalle .slope-legend .sl-bar{position:absolute;top:0;left:0;right:0;height:6px;
+  border-radius:3px;border:1px solid var(--line)}
+#sec-detalle .slope-legend .sl-ticks i{position:absolute;top:8px;font-style:normal;
+  letter-spacing:0;color:var(--muted-dim);white-space:nowrap}
+@media (max-width:520px){
+  #sec-detalle .slope-legend .sl-lbl{display:none}
+}

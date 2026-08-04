@@ -58,6 +58,11 @@ function probar(sec){
   global.OFFLINE_LAYER='Offline (local)'; global.Chart=function(){}; global.maplibregl={};
   /* viven en static/shared.js y static/js/core/tiles.js, que aquí no se cargan */
   global.addGeolocate=()=>null; global.geoTracking=()=>false;
+  /* escala de pendiente (static/shared.js): la usan los dos perfiles */
+  global.slopeColor=()=>'rgb(0,0,0)'; global.slopeProfile=()=>[];
+  global.slopeGradientExpr=()=>null; global.slopeLegendHtml=()=>'';
+  global.slopeBuckets=()=>null; global.slopeChartGradient=()=>'transparent';
+  global.slopeGradientPlugin=()=>({id:'slopeGradient'});
   global.Tiles={downloadForTrack(){}, statusForTrack(){}};
   global.go=()=>{};
   /* Sin red: las secciones piden /api/config y similares al montar. Devolver una

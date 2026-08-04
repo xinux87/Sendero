@@ -5,6 +5,27 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.13] — 2026-08-04
+
+### Añadido
+- **La traza del mapa y el perfil de elevación se colorean por la pendiente**, de verde
+  (llano) a rojo (pared), en el detalle de una ruta y en el de un plan. La escala es de
+  pendiente absoluta —bajar al 25 % pinta como subirlo, porque las dos cosas son terreno
+  duro— y va con su leyenda (0 · 5 · 10 · 15 · 25 %) en la cabecera del perfil, para que
+  un naranja concreto signifique algo. La traza lleva además un ribete oscuro, o el verde
+  se perdería sobre el mapa topográfico. Una ruta sin datos de elevación se sigue viendo
+  del color de su actividad.
+- El hover sincronizado (mapa↔perfil) se repinta ahora **con `render()` en vez de
+  `update()`** y el degradado se calcula una sola vez, no una vez por punto en cada
+  movimiento del ratón: de ~114 ms por movimiento a ~1,8 ms.
+
+### Corregido
+- **En el detalle de un plan no se veían los datos al pasar el ratón** por el perfil de
+  elevación ni por la traza del mapa, mientras que en el detalle de una ruta ya hecha sí.
+  Ahora las dos vistas se comportan igual: el cursor resalta la misma posición en el mapa
+  y en el perfil, y un cuadro flotante dice el kilómetro y la altitud de ese punto (un
+  plan no tiene velocidad ni frecuencia cardíaca, que todavía no se ha hecho).
+
 ## [0.9.12] — 2026-08-03
 
 ### Cambiado

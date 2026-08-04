@@ -52,6 +52,7 @@ python -m pytest                   # 111 tests unitarios (tests/): editing, pars
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
 node tests/sec_smoke.js            # sec/detalle.js y sec/plan.js cargan contra los ids reales del markup
 node tests/tiles_smoke.js          # geometría del corredor de teselas (§6.2)
+node tests/slope_smoke.js          # escala de pendiente (color verde→rojo de traza y perfil)
 node tests/speedfix_smoke.js       # velocidad excesiva y convergencia de «Corregir todo»
 node tests/gps_parity_smoke.js     # el detector de avisos GPS del cliente == el del servidor
 
@@ -197,7 +198,9 @@ estrategia le toca a cada URL; `node tests/sec_smoke.js` carga `static/js/sec/de
 documento real es la suma de los dos: las acciones de cabecera viven en el shell), los
 monta con el Store devolviendo `null` y así pilla un selector que ya no existe. Si añades
 una sección al array `SECCIONES`, hereda la comprobación;
-`node tests/tiles_smoke.js` mide el corredor de teselas; y `node tests/speedfix_smoke.js`
+`node tests/tiles_smoke.js` mide el corredor de teselas; `node tests/slope_smoke.js`
+comprueba la escala de pendiente (que sea absoluta, que la ventana aplane el ruido del
+GPS y que las paradas del degradado de MapLibre vayan crecientes); y `node tests/speedfix_smoke.js`
 extrae del propio `sec/editor.js` la geometría de la corrección de velocidad excesiva
 (`planSpeedFix`/`detectSpeedErr`) y la ejecuta contra tracks sintéticos con saltos de GPS.
 
@@ -249,6 +252,10 @@ panel en vez de en el eje de la gráfica.
 | `--gr-red` | `#e2492c` | rojo: acción primaria (`--gr-red-hover` al pasar) |
 | `--display` / `--mono` | Oswald / IBM Plex Mono | títulos y cifras / datos y etiquetas |
 
+Los colores de la **escala de pendiente** (verde→rojo de la traza y el perfil) también
+viven en `static/shared.js`, en `SLOPE_SCALE`, y de ahí sale hasta la leyenda: ver
+«Color por pendiente en los dos detalles».
+
 Los colores de actividad viven en `ACTIVITIES` (`static/shared.js`), no en CSS:
 `senderismo #e8863c` · `bicicleta #3d9be9` · `caminata #43b97f` · `correr #e34b4b` ·
 `esquí #a86ee0` · `otros #e055c0`, con el glifo del icono en `#0b120e` (tinta oscura
@@ -290,6 +297,9 @@ static/sw.js       Service Worker (lo sirve /sw.js, no /static/sw.js — ver api
 static/icons/      icon-192.png, icon-512.png, icon-maskable-512.png, generados de
                    static/icon.svg con cairosvg (el maskable al 80% sobre el fondo)
 static/shared.js   ACTIVITIES/activityOf/iconSvg/_loadActImages, BASEMAP_TILES,
+                   SLOPE_SCALE/slopeColor/slopeProfile/slopeBuckets/
+                   slopeGradientExpr/slopeChartGradient/slopeLegendHtml
+                   (color por pendiente de los dos detalles),
                    buildStyle/basemapNames/defaultBasemap/applyBasemap, MAP_CFG,
                    addGeolocate/geoTracking (botón «Mi ubicación», ver §6.3)
 static/js/core/    chrome.js  helpers globales ($, toast, fmtKm/fmtDur/fmtDate, esc)
@@ -722,7 +732,7 @@ desmonta cuando la sección no cambia.
 | `renderStats()` | `#d-stats` | 7 tarjetas `.stat` (8 con FC máx). La primera lleva `.acc` + `border-left-color` de la actividad y la cifra en ámbar. `tests/e2e_spa.py` exige ≥7 |
 | `renderTech()` | `#d-tech` | filas `.kv-row` solo con lo que la ruta tiene. Cadencia y temperatura NO se inventan: el modelo no las guarda |
 | `renderQuality()` | `#d-quality-badge` / `#d-quality-body` | los `gps_issues`; `severity:'high'` → `.warn.crit` (ámbar), el resto `.warn.info`. Sin avisos: «Sin errores detectados» |
-| `renderElev()` | `#d-elev` + `#d-elev-sub` | área con degradado del color de la actividad (`_areaGradient`), línea `#f0b070`, y el subtítulo «X m salida · Y m cima · pendiente máx. N %» (`_elevSub`, tramos ≥30 m para que el ruido del GPS no dé porcentajes absurdos) |
+| `renderElev()` | `#d-elev` + `#d-elev-sub` + `#d-slope-legend` | línea y relleno con el degradado **por pendiente** (`slopeChartGradient`, ver «Color por pendiente»), el subtítulo «X m salida · Y m cima · pendiente máx. N %» (`_elevSub`, tramos ≥30 m para que el ruido del GPS no dé porcentajes absurdos) y la leyenda de la escala |
 | `renderSpeed()` / `renderHR()` | `#speed-section` / `#hr-section` + sus pies | ocultan su panel entero si la serie está vacía (lo comprueba la suite e2e) |
 | `renderGallery()` + `renderPhotosHead()` | `#d-gallery`, `#d-photos-count`, `#d-photos-all` | el pie de cada miniatura es la hora de la foto; la cabecera dice cuántas son y si vienen de Immich |
 
@@ -854,10 +864,106 @@ Dos categorías, y la diferencia importa:
   listado aún no ha llegado por la sincronización, así que sin `refresh` se serviría la
   copia vieja.
 
+### Color por pendiente en los dos detalles (`SLOPE_*` en `static/shared.js`)
+Desde la v0.9.13, la traza del mapa y el perfil de elevación del detalle de una RUTA y del
+de un PLAN van coloreados de **verde (llano) a rojo (pared)** según lo empinado del
+terreno, con la leyenda de la escala en la cabecera del perfil. La escala vive en
+`static/shared.js` porque la comparten las dos vistas; la lógica es pura y la mide
+`node tests/slope_smoke.js`.
+
+- **Todo se mide por DISTANCIA, nunca por índice de la serie**, y esto es EL fallo de esta
+  función (costó una versión, aunque no salió publicado). La serie de elevación **no es
+  uniforme en distancia**: el GPX muestrea por tiempo, así que una subida lenta acumula
+  puntos y una bajada rápida casi ninguno, y `resample()` del modo ligero toma un paso
+  constante en índice, que conserva el sesgo. Medido en una ruta real de 7,6 km, el punto
+  nº 50 % de la serie estaba en el km 37 %: pintar «el color del punto k/n en la fracción
+  k/n del eje» ponía un **28,6 % (rojo) donde el terreno iba al 2,3 % (llano)**, con casi
+  800 m de desfase. Por eso existe `slopeBuckets(elev, B)` —media de |pendiente| en cubos
+  de igual LONGITUD— y por eso lo usan las dos, la traza y el perfil. Si añades otra cosa
+  que coloree por pendiente, sácala de ahí.
+- **La pendiente es ABSOLUTA**: bajar al 25 % pinta igual que subirlo. Describe lo duro del
+  terreno, no el esfuerzo de ascenso, y así «verde = llano, rojo = empinado» se lee sin
+  traducir. Si algún día se quiere distinguir la bajada, es otra escala (azul), no un
+  parche a esta.
+- **Se mide con una ventana centrada de `SLOPE_WINDOW_M` (50 m)**, no entre puntos
+  seguidos: la pendiente punto a punto de un GPS es ruido puro (±60 % en llano) y el color
+  parpadearía en vez de describir nada. Mismo motivo por el que `_elevSub()` mide la
+  pendiente máxima sobre tramos de ≥30 m. En los extremos la ventana se estira hacia
+  dentro, o el primer y el último kilómetro saldrían con el doble de ruido.
+- **En una cima o una vaguada la ventana da ~0 % y sale un punto verde.** No es un fallo:
+  ahí el terreno pasa de subir a bajar y localmente es llano. Cualquier estimador que lo
+  «arregle» (media de |pendiente|, medias ventanas) devuelve el ruido a las zonas llanas,
+  que es mucho más visible. No lo reabras sin medir las dos cosas.
+- **Mapa**: `line-gradient` con `['line-progress']`, que exige **`lineMetrics: true` en la
+  fuente** — sin eso MapLibre ignora el degradado y la traza sale sin color. La fracción de
+  cada parada es `d/dTotal` de la serie de elevación (la misma magnitud que `line-progress`
+  salvo por la deformación de Mercator, milésimas en un track de kilómetros). Las paradas se
+  agrupan en `SLOPE_BUCKETS` (200) cubos y las de igual color se funden: sin eso saldría una
+  parada por punto y la expresión sería impagable. **Tienen que ir estrictamente crecientes**
+  o MapLibre descarta el degradado entero. Los dos desfases que esto podría tener están
+  medidos en rutas reales y son despreciables: Mercator↔suelo **0,00 %**, y el track decimado
+  del modo ligero (que es más corto que la serie de elevación) desplaza las paradas **0,2 %,
+  unos 12-15 m** — por debajo de la propia ventana de 50 m. No hace falta corregirlos.
+- **Debajo de la traza va un ribete oscuro** (`ruta-linea-casing` / `pl-ruta-casing`): el
+  verde de la escala se pierde sobre el mapa topográfico, que ya es verde y claro. Con los
+  colores de actividad, todos saturados, no hacía falta.
+- **Perfil**: `slopeChartGradient(chart, elev, alfa, cubos)` (también en `shared.js`, para
+  que las dos vistas no puedan divergir), un degradado de canvas horizontal: opaco para la
+  línea y al 34 % para el relleno. **Se asigna al dataset como VALOR, desde
+  `slopeGradientPlugin` (hook `afterLayout`), NUNCA como opción scriptable** — ver
+  «Rendimiento del hover» justo abajo, que es donde esto se paga. Se sitúa con la **escala X** del gráfico, no con el `chartArea`,
+  para que cada color caiga sobre su kilómetro. **NO se usa `segment.borderColor`**: con
+  estilos por tramo, Chart.js parte también el relleno y deja una costura vertical en cada
+  punto (~80 rayas en un perfil normal). El punto del hover sí va por índice de dato —ahí
+  el índice es el correcto—, que para eso `_crosshairPlugin(colorAt)` acepta un color.
+- **Sin elevación no hay pendiente**: `slopeGradientExpr()` devuelve `null` y la traza se
+  queda del color de la actividad, como siempre. Una pendiente constante SÍ se pinta (dos
+  paradas del mismo color): devolver `null` ahí dejaría gris una rampa perfectamente
+  descriptible.
+- **La actividad sigue viéndose** en el chip sobre el mapa y en el borde de la primera
+  métrica; lo que ya no la lleva es la traza. Por eso el PATCH de actividad de `plan.js`
+  solo repinta `line-color` cuando NO hay degradado.
+- Los colores salen de la paleta del proyecto (verde de `caminata`, ámbar `--pr-yellow`,
+  naranja de `senderismo`, rojo `--gr-red`) más una lima. Van en el JS que pinta, como el
+  resto de colores de serie, y la leyenda se genera de la misma tabla (`slopeLegendHtml()`),
+  así que **no puede desfasarse**: si cambias los cortes, la leyenda cambia sola.
+
+### Rendimiento del hover: qué NO hacer en un `Chart` que se repinta en cada mousemove
+El hover sincronizado repinta las gráficas en **cada movimiento del ratón**, así que
+cualquier cosa que Chart.js resuelva por punto se multiplica por 500 y sesenta veces por
+segundo. Dos reglas que salieron de medirlo (ruta de 3000 puntos, perfil de 501):
+
+- **Nada de opciones scriptables** (`borderColor: c => …`, `backgroundColor: c => …`) con
+  algo que cueste más que leer una variable. Chart.js las resuelve **una vez por punto**:
+  con el degradado por pendiente como función salían **1020 llamadas por repintado**, cada
+  una recalculando el perfil de pendientes entero → **114 ms por movimiento del ratón (~9
+  fps)**. Como valor concreto puesto una vez (`slopeGradientPlugin`, que además solo lo
+  rehace si cambia el ancho del gráfico): **0 llamadas**.
+- **Para mover el crosshair, `chart.render()`, no `chart.update('none')`**. `render()` solo
+  repinta el lienzo (0,26 ms el perfil, 0,56 ms los tres juntos); `update('none')`
+  reconstruye escalas y vuelve a resolver las opciones de los 500 puntos (2,08 ms por
+  gráfica) **y reenvía el último evento de ratón**, que es el replay que obliga al cerrojo
+  `_syncing`.
+
+Lo que sí es barato y no hace falta tocar, medido en el mismo escenario: el `setData()` del
+punto de hover (0,10 ms), el repintado del mapa que provoca (**1,0 ms** de mediana) y el
+`innerHTML` + `offsetWidth` del cuadro flotante (0,07 ms, el reflow no se nota porque el
+mapa es un canvas). Con todo junto el coste por movimiento queda en **~1,8 ms**. Si alguna
+vez hay que bajar de ahí, lo siguiente sería el punto de hover como marcador DOM (mueve con
+un transform, sin repintar el mapa), no micro-optimizar el JS.
+
 ### Hover sincronizado mapa↔gráficos en el detalle (`static/js/sec/detalle.js`)
 Pasar el ratón por la línea del track en el mapa, o por el perfil de elevación/velocidad/FC,
 resalta la misma posición en los otros 3 elementos y muestra un cuadro flotante en el mapa
 con altitud/velocidad/FC en ese punto. Punto de entrada único: `setHoverD(d)` (d en km o `null`).
+
+**Lo mismo hay en el detalle de un PLAN** (`sec/plan.js`, desde la v0.9.13), con las mismas
+funciones y el mismo `.hover-infobox`, pero solo con elevación: un plan no tiene velocidad
+ni FC porque no se ha hecho todavía. Las capas se llaman `pl-ruta-hit` y `pl-hover-point`, y
+las crea `drawTrack()` (así se repintan solas al entrar/salir de la capa offline, regla 15);
+los `map.on('mousemove'/'mouseleave', 'pl-ruta-hit')` van en `initMap()`, porque `drawTrack()`
+se vuelve a ejecutar tras cada cambio de estilo y acumularía handlers. Si tocas una de las dos
+vistas, mira si la otra necesita el mismo cambio.
 - **`elevation`/`speed`/`heart_rate` son series independientes**, cada una con su propio muestreo
   de `d` (no todos los puntos del track tienen elevación/velocidad/FC). `_nearestByD(arr,d)` busca
   el punto más cercano por distancia (binary search, arrays ya vienen ordenados por `d`); no asumas
@@ -872,6 +978,22 @@ con altitud/velocidad/FC en ese punto. Punto de entrada único: `setHoverD(d)` (
   al salir — usa asignación directa (no `addEventListener`) porque `renderElev/renderSpeed/renderHR`
   destruyen y recrean el `Chart` en cada `renderAll()` (tras reescanear) pero reutilizan el mismo
   `<canvas>`: con `addEventListener` los listeners se irían acumulando en cada re-render.
+- **Apagar el hover al salir del gráfico son DOS trampas de Chart.js**, las dos corregidas en la
+  v0.9.13 y las dos mudas si se revierten (el cuadro se queda pegado en el mapa para siempre, sin
+  ningún error):
+  1. **`chart.update()` REENVÍA el último `mousemove`** (su `_lastEvent`, un replay interno) y con
+     él vuelve a llamar a `onHover`. Como `setHoverD()` actualiza los charts, `setHoverD(null)` se
+     deshacía a sí mismo: el replay reponía la distancia anterior. De ahí el cerrojo `_syncing`,
+     que ignora la reentrada mientras se está actualizando.
+  2. **Chart.js llama a `onHover` también con el `mouseout`**, y encima diferido a la siguiente
+     animación, así que llega DESPUÉS del `onmouseleave` del canvas y trae la última posición
+     buena. Por eso cada `onHover` empieza con `if (!e || e.type === 'mouseout') { setHoverD(null);
+     return; }` — es ahí donde se apaga de verdad, no en el `onmouseleave`.
+  Lo cubren el bloque «Hover sincronizado mapa↔gráficos» (salir del GRÁFICO, que es un caso
+  distinto de salir del mapa: el test viejo solo probaba lo segundo y por eso no lo vio) y el
+  bloque 17 de `tests/e2e_spa.py`. El de la ruta sale del perfil **por la izquierda** a propósito:
+  hacia abajo se entra en el gráfico de velocidad y el resultado depende de qué chart procesa
+  antes su `mouseout`.
 - **Crosshair en los charts**: `_crosshairPlugin()` (plugin Chart.js genérico, `afterDatasetsDraw`)
   lee `hoverD` del scope compartido y dibuja línea+punto leyendo `chart.data.datasets[0].data`
   directamente — funciona igual en los 3 gráficos sin lookup adicional a `current.*`.
@@ -1560,7 +1682,7 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tocaste el CSS del modal Immich (`static/css/detalle.css`): comprueba que
   `#sec-detalle .overlay.hidden` sigue ocultando el modal al cargar la ruta.
 - Con Playwright disponible, la comprobación de verdad es `python tests/e2e_spa.py`
-  (167 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
+  (181 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
   Worker, modo sin conexión y cola de escrituras). Necesita un servidor con
   `SENDERO_DATA` **de pruebas** y `python tests/e2e_seed.py` para sembrarlo.
 - Si tocaste `/actualizar` o el Service Worker: comprueba que la página sigue llegando de
@@ -1653,10 +1775,22 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   y sobreviviendo a un `unmount()`+`mount()` (la copia local la escribe
   `Store.patchPlanRow`)? ¿la lista vacía por el filtro sigue distinguiéndose de la lista
   vacía de verdad?
-- Si tocaste `renderElev/renderSpeed/renderHR` o el mapa en `sec/detalle.js`: ¿el hover
-  sincronizado sigue funcionando en las 4 direcciones (mapa→gráficos y cada gráfico→resto)?
-  Si añades un `Chart` nuevo, usa `ctx.onmouseleave=...` (asignación directa, no
-  `addEventListener`) para no acumular listeners en cada `renderAll()`.
+- Si tocaste la escala de pendiente (`SLOPE_*` en `static/shared.js`) o el color de la traza
+  o del perfil: `node tests/slope_smoke.js`. Y si has tocado cómo se le pasa el color al
+  `Chart`, lee «Rendimiento del hover»: una opción scriptable ahí cuesta 1020 recálculos por
+  repintado y deja el hover a 9 fps. Y comprueba las tres que se rompen calladas:
+  que todo siga saliendo de `slopeBuckets` (**por distancia, no por índice**: la serie de
+  elevación no es uniforme y ese fue el fallo original), que la fuente del mapa siga con
+  **`lineMetrics: true`** (sin eso el degradado no se pinta),
+  que una ruta **sin elevación** siga saliendo del color de la actividad, y que el perfil no
+  vuelva a `segment.borderColor` (deja una costura vertical por punto en el relleno).
+- Si tocaste `renderElev/renderSpeed/renderHR` o el mapa en `sec/detalle.js`, o
+  `drawElevation()`/`drawTrack()` en `sec/plan.js`: ¿el hover sincronizado sigue funcionando en
+  las dos direcciones (mapa→gráficos y gráfico→mapa) **y se apaga al salir del gráfico**? Lo
+  segundo es lo que se rompe sin ruido (ver las dos trampas de Chart.js en «Hover sincronizado»).
+  Si añades un `Chart` nuevo: `ctx.onmouseleave=...` con asignación directa (no
+  `addEventListener`, se acumularían en cada `renderAll()`) y el `onHover` que empiece
+  descartando el `mouseout`.
 - Si tocaste el color o la tipografía: ¿sale de un token de `base.html` (regla 9)? Un hex
   suelto en una sección es lo que hace que la próxima vez la paleta quede a medias.
   Comprobación: `grep -rn "#[0-9a-f]\{6\}" static/css/ templates/sec/`. Lo que sí puede
