@@ -191,6 +191,37 @@
     buildPills(); saveFilterState(); renderList();
   }
 
+  /* ── desplegable "⋯" (fecha y buscador) ─────────────────────────────────── */
+  function toggleMore(e) {
+    if (e) e.stopPropagation();       // si no, el click cerraría el menú al vuelo
+    const pop = q('#more-pop'), btn = q('#more-btn');
+    if (!pop || !btn) return;
+    const abre = pop.classList.contains('hidden');
+    pop.classList.toggle('hidden', !abre);
+    btn.classList.toggle('open', abre);
+    btn.setAttribute('aria-expanded', abre ? 'true' : 'false');
+    if (abre) { const s = q('#route-search'); if (s) s.focus(); }
+  }
+
+  function closeMore() {
+    const pop = q('#more-pop'), btn = q('#more-btn');
+    if (!pop || pop.classList.contains('hidden')) return;
+    pop.classList.add('hidden');
+    btn.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+
+  /* Un filtro activo dentro de un menú cerrado es invisible: la lista sale
+     recortada y nada en pantalla lo explica. El botón se enciende en ámbar. */
+  function updateMoreBtn() {
+    const btn = q('#more-btn');
+    if (!btn) return;
+    const hay = !!(searchQ || (dpFrom && dpFrom.value) || (dpTo && dpTo.value));
+    btn.classList.toggle('on', hay);
+    btn.title = hay ? 'Más filtros: fecha y búsqueda (activos)'
+                    : 'Más filtros: fecha y búsqueda';
+  }
+
   function setSort(order) {
     sortOrder = order;
     q('#sort-desc').classList.toggle('on', order === 'desc');
@@ -434,6 +465,7 @@
 
   function renderList() {
     monthDomMap.clear();
+    updateMoreBtn();          // pasa por aquí cualquier cambio de filtro
     const box = q('#routes');
     box.innerHTML = '';
     const filtered = allRoutes.filter(passesFilter).sort((a, b) => {
@@ -1060,6 +1092,7 @@
       selectedIds.clear();
     }
     q('#drop-global').classList.remove('visible', 'over');
+    closeMore();                         // o se vuelve abierto al reentrar
     mapRoutes = [];
     userMoved = false;
   }
@@ -1110,9 +1143,21 @@
     else if (e.dataTransfer && e.dataTransfer.files.length) toast('Solo se aceptan archivos GPX o FIT');
   });
 
+  /* Cerrar el desplegable "⋯" al pulsar fuera o con Escape. Se registran UNA vez
+     al cargar el archivo (nunca en mount(), que corre muchas veces). El calendario
+     de las fechas cuelga por dentro de #filter-more, así que abrirlo no lo cierra. */
+  document.addEventListener('click', e => {
+    const cont = q('#filter-more');
+    if (cont && !cont.contains(e.target)) closeMore();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && visible()) closeMore();
+  });
+
   window.SEC.rutas = {
     mount, unmount,
     setSort, setView, setSearch, toggleDupOnly, clearFilters, toggleEdit, selectMonth,
     selectAllVisible, deselectAll, deleteDuplicates, deleteSelected, rescanSelected,
+    toggleMore,
   };
 })();

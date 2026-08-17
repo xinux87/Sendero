@@ -5,6 +5,15 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.17] — 2026-08-17
+
+### Cambiado
+- **La cabecera de filtros de «Mis Rutas» se despeja**: en la fila se quedan las
+  píldoras de actividad, y la **fecha** y el **buscador** pasan a un desplegable tras un
+  botón de tres puntos (`⋯`). El botón se pinta en ámbar cuando hay fecha o búsqueda
+  puestas, para que un filtro escondido no deje la lista recortada sin explicación.
+- El botón de limpiar filtros es ahora solo la **✕**, sin la palabra «Limpiar».
+
 ## [0.9.16] — 2026-08-17
 
 ### Corregido

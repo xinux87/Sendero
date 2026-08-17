@@ -344,7 +344,7 @@ archivo, nunca en `mount()`.
 | `templates/sec/detalle.html` | (sección `detalle` del shell) | Detalle de ruta con el rediseño 2a/2d: **mapa cabecera** (`.d-hero`, 360 px, con el título y el chip de actividad encima del velo), banda de 7 métricas (`#d-stats`), y cuerpo a dos columnas (perfil + velocidad + FC + fotos ‖ datos técnicos + calidad del track + resumen). En móvil el cuerpo son pestañas: `data-tab` en la sección y `data-dtab` en cada bloque (ver «Pestañas del detalle en móvil»). Los ids genéricos llevan prefijo `d-` (`#d-map`, `#d-stats`, `#d-elev`, `#d-notes`…) para no chocar con otras secciones del mismo documento |
 | `templates/sec/plan.html` | (sección `plan` del shell) | Detalle de ruta planificada, con el panel de **dificultad IBP** (`#pl-ibp-panel`). Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
 | `templates/sec/dashboard.html` | (sección `dashboard`) | "Analítica global": selector de año, 5 KPIs, desnivel por mes, zonas más visitadas, almacenamiento, mapa de todas las rutas, "Por actividad", "Rutas por año" y récords. Lógica en `static/js/sec/dashboard.js` |
-| `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros (actividad, fechas y **buscador**), mapa de visión general, tres vistas (⊞ Cuadrícula · ☰ Tabla · ▤ Panel), modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
+| `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros (píldoras de actividad a la vista; fecha y **buscador** tras el botón `⋯`, ver «Cabecera de filtros»), mapa de visión general, tres vistas (⊞ Cuadrícula · ☰ Tabla · ▤ Panel), modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
 | `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa (marcadores de salida **y** la traza de cada plan, ver abajo), alta por GPX, **marcar un plan como realizado** (botón por tarjeta + selector `#done-modal` de la ruta que lo cumplió), la chapa del **índice IBP** y el filtro de estado `#pg-filters` (Pendientes · Realizadas · Todas, que filtra también el mapa). Lógica en `static/js/sec/planes.js` |
 | `templates/sec/editor.html` | (sección `editor`) | Editor de rutas. Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` |
 
@@ -1311,6 +1311,24 @@ Cambiar de vista repinta la lista (`renderList()`), porque es otro markup.
 **Buscador** (`#route-search` → `setSearch`, debounce 180 ms): filtra en cliente por
 nombre y localidad, que es lo que hay en el listado (el nombre del archivo no está).
 Se guarda con el resto de filtros y `clearFilters()` lo vacía también.
+
+**Cabecera de filtros: qué se ve y qué está tras el `⋯`.** En la fila solo quedan las
+píldoras de actividad (el filtro del día a día), la `✕` de limpiar —solo el icono, el
+nombre va en el `title`— y el botón `⋯` (`#more-btn`), que despliega `#more-pop` con la
+**fecha** y el **buscador**. Cuatro cosas que no son opcionales si lo tocas:
+- **El botón se enciende en ámbar** (`.on`, lo pone `updateMoreBtn()` desde
+  `renderList()`) cuando hay fecha o búsqueda: un filtro activo dentro de un menú
+  cerrado deja la lista recortada sin nada a la vista que lo explique — el mismo
+  criterio que el «vacío por el filtro ≠ vacío de verdad» de «Mis Planes».
+- **El calendario se dibuja DENTRO de `#filter-more`**, así que el cierre por click
+  fuera (`!cont.contains(e.target)`) no lo confunde con un click externo. Si algún día
+  el `.dp-pop` se mueve al `<body>` (es `position:fixed`, tentador), el menú se cerrará
+  al abrir el calendario y habrá que exceptuarlo a mano.
+- `#sec-rutas .more-pop.hidden{display:none}` va **justo después** del `display:flex`:
+  sin esa regla el `.hidden` global pierde por especificidad y el menú aparece abierto
+  al cargar (es el mismo tropiezo que el modal Immich del detalle).
+- Los listeners de cierre (click fuera y Escape) se registran **una vez** al cargar el
+  archivo, y `unmount()` llama a `closeMore()`.
 
 **Filtro de posibles duplicadas** (`#dup-filter` → `toggleDupOnly`): deja solo las
 rutas con `dup_suspect_of`. `updateDupFilter()` (lo llama `reload()`, junto a

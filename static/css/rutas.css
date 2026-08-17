@@ -25,9 +25,38 @@
   background:transparent;font-size:13px;font-weight:500;cursor:pointer;
   transition:filter .15s,background .15s,color .15s}
 #sec-rutas .pill:hover{filter:brightness(1.15)}
-#sec-rutas .filter-clear{padding:8px 14px;border-radius:999px;border:1px solid var(--line-strong);
-  background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s}
+/* Limpiar es solo la ✕ (el texto sobraba al lado de un icono que ya se entiende);
+   por eso es cuadrado y no una píldora con etiqueta. El nombre va en el title. */
+#sec-rutas .filter-clear{width:36px;padding:0;border-radius:999px;border:1px solid var(--line-strong);
+  background:transparent;color:var(--muted);font-size:14px;cursor:pointer;transition:all .15s;
+  justify-content:center;flex-shrink:0}
 #sec-rutas .filter-clear:hover{border-color:rgba(236,229,216,.32);color:var(--ink)}
+/* ── "⋯": fecha y buscador, que se usan de vez en cuando, en un desplegable ── */
+#sec-rutas .filter-more{margin-left:auto;position:relative;display:flex;align-items:flex-end;gap:8px}
+#sec-rutas .more-btn{width:36px;min-height:36px;padding:0;border-radius:999px;
+  border:1px solid var(--line-strong);background:transparent;color:var(--muted);
+  font-size:17px;line-height:1;cursor:pointer;transition:all .15s;flex-shrink:0;
+  display:inline-flex;align-items:center;justify-content:center}
+#sec-rutas .more-btn:hover{border-color:rgba(236,229,216,.32);color:var(--ink)}
+#sec-rutas .more-btn.open{border-color:rgba(236,229,216,.32);color:var(--ink);background:var(--panel-2)}
+/* Con fecha o búsqueda puestas, el botón lo dice: si no, la lista sale recortada
+   y no hay nada a la vista que lo explique. */
+#sec-rutas .more-btn.on{border-color:var(--pr-yellow);color:var(--pr-yellow)}
+#sec-rutas .more-pop{position:absolute;top:calc(100% + 8px);right:0;z-index:60;
+  /* Ancho para que "Desde → Hasta" quepa en una línea (dos dp-btn de 110 + la
+     flecha): apilados, el rango deja de leerse como un rango. */
+  display:flex;flex-direction:column;gap:14px;padding:14px;min-width:312px;
+  max-width:min(340px,calc(100vw - 32px));
+  background:var(--panel);border:1px solid var(--line-strong);border-radius:12px;
+  box-shadow:0 8px 28px #00000070}
+/* Especificidad: sin esta regla (misma que la del modal Immich en detalle.css)
+   el .hidden global no puede con el display:flex de arriba y el menú saldría
+   abierto al cargar la sección. */
+#sec-rutas .more-pop.hidden{display:none}
+#sec-rutas .more-pop .search-input{margin-left:0;width:100%}
+#sec-rutas .more-pop .date-range{flex-wrap:nowrap}
+#sec-rutas .more-pop .dp-wrap{flex:1}
+#sec-rutas .more-pop .dp-btn{min-width:0;width:100%}
 /* Filtro de posibles duplicadas: vive en la fila de ORDEN, alineado a la derecha.
    En rojo porque es un aviso, y solo aparece si hay alguna marcada (lo enseña y
    lo esconde el JS). Activo = relleno sólido, como las píldoras de actividad. */
@@ -240,6 +269,10 @@
 #sec-rutas #dash-wrap.view-b .filters{grid-area:filters;flex-direction:column;align-items:stretch;
   gap:14px;margin-bottom:0;overflow-y:auto}
 #sec-rutas #dash-wrap.view-b .filter-group{width:100%}
+/* Vista B: la columna de filtros es estrecha y va en vertical, así que el
+   desplegable se abre hacia la izquierda (a la derecha no cabe). */
+#sec-rutas #dash-wrap.view-b .filter-more{margin-left:0;justify-content:flex-end}
+#sec-rutas #dash-wrap.view-b .more-pop{right:0;left:auto}
 #sec-rutas #dash-wrap.view-b .date-range{flex-direction:column;align-items:stretch;gap:6px}
 #sec-rutas #dash-wrap.view-b .date-sep{display:none}
 #sec-rutas #dash-wrap.view-b .dp-btn{min-width:0;width:100%}
@@ -296,7 +329,8 @@
 }
 @media(hover:none) and (pointer:coarse){
   #sec-rutas .pill,#sec-rutas .sort-btn,#sec-rutas .filter-clear,#sec-rutas .month-sel-btn,
-  #sec-rutas .search-input,#sec-rutas .dp-btn{min-height:44px}
+  #sec-rutas .search-input,#sec-rutas .dp-btn,#sec-rutas .more-btn{min-height:44px}
+  #sec-rutas .filter-clear,#sec-rutas .more-btn{width:44px}
   #sec-rutas .dp-nav{width:36px;height:36px}
   #sec-rutas .dp-day{padding:9px 0;font-size:13px}
   #sec-rutas .dp-pop{width:266px}

@@ -250,6 +250,37 @@ def main():
         check(page.locator("#sec-rutas .card").count() == tarjetas,
               "«Limpiar» restaura la lista completa")
 
+        # Fecha y buscador viven tras el botón "⋯". Lo que se comprueba no es que
+        # el menú abra, sino lo que se rompe callado: que el calendario (que se
+        # dibuja DENTRO del menú) no lo cierre al abrirse, y que con un filtro
+        # puesto ahí dentro el botón lo avise — si no, la lista sale recortada sin
+        # nada en pantalla que lo explique.
+        check(not page.is_visible("#route-search"),
+              "el buscador arranca escondido tras «⋯»")
+        page.click("#more-btn")
+        page.wait_for_timeout(300)
+        check(page.is_visible("#route-search") and page.is_visible("#dp-from"),
+              "«⋯» despliega la fecha y el buscador")
+        page.fill("#route-search", "zzzz-no-existe")
+        page.wait_for_timeout(500)
+        check(page.locator("#sec-rutas .card").count() == 0,
+              "buscar desde el desplegable filtra la lista")
+        check("on" in (page.get_attribute("#more-btn", "class") or ""),
+              "y el botón «⋯» avisa de que hay un filtro puesto")
+        page.click("#dp-from .dp-btn")
+        page.wait_for_timeout(300)
+        check(page.is_visible("#more-pop") and page.is_visible("#dp-from .dp-pop"),
+              "abrir el calendario NO cierra el desplegable")
+        page.keyboard.press("Escape")
+        page.click("#sec-rutas .sort-bar")
+        page.wait_for_timeout(300)
+        check(not page.is_visible("#more-pop"), "pulsar fuera cierra el desplegable")
+        page.click("#sec-rutas .filter-clear")
+        page.wait_for_timeout(500)
+        check(page.locator("#sec-rutas .card").count() == tarjetas
+              and "on" not in (page.get_attribute("#more-btn", "class") or ""),
+              "«✕» limpia también lo que estaba en el desplegable")
+
         # orden
         primero_desc = page.locator("#sec-rutas .card h3").first.text_content()
         page.click("#sort-asc")

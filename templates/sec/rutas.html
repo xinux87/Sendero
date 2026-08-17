@@ -1,7 +1,7 @@
-{# "Mis Rutas" (sección de la SPA), con el rediseño de redesign/ (2a): panel de
-   filtros con las píldoras de color por actividad, rango de fechas y buscador;
-   fila de ORDEN; y las rutas agrupadas por mes en tarjetas (⊞ Cuadrícula) o en
-   tabla densa (☰ Tabla).
+{# "Mis Rutas" (sección de la SPA), con el rediseño (2a): panel de filtros con
+   las píldoras de color por actividad y, tras el botón "⋯", la fecha y el
+   buscador; fila de ORDEN; y las rutas agrupadas por mes en tarjetas
+   (⊞ Cuadrícula) o en tabla densa (☰ Tabla).
 
    La lógica vive en static/js/sec/rutas.js y el CSS en static/css/rutas.css.
    Los botones de la cabecera (vista, contador, "+ Añadir ruta") están en
@@ -16,17 +16,33 @@
         <span class="filter-label">Actividad</span>
         <div class="act-pills" id="act-pills"></div>
       </div>
-      <div class="filter-group">
-        <span class="filter-label">Fecha</span>
-        <div class="date-range">
-          <div class="dp-wrap" id="dp-from"></div>
-          <span class="date-sep">→</span>
-          <div class="dp-wrap" id="dp-to"></div>
-          <button class="filter-clear" onclick="SEC.rutas.clearFilters()">✕ Limpiar</button>
+      {# Fecha y buscador viven en un desplegable tras el botón "⋯": en la fila
+         se quedan solo las píldoras de actividad, que es el filtro del día a día.
+         El botón se enciende en ámbar cuando hay algo puesto ahí dentro — un
+         filtro escondido y activo no se distingue de "no tengo rutas así". #}
+      <div class="filter-more" id="filter-more">
+        <button class="filter-clear" id="clear-filters" title="Limpiar filtros"
+                aria-label="Limpiar filtros"
+                onclick="SEC.rutas.clearFilters()">✕</button>
+        <button class="more-btn" id="more-btn" aria-expanded="false"
+                title="Más filtros: fecha y búsqueda" aria-label="Más filtros"
+                onclick="SEC.rutas.toggleMore(event)">⋯</button>
+        <div class="more-pop hidden" id="more-pop">
+          <div class="filter-group">
+            <span class="filter-label">Fecha</span>
+            <div class="date-range">
+              <div class="dp-wrap" id="dp-from"></div>
+              <span class="date-sep">→</span>
+              <div class="dp-wrap" id="dp-to"></div>
+            </div>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">Buscar</span>
+            <input id="route-search" class="search-input" type="search"
+                   placeholder="Ruta o zona…" autocomplete="off">
+          </div>
         </div>
       </div>
-      <input id="route-search" class="search-input" type="search"
-             placeholder="Buscar ruta o zona…" autocomplete="off">
     </div>
     <div id="overview-map"></div>
     <div class="sort-bar">
