@@ -85,3 +85,13 @@ def test_detect_activity_por_nombre():
     assert _detect_activity("Subida al Ocejón por el sendero GR-10") == "senderismo"
     assert _detect_activity("Vuelta en bici al pantano") == "bicicleta"
     assert _detect_activity("XyZ 123") is None
+
+
+def test_detect_activity_kayak():
+    assert _detect_activity("Kayak por el embalse de La Llosa") == "kayak"
+    assert _detect_activity("Piragüismo en el río") == "kayak"
+    # 'kayak' va antes que 'senderismo' en la tabla: si no, "travesía" ganaría.
+    assert _detect_activity("Travesía en canoa") == "kayak"
+    # 'remo' NO es palabra clave: iría dentro de "extremo" y arruinaría nombres.
+    assert _detect_activity("Sendero del extremo sur") == "senderismo"
+    assert _gpx_type_lookup("Kayaking") == "kayak"

@@ -5,6 +5,17 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.15] — 2026-08-17
+
+### Añadido
+- **Nuevo tipo de actividad: Kayak**, con su icono turquesa (una pala y un casco) en las
+  tarjetas, los mapas, el selector del detalle y los filtros de «Mis Rutas». Se detecta
+  sola al importar por el nombre del track («kayak», «piragüismo», «canoa»…), por el
+  `<type>` del GPX (`kayaking`, `canoeing`, `rowing`…) y por el deporte del archivo FIT.
+- **Umbrales de GPS incorrecto propios del kayak** (20 km/h y 2,5 m/s de tasa vertical):
+  en el agua la cota es casi constante, así que un cambio brusco de altitud es ruido del
+  GPS y no terreno. Editables como los demás en Ajustes → «GPS incorrecto».
+
 ## [0.9.14] — 2026-08-04
 
 ### Corregido

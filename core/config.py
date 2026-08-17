@@ -20,7 +20,7 @@ DB_PATH = DATA / "sendero.db"
 # /api/config. Al publicar, deben coincidir con este número: el tag de git
 # (vX.Y.Z), la etiqueta de la imagen Docker (xinux87/sendero:X.Y.Z) y el default
 # de SENDERO_VERSION en los compose (${SENDERO_VERSION:-X.Y.Z}) y en .env.example.
-APP_VERSION = "0.9.14"
+APP_VERSION = "0.9.15"
 
 for d in (DATA, GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR, TILES_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -113,6 +113,9 @@ DEFAULT_GPS_THRESHOLDS = {
     "correr":     {"max_speed_kmh": 30,  "max_vert_rate_ms": 3.5, "max_ele_m": 4900},
     "bicicleta":  {"max_speed_kmh": 70,  "max_vert_rate_ms": 6,   "max_ele_m": 4000},
     "esqui":      {"max_speed_kmh": 100, "max_vert_rate_ms": 10,  "max_ele_m": 4900},
+    # En el agua la cota es casi constante: una tasa vertical alta es ruido del
+    # GPS (o del barómetro), no terreno. De ahí que sea más estricta que a pie.
+    "kayak":      {"max_speed_kmh": 20,  "max_vert_rate_ms": 2.5, "max_ele_m": 3500},
     "otros":      {"max_speed_kmh": 40,  "max_vert_rate_ms": 5,   "max_ele_m": 9000},
 }
 _GPS_THRESHOLDS_CUSTOM: dict = {}

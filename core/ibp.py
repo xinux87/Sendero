@@ -40,8 +40,8 @@ MODALITIES = ("hiking", "bicycle", "running")
 ACRONYMS = {"hiking": "HKG", "bicycle": "BYC", "running": "RNG"}
 
 # Actividad de Sendero → modalidad del IBP. Las que no tienen equivalente
-# (esquí, otros, o un plan sin actividad) se dejan a la modalidad que detecta el
-# propio servicio a partir del track: inventar una falsearía el índice.
+# (esquí, kayak, otros, o un plan sin actividad) se dejan a la modalidad que
+# detecta el propio servicio a partir del track: inventar una falsearía el índice.
 _MODALITY_BY_ACTIVITY = {
     "senderismo": "hiking",
     "caminata":   "hiking",

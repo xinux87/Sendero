@@ -33,6 +33,13 @@ _GPX_TYPE_MAP = {
     "nordic skiing":         "esqui",
     "cross country skiing":  "esqui",
     "snowboarding":          "esqui",
+    "kayaking":              "kayak",
+    "kayak":                 "kayak",
+    "sea kayaking":          "kayak",
+    "whitewater kayaking":   "kayak",
+    "canoeing":              "kayak",
+    "paddling":              "kayak",
+    "rowing":                "kayak",
     "1":  "correr",
     "2":  "bicicleta",
     "11": "caminata",
@@ -55,11 +62,24 @@ _FIT_SPORT_MAP = {
     "nordic_skiing":         "esqui",
     "skiing":                "esqui",
     "snowboarding":          "esqui",
+    "kayaking":              "kayak",
+    "canoeing":              "kayak",
+    "paddling":              "kayak",
+    "rowing":                "kayak",
+    "stand_up_paddleboarding": "kayak",
 }
 
 _SEMI = 180.0 / (2 ** 31)
 
 _ACTIVITY_KEYWORDS = {
+    # Va PRIMERO a propósito: se recorre en orden y las palabras de 'senderismo'
+    # son muy golosas ("travesia", "via", "gr"), así que "Travesía en kayak"
+    # acabaría en senderismo. Las de aquí son específicas y no las canibaliza
+    # nada. Ojo: nada de "remo" suelto, que va dentro de "extremo".
+    "kayak": [
+        "kayak", "kayac", "kaiac", "kayaking", "piragu", "piragü",
+        "canoa", "canoe", "canoeing", "paddle", "paddling", "remada", "remando",
+    ],
     "senderismo": [
         "senderismo", "sendero", "trekking", "trek", "excursión", "excursion",
         "montaña", "montana", "trail", "gr", "pr", "sl", "camino", "via", "travesia",

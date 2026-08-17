@@ -52,7 +52,7 @@ La portada de Sendero: un resumen de todo lo que has recorrido, con las cifras g
 > - **Desnivel acumulado por mes**: doce barras que enseñan de un vistazo tu estacionalidad.
 > - **Zonas más visitadas** y **almacenamiento** (cuánto ocupan la base, los tracks, las fotos, las miniaturas y los mapas descargados).
 > - **Mapa** de todas las rutas con agrupación por zonas (*clustering*).
-> - **Por actividad**: kilómetros y número de rutas de cada tipo (senderismo, bicicleta, caminata, correr, esquí, otros).
+> - **Por actividad**: kilómetros y número de rutas de cada tipo (senderismo, bicicleta, caminata, correr, esquí, kayak, otros).
 > - **Rutas por año** y **récords personales** —ruta más larga, mayor desnivel y velocidad media más alta—, cada uno enlazado a su ruta.
 >
 > Todo lo anterior, salvo los récords, se calcula **en tu propio dispositivo** con la lista que ya tiene guardada, así que el dashboard también funciona sin conexión y cambiar de año no gasta ni una petición.

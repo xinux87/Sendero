@@ -258,7 +258,7 @@ viven en `static/shared.js`, en `SLOPE_SCALE`, y de ahí sale hasta la leyenda: 
 
 Los colores de actividad viven en `ACTIVITIES` (`static/shared.js`), no en CSS:
 `senderismo #e8863c` · `bicicleta #3d9be9` · `caminata #43b97f` · `correr #e34b4b` ·
-`esquí #a86ee0` · `otros #e055c0`, con el glifo del icono en `#0b120e` (tinta oscura
+`esquí #a86ee0` · `kayak #23bfc4` · `otros #e055c0`, con el glifo del icono en `#0b120e` (tinta oscura
 sobre el color, no blanca). **Nada de hex sueltos** en plantillas ni en el CSS de
 las secciones: si necesitas un color que no está, añade el token aquí. Las únicas
 excepciones son los `rgba()` de velos y separadores del propio rediseño, los
@@ -1547,7 +1547,7 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | speed | TEXT JSON | lista `[{d, v}, …]` (v en km/h) o NULL. GPX: derivada de posición/tiempo con ventana móvil de `SPEED_WINDOW_S` (15s) para suavizar ruido GPS — requiere `<time>` por punto, si no hay queda vacío. FIT: `enhanced_speed`/`speed` del propio dispositivo, sin suavizar |
 | gps_issues | TEXT JSON | tramos GPS anómalos (`core/gps_analysis.py::detect_gps_anomalies`, umbrales por actividad de Ajustes → "GPS incorrecto"); lista `[{type: speed\|elevation\|altitude, d_from, d_to, value_max, threshold, severity}, …]` o NULL. `altitude` (puntos por encima de `max_ele_m`) se detecta incluso sin timestamps. Lo calculan `create_route` y `_reanalyse_and_update` (rescan + guardados del editor); el editor lo premarca. El **listado no lleva este JSON** (pesa y en la tarjeta no se usa): lleva su resumen en dos enteros derivados, `gps_issues_n` y `gps_issues_high`, calculados con las expresiones `GPS_ISSUES_N_SQL`/`GPS_ISSUES_HIGH_SQL` de `core/database.py` y guardados **ya calculados dentro de `idx_routes_list_cov5`**, que es un índice sobre expresiones — por eso la fila nunca se toca. Query e índice importan las mismas constantes a propósito: si los dos textos SQL dejan de coincidir, el índice deja de aplicarse y vuelve el problema de la regla 12 (`tests/test_list_cols.py` lo vigila con un `EXPLAIN QUERY PLAN`). OJO: `app.py` hace `refresh_config()` en `before_request` porque con 2 workers un POST de ajustes solo refrescaba el worker que lo atendía |
 | created_at | TEXT | |
-| activity_type | TEXT | senderismo/bicicleta/caminata/correr/esqui/otros |
+| activity_type | TEXT | senderismo/bicicleta/caminata/correr/esqui/kayak/otros. **Añadir una actividad son cinco sitios**: `ACTIVITIES` (`static/shared.js`, id+etiqueta+color+icono), `DEFAULT_GPS_THRESHOLDS` (`core/config.py`), los tres mapas de `core/parsers.py` (`_GPX_TYPE_MAP`, `_FIT_SPORT_MAP`, `_ACTIVITY_KEYWORDS`), `_CFG_ACTIVITIES` (`static/js/core/chrome.js`, tablas de Ajustes) y, si tiene equivalente en el IBP, `_MODALITY_BY_ACTIVITY` (`core/ibp.py`) + `IBP_MOD_BY_ACT` (`sec/plan.js`). Todo lo demás (filtros, mapas, dashboard, selector del detalle) sale de `ACTIVITIES` solo |
 | device | TEXT | fabricante/modelo del dispositivo |
 | immich_checked | INTEGER | 0/1 |
 | start_lat, start_lon | REAL | primer punto del track |

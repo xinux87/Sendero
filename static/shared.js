@@ -52,6 +52,16 @@ const ACTIVITIES=[
     <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="#0b120e" stroke-width="2"   stroke-linecap="round"/>
     <line x1="12"   y1="19"   x2="16" y2="19"  stroke="#0b120e" stroke-width="2"   stroke-linecap="round"/>
   `},
+  {id:'kayak',label:'Kayak',color:'#23bfc4',symbol:`
+    <circle cx="13" cy="7.4" r="1.5" fill="#0b120e"/>
+    <line x1="13" y1="8.9"   x2="13"    y2="15.8" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="13" y1="11.3" x2="10.5"   y2="13.5" stroke="#0b120e" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="13" y1="11.3" x2="15.5"   y2="12.1" stroke="#0b120e" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="7.8" y1="14.2" x2="18.2"  y2="11.4" stroke="#0b120e" stroke-width="1.4" stroke-linecap="round"/>
+    <line x1="7.1" y1="13.1" x2="8.5"   y2="15.3" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="17.5" y1="10.3" x2="18.9" y2="12.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M5.6,16.5 C8.6,20.2 17.4,20.2 20.4,16.5 Z" fill="#0b120e"/>
+  `},
   {id:'otros',label:'Otros',color:'#e055c0',symbol:`
     <circle cx="13" cy="8.5" r="1.6" fill="#0b120e"/>
     <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>

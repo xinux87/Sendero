@@ -337,7 +337,7 @@ async function offClear() {
 }
 
 /* ── ajustes ─────────────────────────────────────────────────────────────── */
-const _CFG_ACTIVITIES=['senderismo','bicicleta','caminata','correr','esqui','otros'];
+const _CFG_ACTIVITIES=['senderismo','bicicleta','caminata','correr','esqui','kayak','otros'];
 let _gpxTypesCustom={};
 let _gpsThresholds={};
 
