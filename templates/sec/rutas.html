@@ -21,12 +21,26 @@
          El botón se enciende en ámbar cuando hay algo puesto ahí dentro — un
          filtro escondido y activo no se distingue de "no tengo rutas así". #}
       <div class="filter-more" id="filter-more">
-        <button class="filter-clear" id="clear-filters" title="Limpiar filtros"
-                aria-label="Limpiar filtros"
-                onclick="SEC.rutas.clearFilters()">✕</button>
-        <button class="more-btn" id="more-btn" aria-expanded="false"
+        {# Los dos iconos van en SVG y no como caracteres (✕ / ⋯): son de dos
+           familias tipográficas distintas y salían con pesos y tamaños que no
+           casaban. Así comparten trazo, caja y currentColor. #}
+        <button class="icon-btn filter-clear" id="clear-filters"
+                title="Limpiar filtros" aria-label="Limpiar filtros"
+                onclick="SEC.rutas.clearFilters()">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8" fill="none"
+                  stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="icon-btn more-btn" id="more-btn" aria-expanded="false"
                 title="Más filtros: fecha y búsqueda" aria-label="Más filtros"
-                onclick="SEC.rutas.toggleMore(event)">⋯</button>
+                onclick="SEC.rutas.toggleMore(event)">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="3.2" cy="8" r="1.35" fill="currentColor"/>
+            <circle cx="8"   cy="8" r="1.35" fill="currentColor"/>
+            <circle cx="12.8" cy="8" r="1.35" fill="currentColor"/>
+          </svg>
+        </button>
         <div class="more-pop hidden" id="more-pop">
           <div class="filter-group">
             <span class="filter-label">Fecha</span>

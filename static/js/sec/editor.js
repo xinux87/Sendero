@@ -1846,6 +1846,10 @@
 
   window.SEC.editor = {
     mount, unmount,
+    /* Cuántas ops hay sin guardar. Lo pregunta chrome.js antes de recargar sola
+       la página al activarse una versión nueva del Service Worker: esas ops solo
+       existen en memoria hasta que se pulsa Guardar. */
+    pendientes: () => opsList.length,
     _mergeNameSync,
     applyShift,
     applySimplify,

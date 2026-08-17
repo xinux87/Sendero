@@ -5,6 +5,22 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.18] — 2026-08-17
+
+### Corregido
+- **Al publicar una versión, la primera carga se quedaba con el código anterior.** El
+  documento llegaba nuevo pero el JS de las secciones se sirve con revalidación por
+  detrás, así que se mezclaban: botones nuevos que no respondían y secciones a medias,
+  sin ningún error a la vista, y la única salida era recargar otra vez o pasar por
+  `/actualizar`. Ahora, en cuanto el Service Worker de la versión nueva toma el control,
+  la página **se recarga sola una vez** y todo viene de la misma versión. Si estabas en
+  el editor con cambios sin guardar no recarga nada: avisa para que guardes primero.
+
+### Cambiado
+- Los botones **✕** (limpiar) y **⋯** (más filtros) de «Mis Rutas» son ahora el mismo
+  botón con distinto icono: mismo tamaño, mismo trazo y mismo color. Antes eran dos
+  caracteres tipográficos de familias distintas y no casaban.
+
 ## [0.9.17] — 2026-08-17
 
 ### Cambiado

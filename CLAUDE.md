@@ -1742,7 +1742,13 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   revalidación por detrás, así que la primera carga tras actualizar puede ejecutar el JS
   anterior; y con una PWA instalada el Service Worker no se releva mientras quede una
   ventana viva. Síntoma: "no cargan las opciones", botones que no responden, secciones a
-  medias — sin ningún error claro en el servidor. Salida: **`/actualizar`** (enlazado en
+  medias — sin ningún error claro en el servidor. **Desde la v0.9.18 se cura solo**: en
+  cuanto el Service Worker de la versión nueva toma el control (`controllerchange` en
+  `chrome.js`), la página se recarga UNA vez y todo pasa a venir de la misma versión. No
+  recarga en dos casos, a propósito: en la primera visita (no había controlador: no hay
+  nada viejo que arreglar) y con cambios sin guardar en el editor
+  (`SEC.editor.pendientes()`, que solo existen en memoria) — ahí avisa con un toast.
+  Si aun así se queda pegado, la salida sigue siendo **`/actualizar`** (enlazado en
   Ajustes → **Mantenimiento**), que borra SW, cachés, IndexedDB y sesión; o cerrar del todo
   la PWA. Esa sección del modal muestra además la versión que sirve el servidor frente a la
   que tiene guardada el navegador (`mantEstado()` en `chrome.js`, que la deduce del nombre

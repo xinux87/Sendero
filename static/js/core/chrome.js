@@ -96,10 +96,48 @@ function senderoBack(){
    base.html, así que vale para cualquier documento que la app llegue a servir
    en el futuro sin tener que acordarse de registrarlo otra vez. */
 if ('serviceWorker' in navigator) {
+  /* ¿Había ya un Service Worker mandando en esta carga? Se mira ANTES de
+     registrar: en la primera visita no hay controlador, el que se instala toma
+     el mando y eso NO es una actualización (recargar ahí sería un parpadeo
+     gratis). */
+  const _teniaSW = !!navigator.serviceWorker.controller;
+  let _recargando = false;
+
+  /* El peor fallo de esta arquitectura: al publicar una versión, el DOCUMENTO
+     llega nuevo pero `static/js/**` se sirve con revalidación por detrás (regla
+     16), así que la primera carga tras actualizar puede ejecutar el JS anterior.
+     Markup nuevo + código viejo = botones que no responden y secciones a medias,
+     sin ningún error a la vista. Cuando el Service Worker nuevo toma el control
+     ya tiene el precache de ESTA versión, así que basta con recargar una vez y
+     todo viene de la misma. Antes esto se arreglaba a mano (recargar otra vez o
+     ir a /actualizar), que es pedirle al usuario que diagnostique. */
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (_recargando || !_teniaSW) return;
+    _recargando = true;
+    if (_trabajoSinGuardar()) {
+      // Recargar aquí tiraría ediciones del editor que no están en el servidor.
+      toast('Hay una versión nueva de Sendero: recarga cuando guardes.');
+      return;
+    }
+    location.reload();
+  });
+
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js', {scope: '/'})
       .catch(e => console.warn('[sw] registro', e));
   });
+}
+
+/* ¿Hay algo sin guardar que una recarga se llevaría por delante? Hoy solo el
+   editor: sus ops viven en memoria hasta que se pulsa Guardar. */
+function _trabajoSinGuardar() {
+  try {
+    const ed = document.getElementById('sec-editor');
+    return !!(ed && !ed.classList.contains('hidden')
+              && typeof SEC !== 'undefined' && SEC.editor
+              && typeof SEC.editor.pendientes === 'function'
+              && SEC.editor.pendientes() > 0);
+  } catch (e) { return false; }
 }
 
 /* Badge de estado: solo se muestra cuando hay algo que decir (sin conexión,
