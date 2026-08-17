@@ -487,12 +487,13 @@
      cifra en una escala de dificultad: ibpindex.com no publica los cortes, así que
      inventarlos sería peor que no decir nada. */
   const IBP_ACRO = {hiking: 'HKG', bicycle: 'BYC', running: 'RNG'};
-  /* Actividad de Sendero → modalidad del IBP. Copia de _MODALITY_BY_ACTIVITY de
-     core/ibp.py: el servidor hace el mismo cambio al recibir el PATCH, esto es
-     para que la vista lo refleje al instante (y sin conexión, cuando el PATCH
-     está en la cola). Si cambias una, cambia la otra. */
-  const IBP_MOD_BY_ACT = {senderismo: 'hiking', caminata: 'hiking',
-                          correr: 'running', bicicleta: 'bicycle'};
+  /* Actividad de Sendero → modalidad del IBP. Ya NO es una copia de la tabla del
+     servidor: sale del mismo catálogo (core/activities.py, campo "ibp") que
+     usa core/ibp.py, así que no pueden desincronizarse. El servidor hace el
+     mismo cambio al recibir el PATCH; esto es para que la vista lo refleje al
+     instante (y sin conexión, cuando el PATCH está en la cola). */
+  const IBP_MOD_BY_ACT = Object.fromEntries(
+    ACTIVITIES.filter(a => a.ibp).map(a => [a.id, a.ibp]));
   const IBP_WEB = 'https://www.ibpindex.com/index.php/es/';
 
   async function loadConfig() {

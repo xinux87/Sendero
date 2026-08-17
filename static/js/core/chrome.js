@@ -337,7 +337,9 @@ async function offClear() {
 }
 
 /* ── ajustes ─────────────────────────────────────────────────────────────── */
-const _CFG_ACTIVITIES=['senderismo','bicicleta','caminata','correr','esqui','kayak','otros'];
+/* Las dos tablas de Ajustes (umbrales GPS y tipos GPX personalizados) salen del
+   catálogo, no de una lista propia: un deporte nuevo aparece en las dos solo. */
+const _CFG_ACTIVITIES=ACTIVITIES.map(a=>a.id);
 let _gpxTypesCustom={};
 let _gpsThresholds={};
 
@@ -350,7 +352,8 @@ function renderGpsThrTable(){
     const tr=document.createElement('tr');
     const inp=(k,step)=>`<input type="number" min="0" step="${step}" class="cfg-input"
       style="width:100%" id="gps-thr-${act}-${k}" value="${th[k]??''}">`;
-    tr.innerHTML=`<td style="text-transform:capitalize">${act}</td>
+    const a=activityOf(act);
+    tr.innerHTML=`<td>${esc(a?a.label:act)}</td>
       <td>${inp('max_speed_kmh','1')}</td>
       <td>${inp('max_vert_rate_ms','0.5')}</td>
       <td>${inp('max_ele_m','50')}</td>`;
@@ -691,7 +694,7 @@ async function mifitSyncNow(reset){
 
 /* ── ingesta ─────────────────────────────────────────────────────────────── */
 function _actOpts(sel){
-  return _CFG_ACTIVITIES.map(a=>`<option value="${a}"${a===sel?' selected':''}>${a}</option>`).join('');
+  return ACTIVITIES.map(a=>`<option value="${a.id}"${a.id===sel?' selected':''}>${esc(a.label)}</option>`).join('');
 }
 
 function renderGpxTypesTable(){

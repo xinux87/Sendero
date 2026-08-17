@@ -31,6 +31,7 @@ Tres cosas que conviene tener presentes antes de tocar esto:
 import requests
 
 import core.config as cfg
+from core import activities
 
 # Bloques de modalidad del JSON, en el orden en que se prefieren si no se sabe
 # cuál toca. El acrónimo es el que el propio servicio usa al publicar el índice
@@ -39,15 +40,11 @@ import core.config as cfg
 MODALITIES = ("hiking", "bicycle", "running")
 ACRONYMS = {"hiking": "HKG", "bicycle": "BYC", "running": "RNG"}
 
-# Actividad de Sendero → modalidad del IBP. Las que no tienen equivalente
-# (esquí, kayak, otros, o un plan sin actividad) se dejan a la modalidad que
-# detecta el propio servicio a partir del track: inventar una falsearía el índice.
-_MODALITY_BY_ACTIVITY = {
-    "senderismo": "hiking",
-    "caminata":   "hiking",
-    "correr":     "running",
-    "bicicleta":  "bicycle",
-}
+# Actividad de Sendero → modalidad del IBP, del catálogo de core/activities.py
+# (campo "ibp" de cada actividad). Las que no tienen equivalente (esquí, kayak,
+# otros, o un plan sin actividad) se dejan a la modalidad que detecta el propio
+# servicio a partir del track: inventar una falsearía el índice.
+_MODALITY_BY_ACTIVITY = activities.IBP_MODALITY
 
 _UA = f"Sendero/{cfg.APP_VERSION} (bitacora de rutas autoalojada)"
 

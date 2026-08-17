@@ -5,6 +5,27 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.9.16] — 2026-08-17
+
+### Corregido
+- **Un deporte nuevo no aparecía en los filtros de «Mis Rutas»** si ya habías usado la
+  sección en esa sesión: el filtro guardaba las actividades marcadas, así que cualquiera
+  que no existiera al guardarlo salía desmarcada (y sus rutas, escondidas, que es
+  indistinguible de «no tengo rutas de ese tipo»). Ahora guarda las **desmarcadas**.
+
+### Cambiado
+- **Un deporte se define ahora en un solo archivo, `core/activities.py`**: id, etiqueta,
+  color, icono, umbrales de GPS incorrecto, palabras con las que se detecta al importar
+  (nombre, `<type>` del GPX y deporte del FIT) y modalidad del índice IBP. De ahí salen
+  solas todas las pantallas —píldoras de filtro, selector del detalle, iconos de los
+  mapas, color de la traza del editor, «Por actividad» del dashboard y las dos tablas de
+  Ajustes—, y también el servidor. El cliente recibe el catálogo inyectado en el HTML,
+  así que **cliente y servidor ya no pueden tener listas distintas**. Antes había que
+  tocar cinco archivos y olvidarse de uno no daba ningún error: simplemente el deporte
+  faltaba en una pantalla.
+- Las tablas de Ajustes muestran el nombre bonito de cada actividad («Esquí») en vez de
+  su identificador interno («esqui»).
+
 ## [0.9.15] — 2026-08-17
 
 ### Añadido

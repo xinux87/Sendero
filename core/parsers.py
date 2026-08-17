@@ -7,102 +7,18 @@ import gpxpy
 from garmin_fit_sdk import Decoder, Stream
 
 import core.config as cfg
+from core import activities
 
 SPEED_WINDOW_S = 15
 
-_GPX_TYPE_MAP = {
-    "hiking":                "senderismo",
-    "trail hiking":          "senderismo",
-    "mountaineering":        "senderismo",
-    "mountain":              "senderismo",
-    "trekking":              "senderismo",
-    "walking":               "caminata",
-    "casual walking":        "caminata",
-    "speed walking":         "caminata",
-    "running":               "correr",
-    "trail running":         "correr",
-    "street running":        "correr",
-    "cycling":               "bicicleta",
-    "biking":                "bicicleta",
-    "mountain biking":       "bicicleta",
-    "road cycling":          "bicicleta",
-    "gravel cycling":        "bicicleta",
-    "virtual cycling":       "bicicleta",
-    "skiing":                "esqui",
-    "alpine skiing":         "esqui",
-    "nordic skiing":         "esqui",
-    "cross country skiing":  "esqui",
-    "snowboarding":          "esqui",
-    "kayaking":              "kayak",
-    "kayak":                 "kayak",
-    "sea kayaking":          "kayak",
-    "whitewater kayaking":   "kayak",
-    "canoeing":              "kayak",
-    "paddling":              "kayak",
-    "rowing":                "kayak",
-    "1":  "correr",
-    "2":  "bicicleta",
-    "11": "caminata",
-    "12": "esqui",
-    "13": "esqui",
-    "14": "esqui",
-    "16": "senderismo",
-    "17": "senderismo",
-}
-
-_FIT_SPORT_MAP = {
-    "running":               "correr",
-    "trail":                 "correr",
-    "cycling":               "bicicleta",
-    "mountain_biking":       "bicicleta",
-    "hiking":                "senderismo",
-    "walking":               "caminata",
-    "alpine_skiing":         "esqui",
-    "cross_country_skiing":  "esqui",
-    "nordic_skiing":         "esqui",
-    "skiing":                "esqui",
-    "snowboarding":          "esqui",
-    "kayaking":              "kayak",
-    "canoeing":              "kayak",
-    "paddling":              "kayak",
-    "rowing":                "kayak",
-    "stand_up_paddleboarding": "kayak",
-}
+# Los tres mapas de detección de actividad (tipo del GPX, deporte del FIT y
+# palabras del nombre) salen del catálogo de core/activities.py, que es donde se
+# define una actividad entera. Aquí solo se les da el nombre de siempre.
+_GPX_TYPE_MAP = activities.GPX_TYPES
+_FIT_SPORT_MAP = activities.FIT_SPORTS
+_ACTIVITY_KEYWORDS = activities.KEYWORDS
 
 _SEMI = 180.0 / (2 ** 31)
-
-_ACTIVITY_KEYWORDS = {
-    # Va PRIMERO a propósito: se recorre en orden y las palabras de 'senderismo'
-    # son muy golosas ("travesia", "via", "gr"), así que "Travesía en kayak"
-    # acabaría en senderismo. Las de aquí son específicas y no las canibaliza
-    # nada. Ojo: nada de "remo" suelto, que va dentro de "extremo".
-    "kayak": [
-        "kayak", "kayac", "kaiac", "kayaking", "piragu", "piragü",
-        "canoa", "canoe", "canoeing", "paddle", "paddling", "remada", "remando",
-    ],
-    "senderismo": [
-        "senderismo", "sendero", "trekking", "trek", "excursión", "excursion",
-        "montaña", "montana", "trail", "gr", "pr", "sl", "camino", "via", "travesia",
-        "hiking", "hike", "mountaineering",
-    ],
-    "bicicleta": [
-        "bicicleta", "bici", "ciclismo", "mtb", "mountain bike", "cycling",
-        "bike", "cicloturismo", "gravel", "btt",
-    ],
-    "caminata": [
-        "caminata", "caminando", "paseo", "pasear", "vuelta", "walk",
-        "walking", "urbano", "ciudad", "rambla", "marcha",
-    ],
-    "correr": [
-        "correr", "running", "carrera", "trail running", "maratón", "maraton",
-        "media maratón", "10k", "5k", "fondo", "jogging",
-    ],
-    "esqui": [
-        "esqui", "esquí", "ski", "skiing", "nieve", "snow",
-        "pista", "slalom", "esquiando", "nordic",
-    ],
-    "otros": [],
-}
 
 
 def _hr_from_extensions(extensions):

@@ -23,7 +23,10 @@
   const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul',
                         'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const PAGE_SIZE = 30;
-  const FILTER_CACHE = 'sendero_filters_v1';
+  /* v2: guarda las actividades APAGADAS, no las encendidas (ver saveFilterState).
+     Al cambiar la clave, el estado v1 de una sesión abierta se ignora, que es lo
+     que hay que hacer: era justo el que dejaba fuera un deporte nuevo. */
+  const FILTER_CACHE = 'sendero_filters_v2';
   const LINES_MINZOOM = 10, LINES_PREFETCH_ZOOM = LINES_MINZOOM - 2, POINTS_MAXZOOM = 12;
 
   let allRoutes = [], activeActs = null;
@@ -138,8 +141,12 @@
   /* ── filtros (preferencias, no datos: siguen en sessionStorage) ─────────── */
   function saveFilterState() {
     try {
+      // Se guardan las actividades DESmarcadas, no las marcadas: así un deporte
+      // nuevo (uno que no existía cuando se guardó esto) sale visible en vez de
+      // filtrado, que es indistinguible de "no hay rutas de ese tipo".
       sessionStorage.setItem(FILTER_CACHE, JSON.stringify({
-        acts: [...activeActs], from: dpFrom && dpFrom.value, to: dpTo && dpTo.value,
+        off: ACTIVITIES.filter(a => !activeActs.has(a.id)).map(a => a.id),
+        from: dpFrom && dpFrom.value, to: dpTo && dpTo.value,
         sort: sortOrder, view: viewMode, q: searchQ, dup: dupOnly,
       }));
     } catch (e) {}
@@ -1009,7 +1016,8 @@
     if (!activeActs) activeActs = new Set(ACTIVITIES.map(a => a.id));
     const savedF = loadFilterState();
     if (savedF) {
-      if (savedF.acts) activeActs = new Set(savedF.acts);
+      if (savedF.off) activeActs = new Set(
+        ACTIVITIES.filter(a => !savedF.off.includes(a.id)).map(a => a.id));
       if (savedF.sort) sortOrder = savedF.sort;
       if (savedF.view) viewMode = savedF.view;
       if (savedF.q) searchQ = savedF.q;

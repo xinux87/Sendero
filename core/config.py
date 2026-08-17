@@ -3,6 +3,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from core import activities
+
 BASE = Path(__file__).resolve().parent.parent
 DATA = Path(os.environ.get("SENDERO_DATA", BASE / "data"))
 GPX_DIR = DATA / "gpx"
@@ -20,7 +22,7 @@ DB_PATH = DATA / "sendero.db"
 # /api/config. Al publicar, deben coincidir con este número: el tag de git
 # (vX.Y.Z), la etiqueta de la imagen Docker (xinux87/sendero:X.Y.Z) y el default
 # de SENDERO_VERSION en los compose (${SENDERO_VERSION:-X.Y.Z}) y en .env.example.
-APP_VERSION = "0.9.15"
+APP_VERSION = "0.9.16"
 
 for d in (DATA, GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR, TILES_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -107,17 +109,9 @@ _CUSTOM_GPX_TYPES: dict = {}
 # las supere se marca como fallo de GPS/barómetro, no como esfuerzo real. Editables
 # desde Ajustes → "GPS incorrecto" (se guardan en _GPS_THRESHOLDS_CUSTOM, mismo
 # patrón que _CUSTOM_GPX_TYPES).
-DEFAULT_GPS_THRESHOLDS = {
-    "senderismo": {"max_speed_kmh": 15,  "max_vert_rate_ms": 3,   "max_ele_m": 4900},
-    "caminata":   {"max_speed_kmh": 10,  "max_vert_rate_ms": 2,   "max_ele_m": 3500},
-    "correr":     {"max_speed_kmh": 30,  "max_vert_rate_ms": 3.5, "max_ele_m": 4900},
-    "bicicleta":  {"max_speed_kmh": 70,  "max_vert_rate_ms": 6,   "max_ele_m": 4000},
-    "esqui":      {"max_speed_kmh": 100, "max_vert_rate_ms": 10,  "max_ele_m": 4900},
-    # En el agua la cota es casi constante: una tasa vertical alta es ruido del
-    # GPS (o del barómetro), no terreno. De ahí que sea más estricta que a pie.
-    "kayak":      {"max_speed_kmh": 20,  "max_vert_rate_ms": 2.5, "max_ele_m": 3500},
-    "otros":      {"max_speed_kmh": 40,  "max_vert_rate_ms": 5,   "max_ele_m": 9000},
-}
+# Los valores viven con el resto de la definición de cada actividad, en
+# core/activities.py: añadir un deporte es editar ESE archivo y nada más.
+DEFAULT_GPS_THRESHOLDS = activities.THRESHOLDS
 _GPS_THRESHOLDS_CUSTOM: dict = {}
 
 

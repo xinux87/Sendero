@@ -1,76 +1,20 @@
-/* Código compartido entre plantillas (sin build step: se carga con <script src>
-   desde base.html, ANTES del script inline de cada página).
-   Aquí solo vive JS puro sin Jinja. Si tocas ACTIVITIES o BASEMAP_TILES, recuerda
-   que lo usan app.html y editor.html (que siguen con su JS inline) y las secciones
-   de la SPA static/js/sec/*.js (detalle, plan). */
+/* Código compartido por todo el frontend (sin build step: se carga con
+   <script src> desde base.html, ANTES de chrome.js y de las secciones).
+   Aquí solo vive JS puro sin Jinja, y lo usan las 6 secciones de la SPA
+   (static/js/sec/*.js) además del chrome. */
 
-/* ── actividades ── */
-const ACTIVITIES=[
-  {id:'senderismo',label:'Senderismo',color:'#e8863c',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="#0b120e"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="15.5" y2="11"  stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="10.5" y2="13.5" stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="10.5" y1="13.5" x2="9.5" y2="18"  stroke="#0b120e" stroke-width="1.3" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15.5" y2="19"  stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="10.5" y2="18"  stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-  {id:'bicicleta',label:'Bicicleta',color:'#3d9be9',symbol:`
-    <circle cx="9.5"  cy="17.5" r="2.3" fill="none" stroke="#0b120e" stroke-width="1.6"/>
-    <circle cx="16.5" cy="17.5" r="2.3" fill="none" stroke="#0b120e" stroke-width="1.6"/>
-    <path d="M9.5,17.5 L13,14 L16.5,17.5 M13,14 L11.5,17.5"
-      stroke="#0b120e" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="15.5" cy="10" r="1.5" fill="#0b120e"/>
-    <line x1="15.5" y1="11.5" x2="13" y2="14"   stroke="#0b120e" stroke-width="1.7" stroke-linecap="round"/>
-    <line x1="14.5" y1="12.5" x2="12" y2="13.5" stroke="#0b120e" stroke-width="1.4" stroke-linecap="round"/>
-  `},
-  {id:'caminata',label:'Caminata',color:'#43b97f',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="#0b120e"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="15.5" y2="13.5" stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="12"   x2="10.5" y2="13"   stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15"   y2="19"   stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="11"   y2="18.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-  {id:'correr',label:'Correr',color:'#e34b4b',symbol:`
-    <circle cx="14" cy="8" r="1.6" fill="#0b120e"/>
-    <line x1="14" y1="9.6"  x2="12" y2="15"   stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="16" y2="10"   stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="10" y2="13"   stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="12" y1="15"   x2="15.5" y2="19" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="12" y1="15"   x2="9.5"  y2="18" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-  {id:'esqui',label:'Esquí',color:'#a86ee0',symbol:`
-    <circle cx="13" cy="8" r="1.6" fill="#0b120e"/>
-    <line x1="13" y1="9.6"  x2="11" y2="14.5"  stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="12" y1="11.5" x2="8.5" y2="13"   stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="12" y1="11.5" x2="16.5" y2="13"  stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="8.5"  y1="13" x2="8"   y2="17.5" stroke="#0b120e" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="16.5" y1="13" x2="17"  y2="17.5" stroke="#0b120e" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="11"   y1="14.5" x2="9.5" y2="18" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="11"   y1="14.5" x2="13" y2="18"  stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="7.5"  y1="19"   x2="12" y2="19"  stroke="#0b120e" stroke-width="2"   stroke-linecap="round"/>
-    <line x1="12"   y1="19"   x2="16" y2="19"  stroke="#0b120e" stroke-width="2"   stroke-linecap="round"/>
-  `},
-  {id:'kayak',label:'Kayak',color:'#23bfc4',symbol:`
-    <circle cx="13" cy="7.4" r="1.5" fill="#0b120e"/>
-    <line x1="13" y1="8.9"   x2="13"    y2="15.8" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="11.3" x2="10.5"   y2="13.5" stroke="#0b120e" stroke-width="1.4" stroke-linecap="round"/>
-    <line x1="13" y1="11.3" x2="15.5"   y2="12.1" stroke="#0b120e" stroke-width="1.4" stroke-linecap="round"/>
-    <line x1="7.8" y1="14.2" x2="18.2"  y2="11.4" stroke="#0b120e" stroke-width="1.4" stroke-linecap="round"/>
-    <line x1="7.1" y1="13.1" x2="8.5"   y2="15.3" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="17.5" y1="10.3" x2="18.9" y2="12.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <path d="M5.6,16.5 C8.6,20.2 17.4,20.2 20.4,16.5 Z" fill="#0b120e"/>
-  `},
-  {id:'otros',label:'Otros',color:'#e055c0',symbol:`
-    <circle cx="13" cy="8.5" r="1.6" fill="#0b120e"/>
-    <line x1="13" y1="10.1" x2="13" y2="15.5" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="8.5" y2="11"  stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="11.5" x2="17.5" y2="11" stroke="#0b120e" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="11"   y2="19" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-    <line x1="13" y1="15.5" x2="15"   y2="19" stroke="#0b120e" stroke-width="1.8" stroke-linecap="round"/>
-  `},
-];
+/* ── actividades ──
+   El catálogo NO se escribe aquí: es de core/activities.py (id, etiqueta, color,
+   icono y modalidad IBP de cada deporte) y llega inyectado como JSON en
+   base.html (#activities-json). Así añadir un deporte es tocar UN archivo y
+   aparece solo en filtros, selectores, mapas, dashboard y Ajustes; y cliente y
+   servidor no pueden acabar con listas distintas. Ver la cabecera de ese archivo. */
+const ACTIVITIES = (() => {
+  const el = document.getElementById('activities-json');
+  if (!el) { console.error('Sendero: falta #activities-json en el documento'); return []; }
+  try { return JSON.parse(el.textContent); }
+  catch (e) { console.error('Sendero: catálogo de actividades ilegible', e); return []; }
+})();
 function activityOf(id){return ACTIVITIES.find(a=>a.id===id);}
 function iconSvg(a,size=26){
   return `<svg width="${size}" height="${size}" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">

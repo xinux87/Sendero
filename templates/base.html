@@ -903,6 +903,13 @@ header .header-right{display:flex;align-items:center;gap:10px;flex-shrink:0;marg
   </div><!-- /cfg-fullscreen -->
 </div>
 
+{# Catálogo de actividades (core/activities.py): id, etiqueta, color, icono y
+   modalidad IBP de cada deporte. Va inyectado y no por fetch porque las secciones
+   lo leen de forma síncrona al montar y tiene que estar sin conexión. Es JSON
+   dentro de un <script type="application/json">, que el navegador no ejecuta, y
+   lo lee JSON.parse — mismo patrón (y mismo motivo) que bootstrap_json, regla 10.
+   TIENE que ir antes de shared.js, que lo convierte en ACTIVITIES. #}
+<script type="application/json" id="activities-json">{{ activities_json | safe }}</script>
 <script src="/static/shared.js"></script>
 <script src="/static/js/core/chrome.js"></script>
 {% block body_scripts %}{% endblock %}

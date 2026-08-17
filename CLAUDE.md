@@ -47,7 +47,8 @@ sincronización delta. Lo que eso significa en la práctica:
 # desarrollo
 pip install -r requirements-dev.txt   # incluye requirements.txt + pytest
 python app.py                      # http://localhost:8080, init_db() automático
-python -m pytest                   # 111 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
+python -m pytest                   # 118 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
+                                   #   actividades (el catálogo y su cableado),
                                    #   dedup, geocode, ibp, sync y las columnas de los dos listados
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
 node tests/sec_smoke.js            # sec/detalle.js y sec/plan.js cargan contra los ids reales del markup
@@ -124,6 +125,10 @@ La lógica real está repartida en dos paquetes:
 
 ```
 core/
+  activities.py — CATÁLOGO DE DEPORTES: la única fuente de verdad de qué actividades
+                  existen. Un deporte entero (id, etiqueta, color, icono, umbrales
+                  GPS, palabras de detección y modalidad IBP) se define AQUÍ y en
+                  ningún otro sitio; ver "Catálogo de actividades"
   config.py     — paths (GPX_DIR, PHOTO_DIR, THUMB_DIR, VERSIONS_DIR, TILES_DIR, DB_PATH),
                   variables Immich y de mapas (MAP_OFFLINE_FILE/MAP_DEFAULT_LAYER…)
   database.py   — init_db(), close_db(), helper db() (conexión por request vía g.db),
@@ -256,7 +261,8 @@ Los colores de la **escala de pendiente** (verde→rojo de la traza y el perfil)
 viven en `static/shared.js`, en `SLOPE_SCALE`, y de ahí sale hasta la leyenda: ver
 «Color por pendiente en los dos detalles».
 
-Los colores de actividad viven en `ACTIVITIES` (`static/shared.js`), no en CSS:
+Los colores de actividad viven en el catálogo de `core/activities.py` (no en CSS
+ni en `shared.js`, que solo lo recibe inyectado — ver «Catálogo de actividades»):
 `senderismo #e8863c` · `bicicleta #3d9be9` · `caminata #43b97f` · `correr #e34b4b` ·
 `esquí #a86ee0` · `kayak #23bfc4` · `otros #e055c0`, con el glifo del icono en `#0b120e` (tinta oscura
 sobre el color, no blanca). **Nada de hex sueltos** en plantillas ni en el CSS de
@@ -296,7 +302,8 @@ static/fonts/      Oswald + IBM Plex Sans + IBM Plex Mono en .woff2 + fonts.css
 static/sw.js       Service Worker (lo sirve /sw.js, no /static/sw.js — ver api/pwa.py)
 static/icons/      icon-192.png, icon-512.png, icon-maskable-512.png, generados de
                    static/icon.svg con cairosvg (el maskable al 80% sobre el fondo)
-static/shared.js   ACTIVITIES/activityOf/iconSvg/_loadActImages, BASEMAP_TILES,
+static/shared.js   ACTIVITIES (lo INYECTA base.html desde core/activities.py, no
+                   se escribe aquí)/activityOf/iconSvg/_loadActImages, BASEMAP_TILES,
                    SLOPE_SCALE/slopeColor/slopeProfile/slopeBuckets/
                    slopeGradientExpr/slopeChartGradient/slopeLegendHtml
                    (color por pendiente de los dos detalles),
@@ -581,6 +588,45 @@ iteración en un sitio, cámbialo en los dos** (`core/parsers.py` y `core/editin
 - Concurrencia: el POST de guardado lleva `base_version`; si no coincide con
   `MAX(version_n)` → 409 `version_conflict`.
 - `DELETE /api/routes/<id>` borra también `route_versions` y `versions/<id>/`.
+
+### Catálogo de actividades (`core/activities.py`) — un deporte, un archivo
+**Añadir un deporte es editar `core/activities.py` y subir `APP_VERSION`. Nada más.**
+Antes eran cinco sitios y olvidarse de uno no daba ningún error: el deporte
+simplemente no salía en una pantalla (el caso real: la actividad nueva no aparecía
+en el selector del detalle ni en las píldoras de filtro).
+
+Cada entrada lleva **todo** lo que define la actividad: `id` (el que se guarda en
+`routes.activity_type`; ASCII, sin acentos), `label`, `color`, `symbol` (el interior
+del `<svg viewBox="0 0 26 26">`, glifo siempre en `#0b120e`), `thresholds` (los de
+Ajustes → «GPS incorrecto»), `gpx_types`/`fit_sports`/`keywords` (las tres vías de
+detección al importar) e `ibp` (modalidad del índice, o `None`). De ahí salen las
+vistas derivadas `IDS`/`THRESHOLDS`/`GPX_TYPES`/`FIT_SPORTS`/`KEYWORDS`/`IBP_MODALITY`,
+que es lo que importan `core/config.py`, `core/parsers.py` y `core/ibp.py` — **ninguno
+tiene ya su propia tabla**.
+
+- **El cliente lo recibe inyectado**, no por `fetch`: `app.py` (context processor)
+  pone `client_json()` en `<script type="application/json" id="activities-json">` de
+  `base.html`, y `shared.js` lo convierte en `ACTIVITIES`. Dos motivos: las secciones
+  lo leen **síncronamente** al montar (`ACTIVITIES.forEach`, sin `await`) y así
+  funciona **sin conexión** con solo el shell precacheado. El `<script>` va
+  obligatoriamente **antes** de `shared.js`.
+- **Los umbrales NO viajan al cliente**: los sirve `/api/settings/gps-thresholds`, que
+  ya devuelve los efectivos (los personalizados del usuario, con estos de respaldo).
+- **El orden de `KEYWORDS` importa**: gana la primera que casa y las de `senderismo`
+  son muy golosas (`via`, `travesia`, `gr` —que va dentro de «Segre»—), así que una
+  actividad de palabras específicas se adelanta con `keyword_prio` negativo (lo hace
+  `kayak`). Y nada de palabras que vivan dentro de otras: `remo` está en «extremo».
+- **`tests/test_activities.py` vigila el cableado**, que es lo que se rompe callado:
+  que nadie vuelva a escribir la lista a mano en `shared.js` o en `chrome.js`, que
+  `base.html` siga inyectando el catálogo antes de `shared.js`, que no haya palabras
+  ni tipos compartidos entre dos actividades y que las modalidades IBP sean válidas.
+- **Al añadir un deporte hay que subir `APP_VERSION`** aunque no toques JS: el
+  catálogo viaja dentro del shell, y sin eso los clientes con el shell precacheado
+  seguirían sin verlo.
+- El filtro de «Mis Rutas» guarda en `sessionStorage` las actividades **desmarcadas**
+  (`off`), no las marcadas: si guardara las marcadas, un deporte nuevo saldría
+  filtrado para quien ya tuviera estado guardado, y una lista vacía por el filtro no
+  se distingue de «no tengo rutas de ese tipo».
 
 ### Deduplicación de importaciones (`core/dedup.py` + `create_route`)
 Para no importar dos veces el mismo track. Dos niveles, ambos funciones puras en
@@ -1547,7 +1593,7 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | speed | TEXT JSON | lista `[{d, v}, …]` (v en km/h) o NULL. GPX: derivada de posición/tiempo con ventana móvil de `SPEED_WINDOW_S` (15s) para suavizar ruido GPS — requiere `<time>` por punto, si no hay queda vacío. FIT: `enhanced_speed`/`speed` del propio dispositivo, sin suavizar |
 | gps_issues | TEXT JSON | tramos GPS anómalos (`core/gps_analysis.py::detect_gps_anomalies`, umbrales por actividad de Ajustes → "GPS incorrecto"); lista `[{type: speed\|elevation\|altitude, d_from, d_to, value_max, threshold, severity}, …]` o NULL. `altitude` (puntos por encima de `max_ele_m`) se detecta incluso sin timestamps. Lo calculan `create_route` y `_reanalyse_and_update` (rescan + guardados del editor); el editor lo premarca. El **listado no lleva este JSON** (pesa y en la tarjeta no se usa): lleva su resumen en dos enteros derivados, `gps_issues_n` y `gps_issues_high`, calculados con las expresiones `GPS_ISSUES_N_SQL`/`GPS_ISSUES_HIGH_SQL` de `core/database.py` y guardados **ya calculados dentro de `idx_routes_list_cov5`**, que es un índice sobre expresiones — por eso la fila nunca se toca. Query e índice importan las mismas constantes a propósito: si los dos textos SQL dejan de coincidir, el índice deja de aplicarse y vuelve el problema de la regla 12 (`tests/test_list_cols.py` lo vigila con un `EXPLAIN QUERY PLAN`). OJO: `app.py` hace `refresh_config()` en `before_request` porque con 2 workers un POST de ajustes solo refrescaba el worker que lo atendía |
 | created_at | TEXT | |
-| activity_type | TEXT | senderismo/bicicleta/caminata/correr/esqui/kayak/otros. **Añadir una actividad son cinco sitios**: `ACTIVITIES` (`static/shared.js`, id+etiqueta+color+icono), `DEFAULT_GPS_THRESHOLDS` (`core/config.py`), los tres mapas de `core/parsers.py` (`_GPX_TYPE_MAP`, `_FIT_SPORT_MAP`, `_ACTIVITY_KEYWORDS`), `_CFG_ACTIVITIES` (`static/js/core/chrome.js`, tablas de Ajustes) y, si tiene equivalente en el IBP, `_MODALITY_BY_ACTIVITY` (`core/ibp.py`) + `IBP_MOD_BY_ACT` (`sec/plan.js`). Todo lo demás (filtros, mapas, dashboard, selector del detalle) sale de `ACTIVITIES` solo |
+| activity_type | TEXT | senderismo/bicicleta/caminata/correr/esqui/kayak/otros. Los ids salen de `core/activities.py`, ver «Catálogo de actividades» |
 | device | TEXT | fabricante/modelo del dispositivo |
 | immich_checked | INTEGER | 0/1 |
 | start_lat, start_lon | REAL | primer punto del track |
@@ -1808,8 +1854,12 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   comprueba las tres cosas que se rompen sin ruido: que **sin clave** no se sube nada y el
   panel explica cómo activarlo (no un botón que falla); que **importar un plan con el
   servicio caído sigue devolviendo 201**; y que cambiar la actividad reelige la modalidad
-  **sin pedir red** (viene de `ibp_all`). Si añades una actividad nueva, mírala en
-  `_MODALITY_BY_ACTIVITY` y en `IBP_MOD_BY_ACT` (son la misma tabla en dos idiomas).
+  **sin pedir red** (viene de `ibp_all`). La modalidad de cada actividad es el campo
+  `ibp` del catálogo (`core/activities.py`); servidor y cliente leen de ahí.
+- Si añadiste una actividad: ¿está TODO en `core/activities.py` (no hay una lista nueva
+  en ningún otro sitio), pasa `python -m pytest tests/test_activities.py` y subiste
+  `APP_VERSION`? Sin lo último, los clientes con el shell precacheado no la ven, que es
+  exactamente el síntoma de «el deporte nuevo no sale en el selector».
 - Si tocaste `sec/planes.js`: ¿el filtro por estado sigue afectando a la lista **y** al mapa
   (una sola fuente, `visiblePlans()`)? ¿`syncMarkers()` sigue QUITANDO el marcador del plan
   que el filtro deja fuera? ¿marcar como realizada sin conexión sigue encolándose, avisando

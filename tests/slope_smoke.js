@@ -19,10 +19,13 @@
      mismo color, no null: null deja la traza del color de la actividad). */
 const fs = require('fs');
 
-/* shared.js lee document.body al cargarse (MAP_CFG y PLANNER_URL).
+/* shared.js lee document.body al cargarse (MAP_CFG y PLANNER_URL) y el catálogo
+   de actividades inyectado en #activities-json (core/activities.py); aquí no hace
+   falta ninguno, pero tienen que existir para que el archivo cargue.
    Las `const` de un eval NO salen de su ámbito (a diferencia de las funciones),
    así que el propio eval devuelve lo que hace falta. */
-global.document = {body: {dataset: {}}, querySelector: () => null};
+global.document = {body: {dataset: {}}, querySelector: () => null,
+                   getElementById: () => ({textContent: '[]'})};
 const {SLOPE_SCALE, SLOPE_BUCKETS, slopeColor, slopeProfile, slopeGradientExpr,
        slopeBuckets, slopeLegendHtml} = eval('(function(){'
   + fs.readFileSync('static/shared.js', 'utf8')

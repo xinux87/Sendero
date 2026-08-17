@@ -35,9 +35,14 @@ def _inject_version():
     # static/shared.js para saber si hay capa de mapa offline configurada.
     # planner_url va en <body data-planner-url> por el mismo motivo (lo lee
     # PLANNER_URL de shared.js): en el HTML no necesita fetch y funciona sin red.
+    # activities_json es el catálogo de core/activities.py, que base.html deja en
+    # <script id="activities-json"> y shared.js convierte en ACTIVITIES: así el
+    # cliente no tiene su propia copia de la lista de deportes que se pueda
+    # desincronizar de la del servidor.
     import core.config as _cfg
+    from core import activities as _acts
     return {"app_version": APP_VERSION, "map_cfg_json": json.dumps(map_cfg()),
-            "planner_url": _cfg.PLANNER_URL}
+            "planner_url": _cfg.PLANNER_URL, "activities_json": _acts.client_json()}
 
 
 @app.before_request
