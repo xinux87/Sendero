@@ -9,6 +9,7 @@ from core.config import refresh_config, APP_VERSION
 from api.routes import routes_bp
 from api.photos import photos_bp
 from api.planned import planned_bp
+from api.planned_editor import planned_editor_bp
 from api.settings import settings_bp
 from api.immich_api import immich_bp
 from api.editor import editor_bp
@@ -53,8 +54,8 @@ def _refresh_settings():
     # consistente; es un SELECT de ~10 filas, despreciable en LAN.
     refresh_config()
 
-for bp in (routes_bp, photos_bp, planned_bp, settings_bp, immich_bp, editor_bp, mifit_bp,
-           maps_bp, sync_bp, pwa_bp):
+for bp in (routes_bp, photos_bp, planned_bp, planned_editor_bp, settings_bp, immich_bp,
+           editor_bp, mifit_bp, maps_bp, sync_bp, pwa_bp):
     app.register_blueprint(bp)
 
 init_db()

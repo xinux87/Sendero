@@ -73,6 +73,15 @@
 #sec-plan .stat.acc{border-left-width:3px;border-left-style:solid}
 #sec-plan .stat.acc .v{color:var(--pr-yellow)}
 
+/* ── PESTAÑAS (solo móvil, ver el bloque @media de abajo) ──────────────────
+   Son tres (Perfil · Datos · Notas) y no cuatro como en el detalle de ruta: un
+   plan no tiene fotos. */
+#sec-plan .pl-tabs{display:none;gap:18px;padding:0 2px;margin-top:14px;
+  border-bottom:1px solid var(--line)}
+#sec-plan .pl-tab{background:none;border:0;padding:10px 2px;font-family:inherit;font-size:12.5px;
+  color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+#sec-plan .pl-tab.on{color:var(--pr-yellow);border-bottom-color:var(--pr-yellow)}
+
 /* ── CUERPO: dos columnas (1fr | 350px) ───────────────────────────────────── */
 #sec-plan .pl-body{display:grid;grid-template-columns:1fr 350px;gap:16px;margin-top:16px}
 #sec-plan .pl-col{display:flex;flex-direction:column;gap:16px;min-width:0}
@@ -133,6 +142,19 @@
   color:#c3cfc6;background:rgba(11,18,14,.55);border:1px solid rgba(236,229,216,.2);
   border-radius:999px;padding:4px 11px}
 
+/* ── chapa "realizada" sobre el mapa cabecera ─────────────────────────────────
+   Misma familia que el chip de actividad y el badge de fuente: fondo translúcido
+   oscuro, porque sobre una capa satélite el verde solo no se leería. El verde es
+   el --sage del proyecto, no uno nuevo. */
+#sec-plan .pl-done-chip{display:inline-flex;align-items:center;gap:5px;pointer-events:auto;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--sage);background:rgba(11,18,14,.55);border:1px solid var(--sage);
+  border-radius:999px;padding:4px 11px;white-space:nowrap}
+/* Enlace a la ruta que cumplió el plan, en "Datos técnicos". */
+#sec-plan .pl-done-link{color:var(--sage);text-decoration:none;cursor:pointer;
+  border-bottom:1px solid transparent}
+#sec-plan .pl-done-link:hover{border-bottom-color:var(--sage)}
+
 /* ── actividad ────────────────────────────────────────────────────────────── */
 #sec-plan .act-badge{display:inline-flex;align-items:center;gap:7px;padding:4px 12px 4px 5px;
   border-radius:999px;font-family:var(--mono);font-size:11.5px;font-weight:500;
@@ -162,6 +184,32 @@
   margin-bottom:6px}
 #sec-plan .modal-head h2{font-size:24px;font-weight:500;text-transform:uppercase;
   letter-spacing:.03em}
+#sec-plan .modal-cta{width:100%;margin-top:8px}
+
+/* ── selector "¿qué ruta la cumplió?" ─────────────────────────────────────────
+   Mismas reglas que el #done-modal de «Mis Planes» (static/css/planes.css), aquí
+   escopadas bajo #sec-plan: las dos secciones comparten documento y el CSS de
+   una no puede pisar a la otra. */
+#sec-plan .done-plan-name{font-family:var(--display);font-size:17px;font-weight:500;
+  color:var(--pr-yellow);margin-bottom:12px}
+#sec-plan .done-search{width:100%;background:var(--panel-2);border:1px solid var(--line-strong);
+  border-radius:9px;padding:9px 12px;color:var(--ink);font-family:var(--mono);font-size:12.5px}
+#sec-plan .done-search:focus{outline:none;border-color:var(--sage)}
+#sec-plan .done-list{margin-top:10px;max-height:46vh;overflow-y:auto;
+  border:1px solid var(--line);border-radius:10px}
+#sec-plan .done-group{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--sage);padding:9px 12px 5px;
+  background:var(--panel);position:sticky;top:0}
+#sec-plan .done-row{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;
+  border-top:1px solid var(--line)}
+#sec-plan .done-row:hover{background:var(--panel-2)}
+#sec-plan .done-row-ico{line-height:0;flex:none}
+#sec-plan .done-row-body{display:flex;flex-direction:column;gap:2px;min-width:0}
+#sec-plan .done-row-name{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+#sec-plan .done-row-meta{font-family:var(--mono);font-size:10.5px;color:var(--muted-faint)}
+#sec-plan .done-empty{font-family:var(--mono);font-size:12px;color:var(--muted-dim);
+  padding:14px 12px}
 
 /* ── MapLibre dentro del mapa cabecera ────────────────────────────────────── */
 #sec-plan .maplibregl-ctrl-icon{filter:brightness(0) invert(1)}
@@ -200,22 +248,35 @@
   #sec-plan .stat .v{font-size:19px}
   #sec-plan .panel{padding:12px 14px}
   #sec-plan .chart-box{height:190px}
-  #sec-plan #pl-activity-modal .modal{max-height:88vh;max-height:88dvh;overflow-y:auto}
+  /* El cuerpo pasa a pestañas en vez de dos columnas: solo se ve el bloque de la
+     pestaña activa (data-tab en la sección, data-dtab en cada panel). Los paneles
+     que se esconden por no tener datos (perfil sin elevación, fuente) lo hacen
+     con estilo INLINE: con la clase .hidden empatarían en especificidad con estas
+     reglas y volverían a verse. */
+  #sec-plan .pl-tabs{display:flex}
+  #sec-plan .pl-body{margin-top:14px}
+  #sec-plan [data-dtab]{display:none}
+  #sec-plan[data-tab="perfil"] [data-dtab="perfil"],
+  #sec-plan[data-tab="datos"]  [data-dtab="datos"],
+  #sec-plan[data-tab="notas"]  [data-dtab="notas"]{display:block}
+  #sec-plan #pl-activity-modal .modal,
+  #sec-plan #pl-done-modal .modal{max-height:88vh;max-height:88dvh;overflow-y:auto}
+  #sec-plan .done-list{max-height:40vh}
 }
 /* A 600 px el mapa cabecera va a ancho completo y sin radio (el negativo
    cancela el padding de .wrap en móvil), como en el detalle de ruta. */
 @media(max-width:600px){
   #sec-plan .pl-hero{margin:0 -14px;border-radius:0;border-left:0;border-right:0}
+  /* Las cuatro acciones en rejilla 2×2: con flex-wrap el ⋯ se quedaba solo en una
+     segunda fila alineado a la derecha y dejaba un hueco raro. */
   #sec-plan .pl-hero-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
   #sec-plan .pl-hero-actions .btn{width:100%}
-  /* Son tres botones, no cuatro: el ⋯ ocupa la segunda fila entera en vez de
-     quedarse suelto en media columna. */
-  #sec-plan #pl-more-btn,
   #sec-plan .pl-more{grid-column:1 / -1}
 }
 @media(hover:none) and (pointer:coarse){
   #sec-plan .act-badge{min-height:34px}
   #sec-plan .act-opt:hover{transform:none}
+  #sec-plan .pl-tab{min-height:44px}
 }
 
 /* ── Leyenda de la escala de pendiente ───────────────────────────────────────

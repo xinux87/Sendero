@@ -8,10 +8,13 @@
    genéricos llevan prefijo pl- para no chocar con las otras cinco secciones del
    mismo documento.
 
+   En móvil el cuerpo pasa a pestañas (Perfil / Datos / Notas), igual que el
+   detalle de ruta — de ahí los data-dtab.
+
    OJO con tests/e2e_spa.py: espera un <canvas> y UN <select> (el de capas base)
    dentro de #pl-map, y pulsa #pl-offline-btn directamente — ese botón tiene que
    seguir visible, no escondido tras el ⋯. #}
-<section id="sec-plan" class="sec hidden">
+<section id="sec-plan" class="sec hidden" data-tab="perfil">
 
 {# ── CABECERA-MAPA ───────────────────────────────────────────────────────────
    Igual que .d-hero del detalle: el mapa ocupa el bloque entero y encima van el
@@ -24,6 +27,10 @@
   <div class="pl-hero-info">
     <div class="pl-hero-top">
       <span id="pl-activity-badge-sm"></span>
+      {# Chapa "✔ Realizada": la pinta SEC.plan.renderDoneBadge() solo si el plan
+         tiene completed_at. Misma familia visual que el chip de actividad (fondo
+         translúcido oscuro), que sobre una capa satélite el color solo no se lee. #}
+      <span id="pl-done-badge"></span>
       <span id="pl-d-source"></span>
     </div>
     <h1 id="pl-d-name"></h1>
@@ -37,8 +44,8 @@
   {# Las acciones van FUERA de .pl-hero (que recorta con overflow:hidden) para
      que en pantalla estrecha caigan debajo del mapa en flujo normal. #}
   <div class="pl-hero-actions">
-    <button class="btn ghost sm" id="pl-download-btn" onclick="SEC.plan.downloadGpx()"
-            style="display:none">↓ Descargar GPX</button>
+    <button class="btn ghost sm" onclick="SEC.plan.openEditor()">✎ Editar track</button>
+    <button class="btn ghost sm" id="pl-btn3d" onclick="SEC.plan.toggle3D()">Vista 3D</button>
     <button class="btn ghost sm" id="pl-offline-btn" onclick="SEC.plan.downloadMap()"
             title="Guarda en este dispositivo las teselas del mapa a lo largo de la ruta">
       ⬇ Mapa sin conexión
@@ -46,6 +53,12 @@
     <button class="btn ghost sm" id="pl-more-btn" aria-label="Más acciones"
             onclick="$('#pl-actions-more').classList.toggle('open')">⋯</button>
     <div id="pl-actions-more" class="pl-more">
+      {# Solo si el plan guarda su GPX; lo enseña/esconde renderHead(). #}
+      <button class="btn ghost sm" id="pl-download-btn" onclick="SEC.plan.downloadGpx()"
+              style="display:none">↓ Descargar GPX</button>
+      {# El texto lo pone renderDoneBtn() según el estado: marcar o desmarcar. #}
+      <button class="btn ghost sm" id="pl-done-btn" onclick="SEC.plan.toggleDone()">✔ Marcar realizada</button>
+      <button class="btn ghost sm" id="pl-rescan-btn" onclick="SEC.plan.rescanPlan(this)">↺ Reanalizar</button>
       <button class="btn ghost sm" onclick="SEC.plan.renamePlan()">Renombrar</button>
       <button class="btn ghost sm" onclick="SEC.plan.removePlan()"
               style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>
@@ -65,10 +78,19 @@
 {# ── BANDA DE MÉTRICAS (la 1ª con el acento de la actividad) ─────────────── #}
 <div class="stats-row" id="pl-stats"></div>
 
+{# ── PESTAÑAS: solo móvil (<768 px). En pantalla grande el cuerpo va a dos
+     columnas y estas no se ven. Un plan no tiene fotos, así que son tres y no
+     cuatro como en el detalle de ruta. #}
+<div class="pl-tabs" role="tablist">
+  <button class="pl-tab on" data-tab="perfil" role="tab" onclick="SEC.plan.setTab('perfil')">Perfil</button>
+  <button class="pl-tab"    data-tab="datos"  role="tab" onclick="SEC.plan.setTab('datos')">Datos</button>
+  <button class="pl-tab"    data-tab="notas"  role="tab" onclick="SEC.plan.setTab('notas')">Notas</button>
+</div>
+
 <div class="pl-body">
   <div class="pl-col">
 
-    <div class="panel" id="pl-elev-panel">
+    <div class="panel" id="pl-elev-panel" data-dtab="perfil">
       <div class="panel-head">
         <span class="panel-title">Perfil de elevación</span>
         <span id="pl-elev-sub" class="panel-sub mono"></span>
@@ -83,7 +105,7 @@
   </div>
   <div class="pl-col pl-col-side">
 
-    <div class="panel">
+    <div class="panel" data-dtab="datos">
       <div class="panel-head"><span class="panel-title">Datos técnicos</span></div>
       <div id="pl-tech" class="kv"></div>
     </div>
@@ -91,7 +113,7 @@
     {# Dificultad IBP (ibpindex.com). Solo en los planes, no en las rutas hechas:
        sirve para decidir si te metes en una ruta. El cuerpo lo pinta
        SEC.plan.renderIbp() según haya índice, clave, o ninguna de las dos. #}
-    <div class="panel" id="pl-ibp-panel">
+    <div class="panel" id="pl-ibp-panel" data-dtab="datos">
       <div class="panel-head">
         <span class="panel-title">Dificultad IBP</span>
         <span id="pl-ibp-sub" class="panel-sub mono"></span>
@@ -99,12 +121,12 @@
       <div id="pl-ibp-body"></div>
     </div>
 
-    <div class="panel hidden" id="pl-source-section">
+    <div class="panel" id="pl-source-section" data-dtab="datos" style="display:none">
       <div class="panel-head"><span class="panel-title">Fuente</span></div>
       <div id="pl-source-info" class="pl-source-info"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" data-dtab="notas">
       <div class="panel-head"><span class="panel-title">Notas</span></div>
       <div id="pl-auto" class="auto"></div>
       <textarea id="pl-notes" placeholder="Escribe aquí tus notas sobre esta ruta: descripción del terreno, puntos de agua, dificultad estimada…"></textarea>
@@ -122,6 +144,27 @@
       <button class="btn ghost sm" onclick="SEC.plan.closeActivityPicker()">Cerrar</button>
     </div>
     <div id="pl-act-picker-grid" class="act-picker-grid"></div>
+  </div>
+</div>
+
+{# MODAL: ¿qué ruta cumplió este plan?  Mismo flujo que el #done-modal de «Mis
+   Planes», pero reimplementado aquí con ids pl-: aquel vive en la IIFE de
+   sec/planes.js, que puede no estar cargada cuando se entra directo a /Plan/<id>.
+   Las rutas salen de Store.routes(), así que el selector también va sin conexión. #}
+<div id="pl-done-modal" class="overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>¿Qué ruta la cumplió?</h2>
+      <button class="btn ghost sm" onclick="SEC.plan.closeDoneModal()">Cerrar</button>
+    </div>
+    <div id="pl-done-plan-name" class="done-plan-name"></div>
+    <input id="pl-done-search" class="done-search" type="search" autocomplete="off"
+           placeholder="Buscar por nombre o localidad…"
+           oninput="SEC.plan.filterDoneList()">
+    <div id="pl-done-list" class="done-list"></div>
+    <button class="btn ghost modal-cta" onclick="SEC.plan.markDone(null)">
+      Marcarla sin ruta asociada
+    </button>
   </div>
 </div>
 </section>

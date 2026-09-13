@@ -1,4 +1,4 @@
-"""Siembra un Sendero de pruebas con rutas y un plan sintéticos (para tests/e2e_spa.py).
+"""Siembra un Sendero de pruebas con rutas y planes sintéticos (para tests/e2e_spa.py).
 
     python tests/e2e_seed.py http://localhost:8124
 
@@ -10,6 +10,8 @@ Las rutas son deterministas y cubren los caminos que necesita la suite: una con
 puntos cada 10 s (dentro de SPEED_WINDOW_S, así que tiene curva de velocidad) y
 otra cada 20 s (sin curva: el parser la deja vacía a propósito, ver
 tests/test_parsers.py). Todas llevan <time> y FC, para que salgan las 3 gráficas.
+Los dos PLANES, en cambio, van sin <time>: un recorrido que no se ha hecho no
+tiene horas, y de eso depende que el editor esconda las herramientas del tiempo.
 """
 import sys, time, urllib.request, urllib.error, json, datetime as dt
 
@@ -18,7 +20,11 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8124"
 
 def gpx(name, n=120, lat0=42.60, lon0=-1.60, ele0=800.0, ele_step=6.0,
         start="2026-05-01T09:00:00", step_s=30, tipo="hiking", hr=True,
-        dlat=0.0006, dlon=0.0004):
+        dlat=0.0006, dlon=0.0004, times=True):
+    """GPX sintético. `times=False` lo deja SIN <time>, que es como son casi
+    todos los planes (un recorrido que no se ha hecho todavía no tiene horas):
+    es lo que hace que el editor esconda «Corregir velocidad excesiva» y
+    «Desplazar tiempos», y lo comprueba el bloque «Planificación editable»."""
     t0 = dt.datetime.fromisoformat(start)
     pts = []
     for i in range(n):
@@ -27,11 +33,12 @@ def gpx(name, n=120, lat0=42.60, lon0=-1.60, ele0=800.0, ele_step=6.0,
         lat = lat0 + i * dlat
         lon = lon0 + i * dlon + (dlon * 2 if n // 3 < i < 2 * n // 3 else 0)
         ts = (t0 + dt.timedelta(seconds=i * step_s)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        tag = f'<time>{ts}</time>' if times else ''
         ext = (f'<extensions><gpxtpx:TrackPointExtension>'
                f'<gpxtpx:hr>{110 + i % 40}</gpxtpx:hr>'
-               f'</gpxtpx:TrackPointExtension></extensions>') if hr else ''
+               f'</gpxtpx:TrackPointExtension></extensions>') if hr and times else ''
         pts.append(f'<trkpt lat="{lat:.6f}" lon="{lon:.6f}">'
-                   f'<ele>{ele:.1f}</ele><time>{ts}</time>{ext}</trkpt>')
+                   f'<ele>{ele:.1f}</ele>{tag}{ext}</trkpt>')
     return (f'<?xml version="1.0" encoding="UTF-8"?>\n'
             f'<gpx version="1.1" creator="pruebas-e2e" xmlns="http://www.topografix.com/GPX/1/1" '
             f'xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">'
@@ -85,9 +92,23 @@ if __name__ == "__main__":
         print(f"  {code}  {nombre} -> {data.get('public_id') or data}")
         if code == 201:
             creadas.append(data["public_id"])
-    # un plan, para probar la sección plan del shell
-    code, data = post_gpx("Travesía pendiente de hacer",
-                          gpx("Travesía pendiente de hacer", n=80, lat0=43.0, lon0=-2.0),
-                          "/api/planned")
-    print(f"  {code}  plan -> {data.get('public_id') or data}")
-    print(json.dumps({"rutas": creadas, "plan": data.get("public_id")}))
+    # DOS planes, y el orden de creación importa: /api/planned ordena por
+    # created_at DESC, así que el último creado es planes[0] —el que usan los
+    # bloques que ya existían—. Ninguno lleva <time>, que es lo normal en un plan.
+    #
+    # El primero es de ALTA MONTAÑA por el mismo motivo que la ruta de Andorra: la
+    # vista 3D solo se rompía por encima de ~1500 m. También es el segundo plan que
+    # necesita «unir» (POST /api/planned/merge).
+    planes = []
+    for nombre, kw in [
+        ("Ascensión pendiente en Andorra", dict(n=120, lat0=42.5720, lon0=1.4990,
+                                                ele0=1900.0, ele_step=6.0,
+                                                dlat=0.000030, dlon=0.00016)),
+        ("Travesía pendiente de hacer", dict(n=80, lat0=43.0, lon0=-2.0)),
+    ]:
+        code, data = post_gpx(nombre, gpx(nombre, times=False, **kw), "/api/planned")
+        print(f"  {code}  plan -> {data.get('public_id') or data}")
+        if code == 201:
+            planes.append(data["public_id"])
+    print(json.dumps({"rutas": creadas, "plan": planes[-1] if planes else None,
+                      "planes": planes}))

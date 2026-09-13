@@ -188,12 +188,15 @@ const fire = async (type, e) => { for (const fn of handlers[type] || []) fn(e); 
   assert.ok(d3.res.body.includes('app-shell'), 'lo mismo con una ruta nunca visitada');
   console.log('OK sin conexión: ruta nueva → shell precacheado');
 
+  // El editor tiene DOS URLs: la de una ruta y la de un plan (/Plan/<pid>/editor,
+  // v0.10.0). Sin la segunda en SHELL_PATHS, esa URL daría sin conexión la página
+  // de aviso en vez del shell.
   for (const url of ['/rutas', '/dashboard', '/planificacion', '/Plan/xyz',
-                     '/Sendero/abc/editor']) {
+                     '/Sendero/abc/editor', '/Plan/xyz/editor']) {
     const d = await route(url, nav);
     assert.ok(d.res.body.includes('app-shell'), `${url} sin red → shell sin datos`);
   }
-  console.log('OK sin conexión: las 6 vistas se sirven desde /app-shell');
+  console.log('OK sin conexión: las 6 vistas (y el editor de plan) desde /app-shell');
 
   const d6 = await route('/otra-cosa-cualquiera', nav);
   assert.ok(d6.res.body.includes('Sin conexión'),

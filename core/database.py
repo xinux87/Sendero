@@ -400,6 +400,36 @@ def init_db():
         ON route_versions(route_id, version_n DESC, summary, distance_m,
                           ascent_m, n_points, created_at, file)""")
 
+    # Historial de versiones del editor de PLANES. Misma semántica append-only
+    # que route_versions, pero el archivo va DENTRO de la tabla (BLOB): el GPX de
+    # un plan ya vive en planned_routes.gpx_data, no en disco, así que sacar sus
+    # versiones a data/gpx/versions/ partiría el modelo en dos.
+    # Invariante: planned_routes.gpx_data == la versión más alta. Un plan nunca
+    # editado no tiene filas (versión efectiva 0).
+    # No es entidad sincronizada y no lleva triggers (como route_versions): lo que
+    # el cliente ve cambiar es el plan, y ese sí los tiene (regla 14).
+    # Solo CREATE ... IF NOT EXISTS → re-ejecutable por 2 workers a la vez sin
+    # try/except (regla 13).
+    con.executescript("""
+        CREATE TABLE IF NOT EXISTS plan_versions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id    INTEGER NOT NULL,
+            version_n  INTEGER NOT NULL,
+            gpx_data   BLOB NOT NULL,
+            summary    TEXT DEFAULT '',
+            distance_m REAL,
+            ascent_m   REAL,
+            n_points   INTEGER,
+            created_at TEXT,
+            UNIQUE(plan_id, version_n)
+        );
+    """)
+    # Sin índice de cobertura (regla 12) a propósito: aquí el BLOB gpx_data está
+    # al FINAL del registro, así que el listado del historial no lo atraviesa;
+    # basta con el índice por plan para no escanear la tabla entera.
+    con.execute("CREATE INDEX IF NOT EXISTS idx_plan_versions_plan "
+                "ON plan_versions(plan_id)")
+
     # Limpieza del planner interno (implementado y revertido el mismo día): la
     # columna draw_anchors nunca llegó a leerse ni escribirse, y hasta la v0.9.6
     # aquí se AÑADÍA para no reconstruir la tabla. Ahora se quita: no está en

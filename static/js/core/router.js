@@ -14,11 +14,15 @@
 const Router = (() => {
   'use strict';
 
-  // Orden importante: la primera que encaje gana. El editor va antes que el
-  // detalle porque /Sendero/<id>/editor también encajaría en el patrón del detalle.
+  // Orden importante: la primera que encaje gana. Cada editor va antes que su
+  // detalle porque /Sendero/<id>/editor también encajaría en el patrón del
+  // detalle (y lo mismo /Plan/<id>/editor con el del plan).
+  // `kind` es lo que le dice a la sección `editor` si edita una RUTA o un PLAN:
+  // es el MISMO módulo para las dos (ver static/js/sec/editor.js).
   const ROUTES = [
-    {sec: 'editor',    re: /^\/Sendero\/([^/]+)\/editor\/?$/, params: m => ({id: dec(m[1])})},
+    {sec: 'editor',    re: /^\/Sendero\/([^/]+)\/editor\/?$/, params: m => ({id: dec(m[1]), kind: 'route'})},
     {sec: 'detalle',   re: /^\/Sendero\/([^/]+)\/?$/,         params: m => ({id: dec(m[1])})},
+    {sec: 'editor',    re: /^\/Plan\/([^/]+)\/editor\/?$/,    params: m => ({id: dec(m[1]), kind: 'plan'})},
     {sec: 'plan',      re: /^\/Plan\/([^/]+)\/?$/,            params: m => ({id: dec(m[1])})},
     {sec: 'dashboard', re: /^\/dashboard\/?$/,                params: () => ({})},
     {sec: 'rutas',     re: /^\/rutas\/?$/,                    params: () => ({})},

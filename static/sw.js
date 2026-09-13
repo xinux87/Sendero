@@ -92,6 +92,7 @@ const SHELL_PATHS = [
   /^\/planificacion\/?$/,
   /^\/Sendero\/[^/]+\/editor\/?$/,
   /^\/Sendero\/[^/]+\/?$/,
+  /^\/Plan\/[^/]+\/editor\/?$/,
   /^\/Plan\/[^/]+\/?$/,
 ];
 const hostedByShell = path => SHELL_PATHS.some(re => re.test(path));

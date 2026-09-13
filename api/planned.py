@@ -51,7 +51,51 @@ def _build_plan_dict(pid):
         if row:
             d["completed_route_public"] = row["public_id"]
     d["auto_summary"] = auto_summary_planned(d)
+    # Versión actual del editor (0 = nunca editado). Derivada de plan_versions,
+    # igual que `version` en el dict de una ruta: sin columna nueva en
+    # planned_routes (reglas 12-13).
+    v = db().execute(
+        "SELECT MAX(version_n) AS v FROM plan_versions WHERE plan_id=?", (pid,)
+    ).fetchone()
+    d["version"] = (v["v"] if v else 0) or 0
     return d
+
+
+def _reanalyse_plan(con, pid):
+    """Re-parsea planned_routes.gpx_data y reescribe las métricas del plan.
+
+    Es el equivalente de _reanalyse_and_update() para un plan: lo usan el editor
+    (cada versión nueva) y el rescan. Devuelve None si todo fue bien, o la tupla
+    (respuesta, status) para que el endpoint la propague.
+
+    NO toca `name`, `notes` ni `activity_type` —la actividad elegida a mano no se
+    pisa nunca, ver "Bugs corregidos" de CLAUDE.md— ni el estado de realizada ni
+    el índice IBP (de eso se encarga quien crea la versión). Va en UN SOLO UPDATE
+    para que el trigger de sincronización mueva el `rev` del plan una vez.
+    """
+    r = con.execute("SELECT gpx_data FROM planned_routes WHERE id=?", (pid,)).fetchone()
+    if not r:
+        abort(404)
+    if not r["gpx_data"]:
+        return jsonify({"error": "Este plan no tiene archivo GPX"}), 404
+    try:
+        stats, coords, elev, _, _ = analyse_gpx(
+            bytes(r["gpx_data"]).decode("utf-8", errors="replace"))
+    except Exception as e:
+        return jsonify({"error": f"Error al parsear: {e}"}), 400
+    stats.pop("_gpx_type", None)
+    con.execute(
+        """UPDATE planned_routes SET
+           distance_m=?, ascent_m=?, descent_m=?, ele_min=?, ele_max=?,
+           start_lat=?, start_lon=?, geojson=?, elevation=?
+           WHERE id=?""",
+        (stats.get("distance_m"), stats.get("ascent_m"), stats.get("descent_m"),
+         stats.get("ele_min"), stats.get("ele_max"),
+         coords[0][1] if coords else None, coords[0][0] if coords else None,
+         json.dumps(coords), json.dumps(elev), pid),
+    )
+    con.commit()
+    return None
 
 
 # ── índice IBP (ibpindex.com) ───────────────────────────────────────────────
@@ -145,6 +189,32 @@ def plan_detalle_page(ref=None):
             return redirect("/Plan/" + byname["public_id"], code=302)
     bootstrap = json.dumps(_build_plan_dict(r["id"])) if r else ""
     return render_template("shell.html", bootstrap_json=bootstrap)
+
+
+@planned_bp.route("/Plan/<path:ref>/editor")
+def plan_editor_page(ref):
+    """Editor de un plan, espejo de /Sendero/<pid>/editor.
+
+    Misma regla que el detalle: si `ref` es un nombre se redirige al public_id
+    (la URL canónica). Sirve el shell SIN bootstrap: el editor opera sobre el
+    estado guardado en el servidor, así que sus metadatos los pide el módulo a
+    /api/planned/<pid>/editor y no gana nada evitando ese fetch.
+
+    Convive con /Plan/<path:ref> porque esta regla es más específica (el sufijo
+    estático /editor), igual que /Sendero/<path:ref>/editor con su detalle.
+    """
+    con = db()
+    r = con.execute("SELECT id FROM planned_routes WHERE public_id=?", (ref,)).fetchone()
+    if not r:
+        byname = con.execute(
+            "SELECT public_id FROM planned_routes WHERE name=? "
+            "ORDER BY created_at DESC LIMIT 1", (ref,),
+        ).fetchone()
+        if byname and byname["public_id"]:
+            return redirect("/Plan/" + byname["public_id"] + "/editor", code=302)
+        if not byname:
+            return redirect("/planificacion")
+    return render_template("shell.html")
 
 
 @planned_bp.route("/api/planned", methods=["GET"])
@@ -335,6 +405,10 @@ def delete_planned(pid):
     con = db()
     if not con.execute("SELECT 1 FROM planned_routes WHERE id=?", (pid,)).fetchone():
         abort(404)
+    # El historial del editor cuelga del plan y no tiene FK (regla 14: las FK
+    # están apagadas), así que se borra explícitamente — como versions/<id>/ al
+    # borrar una ruta.
+    con.execute("DELETE FROM plan_versions WHERE plan_id=?", (pid,))
     con.execute("DELETE FROM planned_routes WHERE id=?", (pid,))
     con.commit()
     return "", 204

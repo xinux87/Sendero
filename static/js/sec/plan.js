@@ -36,6 +36,21 @@
      plan solo tiene elevación (ni velocidad ni FC: no se ha hecho todavía), así
      que el cuadro flotante enseña km y altitud. */
   let hoverD = null, trackCumKm = [], hoverBoxEl = null;
+  /* ¿está puesta la vista 3D? Vive en el módulo (no en el DOM) porque hay que
+     consultarla desde el 'moveend' que enciende el terreno y desde el repintado
+     que sigue a un cambio de capa base. */
+  let map3dMode = false;
+  /* Selector de «¿qué ruta la cumplió?»: copia local del listado de rutas
+     (Store.routes(), o sea también sin conexión) y su índice por public_id.
+     `doneRoute` es la fila de la ruta asociada a ESTE plan, para poder poner su
+     nombre en «Datos técnicos». */
+  let routesRows = [], routeIdx = {}, doneRoute = null;
+
+  const needOnline = msg => {
+    if (Store.isOnline()) return true;
+    toast(msg || 'Esta acción necesita conexión');
+    return false;
+  };
 
   /* ── mapa ──────────────────────────────────────────────────────────────── */
   /* Bounding box del track, para encuadrar (MapLibre no tiene el getBounds() de
@@ -53,7 +68,55 @@
 
   function fitRoute(instant) {
     const b = trackBounds();
-    if (b && map) map.fitBounds(b, {padding: 40, duration: instant ? 0 : 600});
+    // El encuadre respeta la inclinación: en 3D, volver a pitch 0 sería deshacer
+    // la vista que el usuario acaba de pedir.
+    if (b && map) map.fitBounds(b, {padding: 40, pitch: map3dMode ? 60 : 0,
+                                    duration: instant ? 0 : 600});
+  }
+
+  /* ── vista 3D ──────────────────────────────────────────────────────────────
+     La fuente del DEM (Terrarium de AWS) se añade aparte del track, porque hay
+     que reponerla en cada reconstrucción del estilo: entrar o salir de la capa
+     offline hace setStyle() y se lleva por delante TODAS las fuentes (regla 15).
+     Si el usuario estaba en 3D cuando eso pasa, el terreno se apaga solo, así que
+     aquí se vuelve a encender sobre la fuente recién repuesta. */
+  function ensureTerrain() {
+    if (!map) return;
+    if (!map.getSource('terrain')) {
+      map.addSource('terrain', {
+        type: 'raster-dem',
+        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+        encoding: 'terrarium', tileSize: 256, maxzoom: 15,
+      });
+    }
+    if (map3dMode) map.setTerrain({source: 'terrain', exaggeration: 1.5});
+  }
+
+  function toggle3D() {
+    if (!map) return;
+    map3dMode = !map3dMode;
+    $('#pl-btn3d').textContent = map3dMode ? 'Vista 2D' : 'Vista 3D';
+    if (map3dMode) {
+      /* OJO, y esto costó un bug de meses en el detalle de ruta (de donde está
+         copiada esta secuencia, ver «Bugs corregidos» en CLAUDE.md): NO se puede
+         mover la cámara en el mismo tick en el que se activa el terreno. Haciendo
+             map.setTerrain(...); map.easeTo({pitch:60});
+         el mapa se queda COMPLETAMENTE NEGRO y no se recupera — el terreno
+         todavía no tiene su primera tesela de DEM cuando la cámara se reproyecta,
+         y la transformación queda en un estado inservible. Da igual la duración
+         de la animación: con duration:0 pasa lo mismo.
+
+         Así que primero se inclina y el relieve se enciende al acabar el
+         movimiento. Y si el DEM no llegara nunca —sin internet— lo peor que pasa
+         es que se queda la vista inclinada en 2D en vez de un rectángulo negro. */
+      map.easeTo({pitch: 60, duration: 800});
+      map.once('moveend', () => {
+        if (map3dMode && map) map.setTerrain({source: 'terrain', exaggeration: 1.5});
+      });
+    } else {
+      map.setTerrain(null);
+      map.easeTo({pitch: 0, bearing: 0, duration: 600});
+    }
   }
 
   /* Pinta el track y sus extremos. Se llama en 'load' y OTRA VEZ tras cambiar de
@@ -109,6 +172,11 @@
        no desmonta si la sección no cambia), y sin esto quedarían dos mapas sobre
        el mismo contenedor y dos cuadros de hover huérfanos. */
     destroyMap();
+    /* El mapa se recrea entero: la vista 3D no se hereda del plan anterior (ni
+       del repintado anterior de éste), así que el botón vuelve a decir «Vista 3D». */
+    map3dMode = false;
+    const btn3d = $('#pl-btn3d');
+    if (btn3d) btn3d.textContent = 'Vista 3D';
     const b = trackBounds();
     const cx = b ? (b[0][0] + b[1][0]) / 2 : -1.6;
     const cy = b ? (b[0][1] + b[1][1]) / 2 : 42.5;
@@ -209,8 +277,11 @@
       map.getCanvas().style.cursor = '';
       setHoverD(null);
     });
-    map.on('load', () => { drawTrack(); fitRoute(true); });
-    map.on('sendero:basemap', () => drawTrack());
+    map.on('load', () => { ensureTerrain(); drawTrack(); fitRoute(true); });
+    /* Tras un cambio de capa base que reconstruye el estilo hay que reponer las
+       dos cosas: las capas del track y la fuente del DEM (con el terreno otra vez
+       encendido si estábamos en 3D). */
+    map.on('sendero:basemap', () => { ensureTerrain(); drawTrack(); });
   }
 
   function destroyMap() {
@@ -374,8 +445,12 @@
     destroyChart();
     const elev = (current && current.elevation) || [];
     const panel = $('#pl-elev-panel');
-    if (!elev.length) { panel.classList.add('hidden'); return; }
-    panel.classList.remove('hidden');
+    /* Se esconde con estilo INLINE, no con la clase .hidden: en móvil el panel
+       lleva data-dtab y la regla de la pestaña activa empata en especificidad con
+       `#sec-plan .panel.hidden`, así que un panel sin datos volvería a verse. El
+       inline gana siempre (mismo apaño que #speed-section en el detalle de ruta). */
+    if (!elev.length) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
     $('#pl-elev-sub').textContent = elevSub(elev);
     $('#pl-slope-legend').innerHTML = slopeLegendHtml();
     const ctx = $('#pl-elev');
@@ -466,7 +541,13 @@
   function renderTech() {
     const r = current;
     const rows = [];
-    const add = (k, v) => { if (v != null && v !== '' && v !== '–') rows.push([k, v]); };
+    const add = (k, v) => {
+      if (v != null && v !== '' && v !== '–') {
+        rows.push([k, `<span class="kv-v" title="${esc(String(v))}">${esc(String(v))}</span>`]);
+      }
+    };
+    // Para las filas que llevan un enlace: el valor va en crudo, no escapado.
+    const addHtml = (k, html) => rows.push([k, `<span class="kv-v">${html}</span>`]);
     const n = (r.geojson || []).length;
     add('Puntos del track', n ? fmtNum(n) : null);
     add('Desnivel neto', (r.ascent_m != null && r.descent_m != null)
@@ -474,9 +555,25 @@
     add('Origen', r.source === 'wikiloc' ? 'Wikiloc' : (r.source === 'dibujada' ? 'Dibujada' : 'Archivo GPX'));
     add('Archivo', r.has_gpx ? 'GPX guardado' : 'Sin archivo');
     add('Añadida', r.created_at ? fmtDate(r.created_at) : null);
+    /* Versión del track: solo si el plan se ha editado alguna vez (0 = nunca). Si
+       el servidor no manda el campo, no se pinta nada. */
+    if (r.version) add('Versión del track', 'v' + r.version);
+    if (r.completed_at) {
+      /* fmtDate y no fmtDateLong: es la misma fecha larga pero sin versalitas,
+         que es como va la fila «Añadida» justo encima (fmtDateLong va en MAYÚSCULAS
+         y en esta lista cantaría). */
+      add('Realizada', fmtDate(r.completed_at));
+      if (r.completed_route_public) {
+        /* El nombre sale de la copia LOCAL del listado de rutas (loadDoneRoute):
+           así un renombrado se refleja sin denormalizar nada, y mientras no esté
+           cargada se enseña el enlace igual. data-nav lo navega el router. */
+        const nombre = (doneRoute && doneRoute.name) || 'ver ruta';
+        addHtml('Ruta', `<a class="pl-done-link" data-nav="/Sendero/${
+          encodeURIComponent(r.completed_route_public)}">${esc(nombre)} →</a>`);
+      }
+    }
     $('#pl-tech').innerHTML = rows.map(([k, v]) =>
-      `<div class="kv-row"><span class="kv-k">${esc(k)}</span>` +
-      `<span class="kv-v" title="${esc(String(v))}">${esc(String(v))}</span></div>`).join('');
+      `<div class="kv-row"><span class="kv-k">${esc(k)}</span>${v}</div>`).join('');
   }
 
   /* ── dificultad IBP (ibpindex.com) ───────────────────────────────────────
@@ -591,14 +688,182 @@
 
     const sec = $('#pl-source-section');
     if (current.source === 'wikiloc' && current.source_url) {
-      sec.classList.remove('hidden');
+      // display inline y no la clase .hidden, por lo mismo que el panel del
+      // perfil: el panel lleva data-dtab y la regla de la pestaña activa empata.
+      sec.style.display = '';
       $('#pl-source-info').innerHTML =
         `Ruta importada de <a href="${esc(current.source_url)}" target="_blank" rel="noopener">Wikiloc</a>. ` +
         `Consulta la página original para información adicional sobre el itinerario.`;
     } else {
-      sec.classList.add('hidden');
+      sec.style.display = 'none';
       $('#pl-source-info').innerHTML = '';
     }
+  }
+
+  /* ── plan realizado ───────────────────────────────────────────────────────
+     Dos columnas en `planned_routes`: `completed_at` (cuándo se marcó) y la ruta
+     real que lo cumplió, opcional. Es el mismo flujo que la tarjeta de «Mis
+     Planes», reimplementado aquí con ids pl-: aquello vive en la IIFE de
+     sec/planes.js y no se puede llamar desde ésta (puede no estar cargada).
+
+     Se manda con Store.patch, o sea que SIN CONEXIÓN SE ENCOLA. Por eso la fecha
+     la pone el cliente: si la pusiera el servidor al vaciar la cola, la marca
+     llevaría la fecha en que volvió el wifi, no la del día que se hizo. */
+
+  /* ISO local sin zona, como los `created_at` que escribe el servidor. Con
+     toISOString() a secas la marca sería UTC y un plan marcado a las 00:30
+     aparecería con la fecha del día anterior. */
+  function isoLocal(d) {
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+  }
+
+  function renderDoneBadge() {
+    const el = $('#pl-done-badge');
+    if (!el) return;
+    el.innerHTML = (current && current.completed_at)
+      ? '<span class="pl-done-chip">✔ Realizada</span>' : '';
+  }
+
+  function renderDoneBtn() {
+    const b = $('#pl-done-btn');
+    if (!b) return;
+    b.textContent = (current && current.completed_at) ? 'Desmarcar' : '✔ Marcar realizada';
+  }
+
+  /* Nombre de la ruta que cumplió el plan, desde la copia local del listado (no
+     de la red: así la ficha también lo dice sin conexión). Repinta «Datos
+     técnicos» cuando llega. */
+  async function loadDoneRoute() {
+    const tok = _tok;
+    const ref = current && current.completed_route_public;
+    if (!ref) { doneRoute = null; return; }
+    if (doneRoute && doneRoute.public_id === ref) return;
+    let row = null;
+    try { row = await Store.routeRow(ref); } catch (e) {}
+    if (tok !== _tok || !row) return;
+    doneRoute = row;
+    renderTech();
+  }
+
+  /* Listado de rutas del Store (local, también sin conexión): es lo que alimenta
+     el selector del modal. */
+  async function loadRoutesIndex() {
+    const tok = _tok;
+    let rows;
+    try { rows = await Store.routes(); } catch (e) { return; }
+    if (tok !== _tok) return;
+    routesRows = rows || [];
+    routeIdx = {};
+    routesRows.forEach(r => { routeIdx[r.public_id] = r; });
+  }
+
+  function toggleDone() {
+    if (!current) return;
+    $('#pl-actions-more').classList.remove('open');
+    if (current.completed_at) undoDone(); else openDoneModal();
+  }
+
+  function openDoneModal() {
+    if (!current) return;
+    $('#pl-done-plan-name').textContent = current.name || '';
+    $('#pl-done-search').value = '';
+    $('#pl-done-modal').classList.remove('hidden');
+    renderDoneList();
+    if (!routesRows.length) loadRoutesIndex().then(() => renderDoneList());
+  }
+
+  function closeDoneModal() { $('#pl-done-modal').classList.add('hidden'); }
+
+  function filterDoneList() { renderDoneList(); }
+
+  /* Las rutas que salen cerca del inicio del plan van arriba, en «Sugeridas»: con
+     unos cientos de rutas, buscar a mano la que lo cumplió es lo tedioso de este
+     flujo, y la distancia al punto de salida acierta casi siempre. */
+  const NEAR_M = 3000;
+
+  function renderDoneList() {
+    const cont = $('#pl-done-list');
+    if (!cont) return;
+    if (!routesRows.length) {
+      cont.innerHTML = '<div class="done-empty">No hay rutas en la copia local todavía.</div>';
+      return;
+    }
+    const term = ($('#pl-done-search').value || '').trim().toLowerCase();
+    const match = r => !term
+      || (r.name || '').toLowerCase().includes(term)
+      || (r.locality || '').toLowerCase().includes(term);
+    const cerca = [], resto = [];
+    routesRows.filter(match).forEach(r => {
+      const near = current && current.start_lat != null && r.start_lat != null
+        && haversineM(current.start_lat, current.start_lon, r.start_lat, r.start_lon) <= NEAR_M;
+      (near ? cerca : resto).push(r);
+    });
+    const fila = r => {
+      const a = activityOf(r.activity_type);
+      return `<div class="done-row" onclick="SEC.plan.markDone('${encodeURIComponent(r.public_id)}')">
+        <span class="done-row-ico">${a ? iconSvg(a, 22) : genericIconSvg(22)}</span>
+        <span class="done-row-body">
+          <span class="done-row-name">${esc(r.name)}</span>
+          <span class="done-row-meta">${esc(fmtDate(r.started_at || r.created_at))}
+            · ${fmtKm(r.distance_m)} km${r.locality ? ' · ' + esc(r.locality) : ''}</span>
+        </span></div>`;
+    };
+    let html = '';
+    if (cerca.length) {
+      html += '<div class="done-group">Sugeridas · empiezan cerca de este plan</div>'
+            + cerca.map(fila).join('');
+    }
+    if (resto.length) {
+      html += `<div class="done-group">${cerca.length ? 'Todas las demás' : 'Todas las rutas'}</div>`
+            + resto.map(fila).join('');
+    }
+    cont.innerHTML = html || '<div class="done-empty">Ninguna ruta coincide con la búsqueda.</div>';
+  }
+
+  /* `routePublic` = public_id de la ruta que lo cumplió, o null para marcarlo sin
+     ruta asociada (no todo plan hecho tiene un track subido). */
+  async function markDone(routePublic) {
+    if (!current) return;
+    const ref = routePublic ? decodeURIComponent(routePublic) : null;
+    closeDoneModal();
+    const ts = isoLocal(new Date());
+    const r = await Store.patch(`/api/planned/${encodeURIComponent(pid)}`,
+                                {completed_at: ts, completed_route: ref},
+                                {label: 'plan realizado'});
+    if (!r.ok) { toast('Error al marcar el plan'); return; }
+    await applyDoneLocally(ts, ref);
+    const nombre = ref && routeIdx[ref] ? ` · ${routeIdx[ref].name}` : '';
+    toast(r.queued ? 'Marcada como realizada (se enviará al recuperar conexión)'
+                   : 'Plan marcado como realizado' + nombre);
+  }
+
+  async function undoDone() {
+    if (!current) return;
+    const r = await Store.patch(`/api/planned/${encodeURIComponent(pid)}`,
+                                {completed_at: null, completed_route: null},
+                                {label: 'plan pendiente'});
+    if (!r.ok) { toast('Error al desmarcar el plan'); return; }
+    await applyDoneLocally(null, null);
+    toast(r.queued ? 'Marcada como pendiente (se enviará al recuperar conexión)'
+                   : 'Plan marcado como pendiente');
+  }
+
+  /* Hay que escribir LAS DOS copias locales: la del detalle (esta ficha) y la de
+     la fila del listado (la tarjeta de «Mis Planes»). Sin la segunda, un cambio
+     hecho sin conexión desaparecería al repintar aquella sección, porque la relee
+     de IndexedDB y ahí seguiría el estado del servidor. */
+  async function applyDoneLocally(ts, ref) {
+    current.completed_at = ts;
+    current.completed_route_public = ref;
+    doneRoute = ref ? (routeIdx[ref] || null) : null;
+    try { await Store.putDetail(pid, current); } catch (e) {}
+    try {
+      await Store.patchPlanRow(pid, {completed_at: ts, completed_route_public: ref});
+    } catch (e) {}
+    renderDoneBadge();
+    renderDoneBtn();
+    renderTech();
+    if (ref && !doneRoute) loadDoneRoute();
   }
 
   /* ── actividad ───────────────────────────────────────────────────────────
@@ -680,8 +945,62 @@
     toast(r.queued ? 'Notas guardadas (se enviarán al recuperar conexión)' : 'Notas guardadas');
   }
 
+  /* ── pestañas del móvil ───────────────────────────────────────────────────
+     En pantalla grande no se ven (el CSS solo las activa por debajo de 768 px),
+     así que cambiar de pestaña ahí no tiene efecto visible. Tras mostrar un panel
+     oculto hay que redimensionar su Chart: mientras estuvo en display:none su
+     canvas medía 0. */
+  function setTab(name) {
+    const sec = document.getElementById('sec-plan');
+    if (!sec) return;
+    sec.dataset.tab = name;
+    sec.querySelectorAll('.pl-tab').forEach(b =>
+      b.classList.toggle('on', b.dataset.tab === name));
+    if (name === 'perfil' && elevChart) { try { elevChart.resize(); } catch (e) {} }
+  }
+
   /* ── acciones ──────────────────────────────────────────────────────────── */
   function downloadGpx() { window.location = `/api/planned/${pid}/gpx`; }
+
+  /* El editor opera sobre el estado guardado en el servidor y cada guardado lleva
+     su base_version: no se puede encolar sin conexión, así que se avisa en vez de
+     navegar a una vista que no podría cargar. */
+  function openEditor() {
+    if (!pid) return;
+    if (!needOnline('El editor necesita conexión')) return;
+    go(`/Plan/${encodeURIComponent(pid)}/editor`);
+  }
+
+  /* Re-parsea el GPX guardado del plan y devuelve el dict completo, igual que
+     GET /api/planned/<pid>. Necesita conexión: lo hace el servidor. */
+  async function rescanPlan(btn) {
+    if (!current) return;
+    if (!needOnline('Reanalizar necesita conexión')) return;
+    const tok = _tok, orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Analizando…';
+    try {
+      const res = await fetch(`/api/planned/${encodeURIComponent(pid)}/rescan`, {method: 'POST'});
+      if (tok !== _tok) return;
+      if (!res.ok) {
+        let j = {};
+        try { j = await res.json(); } catch (e) {}
+        toast(j.error || 'Error al reanalizar');
+        return;
+      }
+      const data = await res.json();
+      if (tok !== _tok) return;
+      current = data;
+      try { await Store.putDetail(pid, current); } catch (e) {}
+      if (tok !== _tok) return;
+      render();
+      Store.syncNow({force: true});
+      toast('Datos actualizados desde el archivo');
+    } catch (e) {
+      if (tok === _tok) toast('Error de red');
+    } finally {
+      btn.disabled = false; btn.textContent = orig;
+    }
+  }
 
   /* Mapa sin conexión de ESTA ruta: descarga la franja de
      teselas por la que pasa el track, no una región. Es el caso de uso de esta
@@ -782,6 +1101,8 @@
     $('#pl-d-date').textContent = '';
     $('#pl-ibp-body').innerHTML = '';
     $('#pl-ibp-sub').textContent = '';
+    $('#pl-done-badge').innerHTML = '';
+    renderDoneBtn();     // con current a null vuelve a decir "Marcar realizada"
   }
 
   function render() {
@@ -790,6 +1111,11 @@
     renderTech();
     renderIbp();
     renderActivityBadge();
+    renderDoneBadge();
+    renderDoneBtn();
+    /* Sin await: el nombre de la ruta que cumplió el plan es un adorno de «Datos
+       técnicos» y llega de la copia local; cuando esté, repinta esa lista sola. */
+    loadDoneRoute();
     $('#pl-auto').textContent = current.auto_summary || '';
     $('#pl-notes').value      = current.notes || '';
     initMap();            // el track se dibuja en map.on('load')
@@ -807,6 +1133,9 @@
     skeletonOff();
     hideLoadError();
     $('#pl-actions-more').classList.remove('open');
+    closeDoneModal();
+    doneRoute = null;
+    setTab('perfil');          // en móvil, siempre se entra por el perfil
     // El modo pantalla completa del mapa no debe heredarse al montar otro plan.
     const hero = $('#sec-plan .pl-hero');
     if (hero) hero.classList.remove('pl-hero-full');
@@ -836,23 +1165,33 @@
     destroyMap();
     destroyChart();
     closeActivityPicker();
+    closeDoneModal();
     $('#pl-actions-more').classList.remove('open');
-    current = null; pid = null;
+    setTab('perfil');
+    current = null; pid = null; doneRoute = null;
   }
 
   /* Listeners de documento: se registran UNA vez (loader.js ejecuta este script
      una sola vez), nunca por montaje, para no acumularlos en cada visita. */
   document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
     const m = $('#pl-activity-modal');
-    if (e.key === 'Escape' && m && !m.classList.contains('hidden')) closeActivityPicker();
+    if (m && !m.classList.contains('hidden')) closeActivityPicker();
+    const d = $('#pl-done-modal');
+    if (d && !d.classList.contains('hidden')) closeDoneModal();
   });
   document.getElementById('pl-activity-modal').addEventListener('click', e => {
     if (e.target.id === 'pl-activity-modal') closeActivityPicker();
   });
+  document.getElementById('pl-done-modal').addEventListener('click', e => {
+    if (e.target.id === 'pl-done-modal') closeDoneModal();
+  });
 
   window.SEC.plan = {
-    mount, unmount, retry,
+    mount, unmount, retry, setTab,
     openActivityPicker, closeActivityPicker, pickActivity,
     saveNotes, downloadGpx, renamePlan, removePlan, downloadMap, computeIbp,
+    openEditor, toggle3D, rescanPlan,
+    toggleDone, openDoneModal, closeDoneModal, filterDoneList, markDone, undoDone,
   };
 })();

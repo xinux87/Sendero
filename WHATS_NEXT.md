@@ -1,6 +1,6 @@
 # Qué viene después
 
-Lo que queda por hacer en Sendero. Revisado el 27-07-2026 con la 0.9.10 recién cerrada.
+Lo que queda por hacer en Sendero. Revisado el 13-09-2026 con la 0.10.0 recién cerrada.
 Tres listas: lo que **se hace**, lo que está **pendiente de probar** (el código existe, falta
 verificarlo con datos reales) y lo que se ha **descartado** — esto último está aquí para que
 nadie lo vuelva a proponer sin un motivo nuevo.
@@ -11,24 +11,36 @@ Al terminar cualquiera de estos puntos: bórralo de aquí y cuéntalo en `CHANGE
 
 ## Para hacer
 
-### El detalle de un plan no dice si está realizado
-La 0.9.8 añadió «marcar como realizada» **solo en el listado** (`Mis Planes`): la ficha de
-un plan (`/Plan/<public_id>`, `templates/sec/plan.html` + `static/js/sec/plan.js`) sigue sin
-enseñar la chapa «✔ Realizada», sin el enlace a la ruta que lo cumplió y sin forma de
-marcarlo o desmarcarlo. Los datos ya llegan: `_build_plan_dict()` devuelve `completed_at`,
-`completed_route_id` y `completed_route_public`, y el PATCH que lo guarda es el mismo
-(`/api/planned/<id>`). Falta la UI: chapa en la cabecera del mapa, fila en «Datos técnicos»
-y la acción en el menú `⋯`, reutilizando el selector de ruta del listado o uno equivalente.
+### La suite e2e cubre «Mis Planes» solo a medias
+`tests/e2e_spa.py` (226 comprobaciones) es la red de seguridad de la SPA. La 0.10.0 añadió
+el bloque «Planificación editable», que ya cubre la **ficha** de un plan de punta a punta
+(3D, marcar y desmarcar realizada —también sin conexión—, el editor, unir y las versiones),
+pero de la sección `planes` sigue mirando solo que las tarjetas, el mapa y el modal de alta
+existan. Lo que la 0.9.8 añadió **en el listado** —la traza de cada plan en el mapa, marcar
+y desmarcar desde la tarjeta, su selector de ruta y el filtro por estado— se verificó a mano
+con Playwright y esos guiones **no están en el repositorio**: hoy nadie se enteraría si una
+edición de `sec/planes.js` los rompe.
 
-### La suite e2e no cubre «Mis Planes»
-`tests/e2e_spa.py` (167 comprobaciones) es la red de seguridad de la SPA, pero de la sección
-`planes` solo mira que las tarjetas, el mapa y el modal de alta existan. Lo que la 0.9.8
-añadió —traza en el mapa, marcar/desmarcar realizada (incluido sin conexión), el selector de
-ruta y el filtro por estado— se verificó a mano con Playwright, y esos guiones **no están en
-el repositorio**: hoy nadie se enteraría si una edición de `sec/planes.js` los rompe. Falta
-llevarlos a `tests/e2e_spa.py` como un bloque más (marcar → chapa + enlace + recuentos →
-desmarcar → sin conexión: cola y repintado), reusando el plan que ya siembra
-`tests/e2e_seed.py`.
+### Dos comprobaciones de la e2e fallan desde antes de la 0.10.0
+Con el árbol limpio en la v0.9.18 fallan estas dos, y no tienen que ver con la edición de
+planes (se comprobó en un worktree sin los cambios):
+
+- **«✕ limpia también lo que estaba en el desplegable»** — el botón de limpiar filtros de
+  «Mis Rutas» (`sec/rutas.js`, cabecera reorganizada en la 0.9.17) deja algo puesto de lo
+  que vive tras el botón `⋯` (fecha o búsqueda).
+- **«el badge del header avisa: “”»** — el `#net-badge` se queda vacío en el momento en que
+  la prueba lo mira.
+
+Hay que decidir si el fallo está en el código o en la prueba; mientras tanto, un fallo
+conocido que no se arregla es exactamente el que deja de mirarse.
+
+### Un `ALTER TABLE` de `init_db()` sin la red de la regla 13
+En `core/database.py` (~línea 181) queda un `ALTER TABLE routes ADD COLUMN hr_max` **sin**
+el `try/except sqlite3.OperationalError` que llevan los demás. Con dos `init_db()`
+simultáneos sobre una base nueva (los dos workers de gunicorn, que es justo el caso de la
+regla 13) uno de los dos muere con `duplicate column`. Se vio montando el entorno de la
+0.10.0. Es de una migración antigua, así que en una instalación ya arrancada no se
+reproduce; en una instalación nueva, sí.
 
 ---
 
@@ -78,3 +90,12 @@ o entrar por `localhost`.
 - **Planificador interno de rutas** (dibujo por anclas con routing BRouter). Se implementó y
   se revirtió el mismo día; hoy «Dibujar ruta nueva» abre una web externa configurable
   (`PLANNER_URL`). Si vuelve a plantearse, es un rediseño desde cero, no un revert.
+- **Unir un plan con una ruta ya hecha.** «Unir» solo mezcla plan + plan (y ruta + ruta):
+  un plan es lo que quieres hacer y una ruta es lo que hiciste, y el resultado no cabría en
+  ninguna de las dos tablas sin mentir (¿lleva los tiempos y la FC de la mitad grabada? ¿es
+  pendiente o realizada?). Si algún día hace falta, es un concepto nuevo, no un `ids` mixto.
+- **Recalcular el índice IBP solo, al editar el track de un plan.** Al guardar una versión
+  nueva el índice se **vacía** y ya está: el número lo calcula ibpindex.com con el GPX
+  subido entero, o sea red, clave y el track completo saliendo de la LAN. Encadenar eso a
+  cada guardado del editor convertiría una edición local en una llamada a un tercero. El
+  usuario lo vuelve a pedir con «Calcular» cuando ha terminado de editar.

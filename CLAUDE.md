@@ -14,6 +14,11 @@ editor) son secciones de un único documento (`templates/shell.html`), y todo el
 vista vive en `static/js/sec/` (ver "Frontend"). Cambiar de sección no pide ningún
 documento nuevo: solo el JSON que haga falta, y a menudo ni eso.
 
+Son 6 vistas y **7 URLs**: la sección `editor` sirve para dos entidades, una ruta
+(`/Sendero/<pid>/editor`) y un plan (`/Plan/<pid>/editor`, desde la v0.10.0). Es el
+mismo archivo con el mismo markup; lo que cambia va en el objeto `K` de
+`sec/editor.js` y en el `RouteTarget`/`PlanTarget` del servidor.
+
 **Y una PWA que funciona sin conexión**, apoyada en un Service Worker que precachea el
 shell y el código, y en un almacén local (IndexedDB) que se pone al día con
 sincronización delta. Lo que eso significa en la práctica:
@@ -25,10 +30,12 @@ sincronización delta. Lo que eso significa en la práctica:
   mapa base si hay un `.pmtiles` en `data/tiles/`, el botón «Mi ubicación» de cualquier
   mapa (la ubicación la da el dispositivo, no el servidor), y editar nombre/notas/actividad y
   **marcar un plan como realizado** (se encolan y se envían al volver la red).
-- **NO funciona sin conexión, a propósito**: el **editor** (opera sobre el estado
-  guardado en el servidor y cada guardado lleva `base_version`; encolar eso sería
-  inventarse decisiones del servidor), subir rutas o fotos, Immich, reescanear y borrar.
-  Todas avisan en vez de fallar en silencio.
+- **NO funciona sin conexión, a propósito**: el **editor** —el de una ruta y el de un
+  plan, que son el mismo— (opera sobre el estado guardado en el servidor y cada guardado
+  lleva `base_version`; encolar eso sería inventarse decisiones del servidor), subir rutas
+  o fotos, Immich, reescanear (rutas y planes), calcular el índice IBP y borrar. Todas
+  avisan en vez de fallar en silencio: «✎ Editar track» de la ficha de un plan ni siquiera
+  navega, avisa y se queda donde está.
 - **Mapa sin conexión por ruta**: el botón «⬇ Mapa sin conexión» del detalle de una ruta
   o de un plan descarga solo el **corredor** de teselas del track (40 km ≈ 250-380
   teselas ≈ 6-9 MB), no una región. Es lo que hace que el mapa se vea con el **servidor
@@ -47,11 +54,13 @@ sincronización delta. Lo que eso significa en la práctica:
 # desarrollo
 pip install -r requirements-dev.txt   # incluye requirements.txt + pytest
 python app.py                      # http://localhost:8080, init_db() automático
-python -m pytest                   # 118 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
-                                   #   actividades (el catálogo y su cableado),
+python -m pytest                   # 129 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
+                                   #   actividades (el catálogo y su cableado), la edición de PLANES
+                                   #   (test_plan_editing.py: targets, versiones, unir, dividir, IBP),
                                    #   dedup, geocode, ibp, sync y las columnas de los dos listados
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
-node tests/sec_smoke.js            # sec/detalle.js y sec/plan.js cargan contra los ids reales del markup
+node tests/sec_smoke.js            # sec/detalle.js, sec/plan.js y sec/editor.js (como ruta Y como plan)
+                                   #   cargan contra los ids reales del markup
 node tests/tiles_smoke.js          # geometría del corredor de teselas (§6.2)
 node tests/slope_smoke.js          # escala de pendiente (color verde→rojo de traza y perfil)
 node tests/speedfix_smoke.js       # velocidad excesiva y convergencia de «Corregir todo»
@@ -61,7 +70,7 @@ node tests/gps_parity_smoke.js     # el detector de avisos GPS del cliente == el
 python -m venv /tmp/pw && /tmp/pw/bin/pip install playwright
 /tmp/pw/bin/playwright install chromium
 SENDERO_DATA=/tmp/sendero-e2e python app.py &        # ¡datos de PRUEBA, no los reales!
-python tests/e2e_seed.py http://localhost:8080       # siembra 3 rutas + 1 plan
+python tests/e2e_seed.py http://localhost:8080       # siembra 4 rutas + 2 planes (los planes, sin <time>)
 SENDERO_E2E_URL=http://localhost:8080 /tmp/pw/bin/python tests/e2e_spa.py
 
 # y una de SOLO LECTURA que sí se puede lanzar contra la instalación real:
@@ -162,8 +171,15 @@ core/
 
 api/
   routes.py     — CRUD de rutas + rescan + thumb + stats
-  editor.py     — editor de rutas: página, /points, guardado por ops, versiones
+  editor.py     — EDITOR: la página, /points, el guardado por ops, el DEM y las
+                  versiones. La E/S vive en un TARGET (`RouteTarget` aquí,
+                  `PlanTarget` en planned_editor.py) y el flujo de cada operación
+                  (run_points/run_edit/run_elevation_dem/run_list_versions/
+                  run_restore/commit_new_version) es común a rutas y planes
   photos.py     — subida y borrado de fotos locales; proxy de fotos Immich
+  planned_editor.py — EDITOR DE PLANES: `PlanTarget` (la E/S del editor sobre
+                  planned_routes.gpx_data + la tabla plan_versions) y los endpoints
+                  espejo de los de ruta. El FLUJO no está aquí: lo pone api/editor.py
   planned.py    — CRUD de rutas planificadas, /api/planned/geojson (las trazas para
                   el mapa de la sección), el estado de "realizada" del PATCH
                   (completed_at + completed_route → completed_route_id) y el índice
@@ -226,7 +242,7 @@ aloja las 6 secciones. Cada una son tres archivos con el mismo nombre:
 | `planes` | `/planificacion` | `sec/planes.html` | `js/sec/planes.js` | `css/planes.css` |
 | `detalle` | `/Sendero/<public_id>` | `sec/detalle.html` | `js/sec/detalle.js` | `css/detalle.css` |
 | `plan` | `/Plan/<public_id>` | `sec/plan.html` | `js/sec/plan.js` | `css/plan.css` |
-| `editor` | `/Sendero/<public_id>/editor` | `sec/editor.html` | `js/sec/editor.js` | `css/editor.css` |
+| `editor` | `/Sendero/<public_id>/editor` **y** `/Plan/<public_id>/editor` | `sec/editor.html` | `js/sec/editor.js` | `css/editor.css` |
 
 El router (`static/js/core/router.js`) monta la sección según `location.pathname`,
 así que **navegar entre vistas no pide ningún documento**: solo el JSON que haga
@@ -316,7 +332,8 @@ static/js/core/    chrome.js  helpers globales ($, toast, fmtKm/fmtDur/fmtDate, 
                               llaman los onclick=)
                    loader.js  loadOnce()/loadCssOnce(): inyecta el <script>/<link>
                               de una sección una sola vez
-                   router.js  Router de las 6 vistas + window.go()
+                   router.js  Router de las 6 vistas en 7 URLs (el editor tiene una
+                              por entidad, con `kind`) + window.go()
                    store.js   IndexedDB + sincronización delta + outbox (§4/§7)
                    tiles.js   mapa sin conexión de UNA ruta: corredor de teselas
                               del track, caché `sendero-tiles-v1` y su UI (§6.2)
@@ -342,15 +359,15 @@ archivo, nunca en `mount()`.
 | `templates/base.html` | — | CSS global, header (con el badge `#net-badge` de estado de conexión), toast, modal de Ajustes, `<link rel="manifest">` y `theme-color`. Carga `static/vendor/*`, `static/fonts/fonts.css`, `static/shared.js` y `static/js/core/chrome.js` (que registra el Service Worker). No redeclares en una plantilla nada que ya esté en `shared.js`/`chrome.js` (dos `const` globales con el mismo nombre en scripts distintos = SyntaxError) |
 | `templates/shell.html` | **todas** las vistas (`/dashboard`, `/rutas`, `/planificacion`, `/Sendero/<id>`, `/Sendero/<id>/editor`, `/Plan/<id>`, `/app-shell`) | Shell de la SPA: incluye los 6 `templates/sec/*.html`, la tab bar, las acciones de cabecera por sección (`data-sec-actions`), carga `core/loader.js`+`store.js`+`router.js` y llama a `Router.start()`. Cero datos inyectados salvo el `bootstrap_json` opcional de la primera carga (`/app-shell` lo sirve **sin** él: es el que precachea el SW) |
 | `templates/sec/detalle.html` | (sección `detalle` del shell) | Detalle de ruta con el rediseño 2a/2d: **mapa cabecera** (`.d-hero`, 360 px, con el título y el chip de actividad encima del velo), banda de 7 métricas (`#d-stats`), y cuerpo a dos columnas (perfil + velocidad + FC + fotos ‖ datos técnicos + calidad del track + resumen). En móvil el cuerpo son pestañas: `data-tab` en la sección y `data-dtab` en cada bloque (ver «Pestañas del detalle en móvil»). Los ids genéricos llevan prefijo `d-` (`#d-map`, `#d-stats`, `#d-elev`, `#d-notes`…) para no chocar con otras secciones del mismo documento |
-| `templates/sec/plan.html` | (sección `plan` del shell) | Detalle de ruta planificada, con el panel de **dificultad IBP** (`#pl-ibp-panel`). Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
+| `templates/sec/plan.html` | (sección `plan` del shell) | Ficha de una ruta planificada: mapa cabecera con el chip de actividad y la chapa **✔ Realizada** (`#pl-done-badge`), banda de métricas, perfil, **dificultad IBP** (`#pl-ibp-panel`), datos técnicos y notas. En la fila de acciones: `✎ Editar track`, `Vista 3D` (`#pl-btn3d`) y `⬇ Mapa sin conexión` (`#pl-offline-btn`); tras el `⋯` (`#pl-actions-more`): descargar GPX, marcar/desmarcar realizada (`#pl-done-btn` + el modal `#pl-done-modal`), `↺ Reanalizar` (`#pl-rescan-btn`), renombrar y eliminar. En móvil, tres pestañas (`data-tab`/`data-dtab`). Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
 | `templates/sec/dashboard.html` | (sección `dashboard`) | "Analítica global": selector de año, 5 KPIs, desnivel por mes, zonas más visitadas, almacenamiento, mapa de todas las rutas, "Por actividad", "Rutas por año" y récords. Lógica en `static/js/sec/dashboard.js` |
 | `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros (píldoras de actividad a la vista; fecha y **buscador** tras el botón `⋯`, ver «Cabecera de filtros»), mapa de visión general, tres vistas (⊞ Cuadrícula · ☰ Tabla · ▤ Panel), modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
 | `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa (marcadores de salida **y** la traza de cada plan, ver abajo), alta por GPX, **marcar un plan como realizado** (botón por tarjeta + selector `#done-modal` de la ruta que lo cumplió), la chapa del **índice IBP** y el filtro de estado `#pg-filters` (Pendientes · Realizadas · Todas, que filtra también el mapa). Lógica en `static/js/sec/planes.js` |
-| `templates/sec/editor.html` | (sección `editor`) | Editor de rutas. Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` |
+| `templates/sec/editor.html` | (sección `editor`) | Editor de tracks, el MISMO para una ruta y para un plan (los textos con género los pone `sec/editor.js` desde `K`). Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` o `GET /api/planned/<id>/editor` |
 
 ### Navegación
 - **La URL canónica de todo es el `public_id`**, en rutas y en planes: `/Sendero/<pid>`,
-  `/Sendero/<pid>/editor`, `/Plan/<pid>`. Por nombre el servidor redirige 302 (enlaces y
+  `/Sendero/<pid>/editor`, `/Plan/<pid>`, `/Plan/<pid>/editor`. Por nombre el servidor redirige 302 (enlaces y
   marcadores viejos siguen funcionando), pero no lo generes: el nombre es ambiguo con
   rutas repetidas y cambia al renombrar. Única excepción viva: las tarjetas de récords
   del dashboard, porque el caché de stats en `settings` solo guarda el nombre.
@@ -366,6 +383,15 @@ archivo, nunca en `mount()`.
   el documento, cae a `location.href` sola
 - Botón "← Volver" en detalle → `data-nav="/rutas"` (el router cae a `location.href`
   porque el documento actual no aloja esa sección)
+- Ficha de un plan → editor: `SEC.plan.openEditor()` → `go('/Plan/<pid>/editor')`, pero
+  **solo con conexión** (si no, avisa y no navega: el editor no puede cargar sin servidor).
+  El "← Volver" del editor usa `K.detailUrl(pid)`, así que vuelve a `/Sendero/<pid>` o a
+  `/Plan/<pid>` según lo que se estuviera editando
+- **El router tiene 7 entradas para 6 secciones** (`ROUTES` en `router.js`): la del editor
+  está dos veces, una por entidad, y pasa `params.kind` (`'route'` | `'plan'`). Cada editor
+  va ANTES que su detalle, porque `/Sendero/<id>/editor` también encaja en el patrón de
+  `/Sendero/<id>`. Lo mismo en `SHELL_PATHS` de `static/sw.js`: sin `/Plan/<id>/editor` ahí,
+  esa URL daría sin conexión la página de aviso en vez del shell
 - Renombrar ruta **ya no toca la URL**: al ir por `public_id` la URL no depende del
   nombre (antes hacía falta `history.replaceState`)
 - El botón Atrás del navegador funciona vía `window.addEventListener('popstate', ...)`
@@ -412,11 +438,22 @@ archivo, nunca en `mount()`.
 | GET | `/api/planned` | lista rutas planificadas |
 | GET | `/api/planned/geojson` | FeatureCollection de líneas decimadas de TODOS los planes (props: id=`public_id`, name, activity, km), para el mapa de «Mis Planes». Sin `?bbox=` a propósito: `planned_routes` no tiene columnas de bounding box y los planes son unas decenas |
 | POST | `/api/planned` | crea ruta planificada desde GPX |
-| GET | `/api/planned/<id>` | dict completo del plan |
+| GET | `/api/planned/<id>` | dict completo del plan. Lleva `version` (= `MAX(version_n)` de `plan_versions`; 0 = nunca editado), como el dict de una ruta |
 | PATCH | `/api/planned/<id>` | actualiza nombre/notas/actividad del plan y su estado de **realizada**: `{completed_at, completed_route}` (fecha ISO que pone el CLIENTE y `public_id` de la ruta que lo cumplió, opcional; `{completed_at:null, completed_route:null}` desmarca y limpia la ruta). 400 si el `completed_route` no existe |
 | DELETE | `/api/planned/<id>` | borra plan |
 | GET | `/api/planned/<id>/gpx` | descarga GPX del plan |
 | POST | `/api/planned/<id>/ibp` | calcula (o recalcula) el índice IBP del plan subiendo su GPX a ibpindex.com. 400 sin clave o sin GPX, 502 si el servicio falla (con SU mensaje), 200 `{ibp_index, ibp_modality, ibp_all}`. NO se encola sin conexión: el número lo decide un tercero |
+| GET | `/Plan/<public_id>/editor` | `shell.html` (sección `editor` con `kind:'plan'`); por nombre redirige 302 al `public_id`. Sin `bootstrap_json`, como el de una ruta |
+| GET | `/api/planned/<id>/editor` | metadatos de arranque del editor de un plan: `kind:'plan'`, nombre, `version`, `gps_thresholds`, `gps_max_speed`, `dem_enabled`, `has_times` (parseando el GPX) y `gps_issues` **siempre vacío** (un plan no es un track grabado: no tiene saltos de receptor que avisar) |
+| GET | `/api/planned/<id>/points` | puntos completos del plan para el editor (mismo formato que el de una ruta: lonlat/ele/time/hr + `segments` + `version`) |
+| POST | `/api/planned/<id>/edit` | guarda edición: `{base_version, summary, ops}`; 409 si `base_version` ≠ actual. Crea versión nueva y **vacía el índice IBP** |
+| POST | `/api/planned/<id>/split` | divide el plan en el punto `index`: el original se recorta (versión nueva) y la 2ª mitad pasa a plan nuevo, que hereda la actividad y nace SIN índice IBP |
+| POST | `/api/planned/merge` | `{ids, name}` → PLAN NUEVO con los planes unidos (los originales intactos). Solo plan + plan, ver «Editor de tracks» |
+| POST | `/api/planned/<id>/elevation-dem` | recalcula la elevación del plan contra el DEM de Ajustes (versión nueva); 400 sin `DEM_URL`, 409 por `base_version`, 502 si el DEM falla |
+| GET | `/api/planned/<id>/versions` | historial de versiones del plan (desc) |
+| POST | `/api/planned/<id>/versions/<vn>/restore` | restaura la versión vn como versión nueva |
+| GET | `/api/planned/<id>/versions/<vn>/gpx` | descarga el GPX de esa versión |
+| POST | `/api/planned/<id>/rescan` | re-parsea el GPX guardado y rehace las métricas del plan. NO crea versión y NO toca el IBP: el track es el mismo |
 | GET | `/api/config` | estado Immich (enabled, margin, dist) y si el IBP tiene clave (`ibp`) |
 | GET | `/api/settings` | ajustes actuales |
 | POST | `/api/settings` | guarda ajustes Immich |
@@ -441,8 +478,10 @@ tiene que ser el número de puntos del track COMPLETO, antes de que `?lite=1` de
 el `geojson` (si no, "Puntos GPS" del detalle mentiría por un factor de 20). El campo `version` se deriva de `MAX(version_n)` en
 `route_versions` (0 = nunca editada); no hay columna `version` en `routes` a propósito.
 
-### Editor de rutas (`api/editor.py` + `core/editing.py` + `static/js/sec/editor.js`)
-Lo que sabe hacer, todo con versionado:
+### Editor de tracks (`api/editor.py` + `api/planned_editor.py` + `core/editing.py` + `static/js/sec/editor.js`)
+**Un solo editor para dos entidades**: desde la v0.10.0 la misma sección edita una RUTA
+(`/Sendero/<pid>/editor`) y un PLAN (`/Plan/<pid>/editor`). Lo que sabe hacer, todo con
+versionado:
 
 - **Dos modos de edición**: "Seleccionar" (tramos A–B) y "Editar puntos" (arrastrar
   vértice = `move_point`, Alt+click = `delete_points`, click en la línea =
@@ -466,6 +505,40 @@ Lo que sabe hacer, todo con versionado:
   aviso; elevation → picos). "✔ Corregir todo" lo resuelve en 2 ops deshacibles (3 si
   además hay que eliminar un salto al final del track, ver abajo) y **converge a la
   primera** — ver la sección siguiente.
+
+**Cómo se reparte entre ruta y plan: el TARGET es la E/S, el flujo es común.**
+`api/editor.py` no sabe si detrás hay un archivo en `data/gpx/` o un BLOB en la base: eso lo
+sabe el target (`RouteTarget` en `api/editor.py`, `PlanTarget` en `api/planned_editor.py`),
+que implementa `read_active` / `write_active` / `current_version` / `archive_v1_if_needed` /
+`archive` / `list_versions` / `version_meta` / `read_version` / `restore_active` /
+`reanalyse` / `metrics` / `build_dict` / `after_new_version`. Encima van las funciones de
+flujo —`run_points`, `run_edit`, `run_elevation_dem`, `run_list_versions`, `run_restore`,
+`download_version_response` y, debajo de todas, `commit_new_version()`— y esas son **las
+mismas** para las dos. Los errores de E/S con mensaje para el usuario viajan como
+`TargetError(mensaje, status)`, que el endpoint traduce con `.response()`.
+
+- **Regla: una operación o un endpoint nuevo del editor va SOBRE EL TARGET**, no en un
+  `if kind == 'plan'`. La semántica de versionado (archivar el original antes de tocar el
+  activo, insertar la fila después del reanálisis, el 409 por `base_version`) es justo lo que
+  no puede divergir entre las dos entidades; duplicarla es cuestión de tiempo que se separe.
+- **`after_new_version(reason)`** es el único gancho con comportamiento propio de cada una:
+  en una ruta, solo `reason == 'edit'` limpia `dup_suspect_of` (dividir, DEM o restaurar no lo
+  tocaban y siguen sin tocarlo); en un plan, **cualquier** versión nueva vacía el índice IBP.
+- **En el cliente pasa lo mismo con `K`** (objeto `KINDS` de `sec/editor.js`): la base de la
+  API (`api(pid)`), `mergeApi`, `detailUrl`, `listUrl`, `list()` (= `Store.routes()` o
+  `Store.planned()`, o sea que el selector de «Unir» sale del almacén local y no de la red),
+  `device` y todos los textos con género. **En ese archivo no se escribe `/api/routes` ni
+  `/Sendero/` a mano**: todo cuelga del helper `api()`, y el router es quien dice de qué se
+  trata con `params.kind`.
+- **`has_times`** llega en los metadatos de arranque de las dos (en una ruta se deduce de
+  `started_at`; en un plan hay que parsear el GPX, que son unas decenas). Si es falso, el
+  editor **esconde** `#speedfix-btn` («⚡ Corregir velocidad excesiva») y `#shift-btn`
+  («🕐 Desplazar tiempos»), que sin Δt no pueden hacer nada, y la gráfica de velocidad ya se
+  ocultaba sola. Vale para los dos: una ruta invertida también pierde sus `<time>`. Antes
+  seguían a la vista para soltar un aviso al pulsarlas.
+- Lo que **no** tiene un plan: dispositivo (su campo se esconde entero, y el PATCH de planes
+  no lo acepta), thumbnails, avisos GPS guardados y re-detección de actividad al reparsear.
+- **Unir es plan + plan o ruta + ruta**, nunca mezclado: ver `WHATS_NEXT.md` (descartado).
 
 **«✔ Corregir todo» tiene que converger EN UNA PASADA, y lo comprueba** (v0.9.7). No es
 un detalle de comodidad: si al guardar reaparecen avisos, el usuario no sabe si la
@@ -576,6 +649,12 @@ iteración en un sitio, cámbialo en los dos** (`core/parsers.py` y `core/editin
 **Versionado (append-only):**
 - Archivos inmutables en `data/gpx/versions/<route_id>/v<N>.<ext>`; metadatos en
   la tabla `route_versions`. Una ruta nunca editada no tiene filas (versión 0).
+- **En un PLAN el archivo va DENTRO de la base**: su GPX ya vivía en
+  `planned_routes.gpx_data`, así que sus versiones son filas de `plan_versions` con el
+  BLOB dentro (sacarlas a `data/gpx/versions/` partiría el modelo en dos). El resto
+  —numeración, v1 = original, restaurar como v(n+1), 409 por `base_version`— es idéntico,
+  porque es el mismo código. Invariante equivalente: `planned_routes.gpx_data` == la
+  versión más alta, y `DELETE /api/planned/<id>` borra también sus `plan_versions`.
 - **Invariante: el archivo activo en `data/gpx/` == la versión más alta.**
 - Primer guardado: el original se archiva como v1 ANTES de tocar el activo; el
   resultado editado es v2. Restaurar la vk no borra posteriores: crea v(n+1).
@@ -588,6 +667,10 @@ iteración en un sitio, cámbialo en los dos** (`core/parsers.py` y `core/editin
 - Concurrencia: el POST de guardado lleva `base_version`; si no coincide con
   `MAX(version_n)` → 409 `version_conflict`.
 - `DELETE /api/routes/<id>` borra también `route_versions` y `versions/<id>/`.
+- **El índice IBP de un plan se VACÍA en cada versión nueva** del track (guardar, dividir,
+  DEM y restaurar) y no se recalcula solo: es un número de un tercero al que hay que subir
+  el GPX entero. El plan que nace de un split o de un merge tampoco lo calcula. `rescan`
+  **no** lo toca: ahí el track es el mismo. Ver «Índice IBP de un plan».
 
 ### Catálogo de actividades (`core/activities.py`) — un deporte, un archivo
 **Añadir un deporte es editar `core/activities.py` y subir `APP_VERSION`. Nada más.**
@@ -1212,7 +1295,51 @@ que no son opcionales si lo tocas:
 - Los KPIs de la cabecera **no** se filtran: describen la colección entera (el
   recuento por estado ya lo dan las píldoras).
 
-### Índice IBP de un plan (`core/ibp.py` + `api/planned.py` + `sec/plan.js`)
+### La ficha de un plan (`templates/sec/plan.html` + `sec/plan.js` + `css/plan.css`)
+El detalle de una ruta planificada. Desde la v0.10.0 no es una vista de solo lectura:
+
+- **Acciones de cabecera**: en la fila, `✎ Editar track` (→ `/Plan/<pid>/editor`,
+  `openEditor()`, que **exige conexión** y si no la hay avisa sin navegar), `Vista 3D`
+  (`#pl-btn3d`) y `⬇ Mapa sin conexión` (`#pl-offline-btn`). Tras el `⋯`
+  (`#pl-actions-more`): `↓ Descargar GPX` (solo si el plan guarda su archivo),
+  `✔ Marcar realizada` / `Desmarcar` (`#pl-done-btn`), `↺ Reanalizar` (`#pl-rescan-btn`),
+  `Renombrar` y `Eliminar`. **`#pl-offline-btn` tiene que seguir a la vista**: la suite e2e
+  lo pulsa directamente, no abre el menú.
+- **Realizada**: chapa `#pl-done-badge` sobre el mapa, fila «Realizada» con la fecha en
+  «Datos técnicos» y, si hay ruta asociada, otra fila con un `data-nav` a `/Sendero/<pid>`
+  (el nombre lo pone el cliente desde su copia de `routes`, así un renombrado se refleja
+  solo). El modal `#pl-done-modal` es **propio de esta sección**, no el `#done-modal` de
+  «Mis Planes»: aquél vive en la IIFE de `sec/planes.js`, que puede no estar cargada cuando
+  se entra directo a `/Plan/<pid>`. Mismas reglas que allí: fecha `isoLocal` del CLIENTE
+  (el PATCH se encola sin conexión y al reenviarse llevaría la fecha en que volvió la red),
+  rutas del Store (`Store.routes()`, «Sugeridas» las que salen a menos de 3 km) y hay que
+  escribir **las dos** copias locales, `Store.putDetail` y `Store.patchPlanRow`.
+- **Vista 3D**: misma secuencia que el detalle de una ruta —inclinar primero, encender el
+  terreno en el `moveend`— porque mover la cámara en el mismo tick que `setTerrain()` deja
+  el mapa NEGRO (ver «Bugs corregidos»). Lo propio de aquí es **`ensureTerrain()`**: la
+  fuente `terrain` se añade aparte del track y hay que **reponerla tras
+  `sendero:basemap`**, porque entrar o salir de la capa offline reconstruye el estilo y se
+  lleva todas las fuentes (regla 15). Si estabas en 3D, se vuelve a encender sola. Y
+  `fitRoute()` conserva el `pitch` en 3D: reencuadrar a pitch 0 sería deshacer lo que el
+  usuario acaba de pedir.
+- **Pestañas en móvil (<768 px)**: son **tres** (Perfil · Datos · Notas), no cuatro como en
+  el detalle de una ruta — un plan no tiene fotos. Mismo mecanismo: `data-tab` en la
+  sección, `data-dtab` en cada panel, `SEC.plan.setTab()` cambia el atributo y
+  **redimensiona el Chart** (con el panel en `display:none` su canvas medía 0).
+  `resetView()`/`unmount()` vuelven siempre a «Perfil».
+- **TRAMPA: un panel que se esconde por no tener datos usa `style.display`, no `.hidden`.**
+  `#pl-elev-panel` (sin elevación) y `#pl-source-section` (sin Wikiloc) llevan `data-dtab`,
+  y la regla de la pestaña activa (`#sec-plan[data-tab="x"] [data-dtab="x"]{display:block}`)
+  **empata en especificidad** con `#sec-plan .panel.hidden{display:none}`: gana la última, o
+  sea que el panel vacío reaparecería en móvil. El estilo inline gana siempre. Es el mismo
+  apaño que `#speed-section` en el detalle de una ruta.
+- `rescanPlan()` es `POST /api/planned/<pid>/rescan` y necesita conexión (lo hace el
+  servidor); tras él, `Store.putDetail` + `render()` + `Store.syncNow`.
+- Todo lo demás (hover sincronizado, color por pendiente, IBP, mapa sin conexión) tiene su
+  propia sección más arriba: si tocas una de las dos fichas, mira si la otra necesita lo
+  mismo.
+
+### Índice IBP de un plan (`core/ibp.py` + `api/planned.py` + `api/planned_editor.py` + `sec/plan.js`)
 La puntuación de dificultad de [ibpindex.com](https://www.ibpindex.com) (0 → ∞) de las
 rutas **planificadas**. Cuatro cosas que definen el diseño, y ninguna es negociable sin
 rehacerlo:
@@ -1230,6 +1357,12 @@ rehacerlo:
   un tercero de recorridos ya hechos, y para eso la ruta ya tiene sus datos reales.
 - **El valor se guarda y no se recalcula solo**: si el servicio desaparece, los índices
   obtenidos siguen ahí. Solo se recalcula si lo pides (`↻ Recalcular` o el botón de lote).
+- **Al editar el track, el índice se VACÍA** (`ibp_index`/`ibp_modality`/`ibp_all`/`ibp_at`
+  a NULL, lo hace `PlanTarget.after_new_version()` en cada versión nueva: guardar, dividir,
+  DEM y restaurar). El número describía otro recorrido, y recalcularlo solo significaría
+  mandar el track entero a un tercero en cada guardado: la ficha vuelve a ofrecer
+  «Calcular». Los planes que nacen de un split o de un merge tampoco lo traen. `rescan`
+  no lo toca. Está en «Descartado» de `WHATS_NEXT.md`: no lo reabras sin motivo nuevo.
 
 Cómo se reparte:
 - `core/ibp.py` — `analyse()` (red) y `parse_response()` (pura, `tests/test_ibp.py`).
@@ -1624,11 +1757,27 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | public_id | TEXT | Identificador **opaco no secuencial** (`secrets.token_urlsafe(8)`, ~11 chars) expuesto en TODAS las URLs `/api/routes/<public_id>/...`; la PK entera `id` queda solo interna (FKs, `versions/<route_id>/`, prefijo de nombre de foto). Evita que CrowdSec vea enumeración al pedir las miniaturas del listado. Índice UNIQUE `idx_routes_public_id`; se lee en el listado → va en `idx_routes_list_cov5` (regla 12). Se fija al importar (con reintento por colisión) y por backfill en `init_db()`; NO se recalcula. Los endpoints resuelven `public_id`→`id` con `rid_from_public()` en su 1ª línea (thumb/gpx/foto consultan `WHERE public_id=?` directo). Al añadirlo se invalidó la caché del cliente (regla 11) |
 
 ### Tabla `route_versions`
-Historial del editor de rutas (append-only, ver sección "Editor de rutas").
+Historial del editor de rutas (append-only, ver sección "Editor de tracks").
 `route_id`, `version_n` (UNIQUE juntos), `file` (nombre en
 `data/gpx/versions/<route_id>/`), `summary` (en español), `distance_m`,
 `ascent_m`, `n_points`, `created_at`. Sin filas = ruta nunca editada (versión 0).
 El archivo activo de la ruta es siempre idéntico a la versión más alta.
+
+### Tabla `plan_versions` (v0.10.0)
+Lo mismo para un PLAN, con una diferencia: **el archivo va dentro**. `plan_id`,
+`version_n` (UNIQUE juntos), `gpx_data` (BLOB con el GPX de esa versión), `summary`,
+`distance_m`, `ascent_m`, `n_points`, `created_at`. El GPX de un plan ya vive en
+`planned_routes.gpx_data` y no en disco, así que sacar sus versiones a
+`data/gpx/versions/` partiría el modelo en dos.
+- Sin filas = plan nunca editado (versión 0). **Invariante: `planned_routes.gpx_data`
+  == la versión más alta**, y `DELETE /api/planned/<id>` borra explícitamente sus filas
+  (no hay FK: `PRAGMA foreign_keys` está apagado, regla 14).
+- **No es entidad sincronizada y no lleva triggers** (como `route_versions`): lo que el
+  cliente ve cambiar es el plan, y ese sí los tiene. Tampoco hay columna nueva en
+  `planned_routes`: el `version` del dict sale de `MAX(version_n)`, igual que en una ruta.
+- Sin índice de cobertura a propósito (regla 12): aquí el BLOB está **al final** del
+  registro, así que listar el historial no lo atraviesa. Solo `idx_plan_versions_plan`
+  para no escanear la tabla entera.
 
 ### Tabla `photos`
 `route_id`, `file` XOR `immich_id`, `original`, `lat`, `lon`, `taken_at`,
@@ -1669,6 +1818,11 @@ llamada) e `ibp_at` (cuándo se calculó). Las dos primeras se leen en el listad
 van en `idx_planned_list_cov3` (regla 12); `ibp_all` **no**, a propósito: solo lo
 miran el PATCH de actividad y el endpoint de cálculo, siempre por id, así que la
 fila se lee entera de todas formas.
+
+**La v0.10.0 no añadió ninguna columna aquí**, aunque el plan ya se edite: el historial
+vive en su propia tabla (`plan_versions`) y el `version` del dict sale de `MAX(version_n)`,
+igual que en una ruta. Por eso tampoco hizo falta tocar `PLANNED_LIST_COLS`, ni el índice
+de cobertura, ni subir `DB_VERSION` (regla 11).
 
 La v0.9.6 eliminó `draw_anchors` (resto del planificador interno revertido). El
 `DROP COLUMN` de una tabla con BLOB e índices de cobertura sale limpio **si la
@@ -1793,9 +1947,11 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tocaste el CSS del modal Immich (`static/css/detalle.css`): comprueba que
   `#sec-detalle .overlay.hidden` sigue ocultando el modal al cargar la ruta.
 - Con Playwright disponible, la comprobación de verdad es `python tests/e2e_spa.py`
-  (190 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
-  Worker, modo sin conexión y cola de escrituras). Necesita un servidor con
-  `SENDERO_DATA` **de pruebas** y `python tests/e2e_seed.py` para sembrarlo.
+  (228 comprobaciones en un navegador real: mapas, gráficas, fugas de `unmount()`, Service
+  Worker, modo sin conexión, cola de escrituras y el bloque «Planificación editable»).
+  Necesita un servidor con `SENDERO_DATA` **de pruebas** y `python tests/e2e_seed.py` para
+  sembrarlo. **Dos de esas comprobaciones fallan desde la v0.9.18** y están apuntadas en
+  `WHATS_NEXT.md`: si te fallan esas dos y solo esas, no las has roto tú.
 - Si tocaste `/actualizar` o el Service Worker: comprueba que la página sigue llegando de
   red (el SW no debe interceptarla) y que deja SW, cachés, IndexedDB y sessionStorage a
   cero; y que al volver a la app se rehacen los cuatro. **Y que termina siempre**: con la app
@@ -1834,6 +1990,14 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   salir con cambios sin guardar sigue preguntando. Ya no basta `beforeunload`: salir del
   editor puede ser un simple cambio de sección, y de eso se encarga un listener en fase de
   captura dentro de `sec/editor.js`.
+- Si tocaste el editor: **pruébalo también con un PLAN** (`/Plan/<pid>/editor`), que es la
+  otra mitad. ¿Lo nuevo va sobre el TARGET y no en un `if kind == 'plan'`? ¿Sigue sin
+  aparecer ningún `/api/routes` ni `/Sendero/` a mano en `sec/editor.js` (todo por `K`)?
+  ¿`node tests/sec_smoke.js` sigue montando la sección como ruta **y** como plan?
+  `python -m pytest tests/test_plan_editing.py` cubre el lado servidor.
+- Si añadiste un umbral, un endpoint o un campo a los metadatos de arranque del editor:
+  mándalo en **los dos**, `/api/routes/<id>/editor` y `/api/planned/<id>/editor`. Si solo
+  va en uno, el editor de la otra entidad se queda a medias sin ningún error.
 - Si tocaste la corrección de velocidad excesiva o los avisos GPS del editor:
   `node tests/speedfix_smoke.js` **y `node tests/gps_parity_smoke.js`** (y recuerda que la
   herramienta **recoloca** los puntos, no los borra: si vuelve a aparecer un
@@ -1862,10 +2026,20 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   ¿le añadiste también su índice de cobertura en `init_db()`? (ver regla 12).
 - Si tocaste algo en `init_db()`: ¿sobrevive a ejecutarse dos veces en paralelo
   (2 workers de gunicorn)? (ver regla 13).
-- Si tocaste el editor (`core/editing.py`/`api/editor.py`): ¿el orden de aplanado
-  sigue siendo idéntico al de `analyse_gpx()`? ¿El activo sigue siendo igual a la
-  versión más alta tras guardar y tras restaurar? ¿Los `<time>`/HR sobreviven a un
-  recorte? (smoke test al final de "Editor de rutas").
+- Si tocaste el editor (`core/editing.py`/`api/editor.py`/`api/planned_editor.py`): ¿el
+  orden de aplanado sigue siendo idéntico al de `analyse_gpx()`? ¿El activo sigue siendo
+  igual a la versión más alta tras guardar y tras restaurar —el archivo en una ruta, el
+  `gpx_data` en un plan—? ¿Los `<time>`/HR sobreviven a un recorte? (smoke test al final
+  de "Editor de tracks").
+- Si tocaste la ficha de un plan (`sec/plan.*`): ¿`unmount()` destruye el mapa y el
+  `Chart`? ¿Los paneles que se esconden por falta de datos siguen usando `style.display` y
+  no `.hidden` (si no, en móvil reaparecen)? ¿`ensureTerrain()` sigue reponiendo la fuente
+  del DEM tras `sendero:basemap`, y el 3D sigue encendiendo el terreno en el `moveend` y no
+  en el mismo tick? ¿`#pl-offline-btn` sigue FUERA del menú `⋯` (la e2e lo pulsa directo)?
+  ¿Marcar realizada sin conexión se encola, avisa y sobrevive a `unmount()`+`mount()`
+  (`putDetail` **y** `patchPlanRow`)?
+- Si tocaste la política del índice IBP al editar un plan: lo correcto es **vaciarlo**, no
+  recalcularlo (está en «Descartado» de `WHATS_NEXT.md`). Y `rescan` no debe tocarlo.
 - Si tras `docker compose up -d --build` los cambios no se reflejan en `localhost:8090`
   pese a que el build no falla: revisa el quirk de procesos huérfanos de Docker
   Desktop/WSL2 antes de sospechar del código.

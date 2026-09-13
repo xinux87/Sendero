@@ -11,7 +11,8 @@
    Lo que sí cambia respecto a la plantilla:
 
    - `R` (nombre, versión, umbral GPS, avisos, dem_enabled) ya no lo inyecta
-     Jinja: lo pide mount() a GET /api/routes/<public_id>/editor.
+     Jinja: lo pide mount() a GET /api/routes/<public_id>/editor (o a
+     /api/planned/<public_id>/editor si lo que se edita es un plan).
    - El editor NO funciona sin conexión, y es a propósito: opera con el estado
      GUARDADO en el servidor y cada guardado lleva `base_version` para detectar
      conflictos. Encolar eso sería inventarse decisiones del servidor (regla del
@@ -21,7 +22,15 @@
      de dejar que el router cambie de sección (antes bastaba `beforeunload`,
      porque salir del editor era siempre una recarga de documento).
 
-   Contrato: mount(params, opts) / unmount(). params.id = public_id. */
+   Un solo editor para DOS entidades: desde la v0.10.0 esta misma sección edita
+   también una ruta PLANIFICADA (`planned_routes`), con URL /Plan/<pid>/editor.
+   El router pasa `params.kind` ('route' | 'plan') y todo lo que difiere entre
+   las dos (URLs de la API, a dónde vuelve «← Volver», de dónde sale la lista
+   para «Unir», y los textos) vive en el objeto `K`. NO se duplica el archivo:
+   la paridad doOp()/apply_ops() ya cuesta bastante de mantener en un solo sitio.
+
+   Contrato: mount(params, opts) / unmount(). params.id = public_id,
+   params.kind = 'route' (por defecto) | 'plan'. */
 (() => {
   'use strict';
 
@@ -30,7 +39,68 @@
     const el = document.getElementById('sec-editor');
     return !!el && !el.classList.contains('hidden');
   };
-    let R = null;   // metadatos de la ruta (GET /api/routes/<id>/editor)
+    let R = null;   // metadatos de la entidad (GET <api>/<public_id>/editor)
+
+  /* ── ruta o plan: lo único que cambia ─────────────────────────────────────
+     La API de planes es un espejo exacto de la de rutas (los mismos endpoints
+     bajo /api/planned), así que basta con parametrizar la base de las URLs, de
+     dónde sale el listado para «Unir» y los textos (que llevan género). Todo lo
+     demás —ops, deshacer, versiones, avisos GPS— es idéntico. */
+  const KINDS = {
+    route: {
+      api: pid => '/api/routes/' + encodeURIComponent(pid),
+      mergeApi: '/api/routes/merge',
+      detailUrl: pid => '/Sendero/' + encodeURIComponent(pid),
+      listUrl: '/rutas',
+      list: () => Store.routes(),
+      device: true,                       // un plan no tiene dispositivo
+      label: 'ruta',
+      el: 'la ruta',
+      nombrePh: 'Nombre de la ruta',
+      noEncontrada: 'Ruta no encontrada.',
+      sinElevacion: 'Esta ruta no tiene datos de elevación',
+      sinTiempos: 'Esta ruta no tiene marcas de tiempo',
+      invertir: 'Invertir la ruta eliminará las marcas de tiempo de los puntos. ¿Continuar?',
+      nombreB: 'Nombre de la nueva ruta (segunda mitad):',
+      dividida: 'Ruta dividida',
+      unirBtn: '⛓ Unir con otra ruta…',
+      unirHint: 'Crea una RUTA NUEVA con ambas; las originales no se tocan. ' +
+                'Se ordenan por hora; si los tiempos se solapan, se eliminan.',
+      unirPh: 'Nombre de la ruta unida',
+      sinOtras: 'No hay otras rutas con las que unir',
+      abrirNueva: '¿Abrir la ruta nueva?',
+      conflicto: 'La ruta cambió en otra pestaña. ¿Recargar el editor? (se pierden los cambios locales)',
+    },
+    plan: {
+      api: pid => '/api/planned/' + encodeURIComponent(pid),
+      mergeApi: '/api/planned/merge',
+      detailUrl: pid => '/Plan/' + encodeURIComponent(pid),
+      listUrl: '/planificacion',
+      list: () => Store.planned(),
+      device: false,
+      label: 'plan',
+      el: 'el plan',
+      nombrePh: 'Nombre del plan',
+      noEncontrada: 'Plan no encontrado.',
+      sinElevacion: 'Este plan no tiene datos de elevación',
+      sinTiempos: 'Este plan no tiene marcas de tiempo',
+      invertir: 'Invertir el plan eliminará las marcas de tiempo de los puntos. ¿Continuar?',
+      nombreB: 'Nombre del nuevo plan (segunda mitad):',
+      dividida: 'Plan dividido',
+      unirBtn: '⛓ Unir con otro plan…',
+      unirHint: 'Crea un PLAN NUEVO con ambos; los originales no se tocan. ' +
+                'Se ordenan por hora; si los tiempos se solapan, se eliminan.',
+      unirPh: 'Nombre del plan unido',
+      sinOtras: 'No hay otros planes con los que unir',
+      abrirNueva: '¿Abrir el plan nuevo?',
+      conflicto: 'El plan cambió en otra pestaña. ¿Recargar el editor? (se pierden los cambios locales)',
+    },
+  };
+  let kind = 'route';
+  let K = KINDS.route;
+  /* URL base de la entidad abierta ahora mismo. Todos los endpoints del editor
+     cuelgan de aquí: no escribas /api/routes a mano en este archivo. */
+  const api = () => K.api(R.public_id);
 
   // Colores derivados de ACTIVITIES (static/shared.js): una sola fuente de verdad.
   const ACT_COLORS = Object.fromEntries(ACTIVITIES.map(a=>[a.id,a.color]));
@@ -59,6 +129,7 @@
   let wpts = [], wptMarkers = [];      // waypoints del estado actual + sus markers
   const EMPTY_FC = {type:'FeatureCollection',features:[]};
   let timeMs = null;       // Date.parse de P.time por índice ORIGINAL (null si no hay)
+  let hasTimeData = false; // ¿el track trae marcas de tiempo utilizables?
   let mkStart = null, mkEnd = null;
   let baseStats = null;    // stats del estado cargado, para los deltas
 
@@ -71,14 +142,29 @@
   /* ── detalles (nombre + dispositivo) ──────────────────────────────────────
      Era una IIFE que corría al cargar la página; ahora la llama mount() la
      primera vez (los listeners se enganchan una sola vez, ver _detailsBound). */
+  /* Valores del panel «Detalles». Se rellenan en CADA montaje; los listeners,
+     una sola vez (ver _detailsBound). El dispositivo es cosa de las rutas: un
+     plan no lo tiene, así que su campo se esconde entero en vez de mandar algo
+     que el PATCH de planes no acepta. */
+  function fillDetails(){
+    const nIn=document.getElementById('det-name');
+    const dIn=document.getElementById('det-device');
+    nIn.value = R.name || '';
+    nIn.placeholder = K.nombrePh;
+    dIn.value = R.device || '';
+    const fld=document.getElementById('det-device-fld');
+    if(fld) fld.style.display = K.device ? '' : 'none';
+    document.getElementById('det-save').disabled = true;
+  }
+
   function initDetails(){
     const nIn=document.getElementById('det-name');
     const dIn=document.getElementById('det-device');
     const btn=document.getElementById('det-save');
-    nIn.value = R.name || '';
-    dIn.value = R.device || '';
+    fillDetails();
     const dirty=()=>{
-      const changed = nIn.value.trim()!==(R.name||'') || dIn.value.trim()!==(R.device||'');
+      const changed = nIn.value.trim()!==(R.name||'')
+        || (K.device && dIn.value.trim()!==(R.device||''));
       btn.disabled = !changed;
     };
     nIn.addEventListener('input',dirty);
@@ -94,26 +180,28 @@
     if(!name){toast('El nombre no puede estar vacío');nIn.focus();return;}
     const payload={};
     if(name!==(R.name||''))   payload.name=name;
-    if(device!==(R.device||''))payload.device=device;
+    // El dispositivo solo existe en las rutas; el PATCH de un plan no lo acepta.
+    if(K.device && device!==(R.device||''))payload.device=device;
     if(!Object.keys(payload).length)return;
     btn.disabled=true;
     let res;
     try{
-      res=await fetch(`/api/routes/${R.public_id}`,{method:'PATCH',
+      res=await fetch(api(),{method:'PATCH',
         headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     }catch(e){toast('Error de red al guardar');btn.disabled=false;return;}
     if(!res.ok){const j=await res.json().catch(()=>({}));toast(j.error||'No se pudo guardar');btn.disabled=false;return;}
     R.name=name; R.device=device;
     Store.syncNow({force:true});   // el listado se pone al día por el delta
     document.getElementById('ed-name').textContent=name;
-    /* La URL es /Sendero/<public_id>/editor: renombrar ya no la cambia (antes iba
-       por nombre y había que reescribirla con history.replaceState). */
+    /* La URL es /Sendero/<public_id>/editor (o /Plan/<public_id>/editor):
+       renombrar ya no la cambia (antes iba por nombre y había que reescribirla
+       con history.replaceState). */
     toast('Detalles guardados');
   }
 
   async function loadPoints(){
     let res;
-    try{ res = await fetch(`/api/routes/${R.public_id}/points`); }
+    try{ res = await fetch(`${api()}/points`); }
     catch(e){ document.getElementById('ed-loading').textContent = 'Error de red al cargar los puntos.'; return; }
     if(!res.ok){
       const j = await res.json().catch(()=>({}));
@@ -124,6 +212,12 @@
     R.version = P.version;
     document.getElementById('ed-version').textContent = 'v' + P.version;
     timeMs = P.time ? P.time.map(t => t ? Date.parse(t) : null) : null;
+    /* ¿Hay marcas de tiempo de verdad? Lo dice el servidor (`has_times`) y se
+       corrobora con los puntos: un GPX sin <time> (y un plan casi nunca los
+       trae) dejaba P.time lleno de nulos, y el editor seguía enseñando las
+       herramientas que dividen por Δt, que fallaban calladas. */
+    hasTimeData = (R.has_times !== false) && !!timeMs && timeMs.some(t => t != null);
+    updateTimeUI();
     idxMap = Int32Array.from({length: P.n}, (_, i) => i);
     undoStack = []; redoStack = []; opsList = [];
     posOverride = new Map(); eleOverride = new Map();
@@ -657,7 +751,21 @@
      usa analyse_gpx (SPEED_WINDOW_S): se actualiza en vivo al recortar. Con un
      reverse pendiente no hay tiempos válidos (se eliminan al guardar). */
   const SPEED_WINDOW_MS = 15000;
-  function timesUsable(){ return timeMs && !opsList.some(o => o.op === 'reverse'); }
+  function timesUsable(){ return hasTimeData && !opsList.some(o => o.op === 'reverse'); }
+
+  /* Las dos herramientas que NO tienen sentido sin marcas de tiempo
+     («Corregir velocidad excesiva» y «Desplazar tiempos») se esconden cuando el
+     track no las trae, en vez de quedarse a la vista para fallar al pulsarlas.
+     Vale para rutas y para planes: un plan casi nunca tiene <time>, pero una
+     ruta tampoco tiene por qué. La gráfica de velocidad ya se oculta sola por
+     timesUsable(), y «Invertir» se salta el aviso de perder los timestamps. */
+  function updateTimeUI(){
+    ['speedfix-btn', 'shift-btn'].forEach(id => {
+      const b = document.getElementById(id);
+      if(b) b.style.display = hasTimeData ? '' : 'none';
+    });
+    if(!hasTimeData){ closeSpeedFix(); closeShift(); }
+  }
 
   function computeSpeedData(){
     const [mnV, mxV] = xRange();
@@ -851,8 +959,8 @@
     doOp({op:'delete_range',start:iA,end:iB,desc:`Eliminado un tramo de ${n} puntos`});
   }
   function opReverse(){
-    if(P.time && !confirm('Invertir la ruta eliminará las marcas de tiempo de los puntos. ¿Continuar?'))return;
-    doOp({op:'reverse',desc:'Invertida la ruta'});
+    if(hasTimeData && !confirm(K.invertir))return;
+    doOp({op:'reverse',desc:'Invertido el sentido del track'});
   }
 
   /* ── simplificación Douglas-Peucker ─────────────────────────────────────── */
@@ -941,7 +1049,7 @@
   function toggleSpikes(){
     const panel=document.getElementById('spike-panel');
     if(panel.classList.contains('hidden')){
-      if(!P.ele){toast('Esta ruta no tiene datos de elevación');return;}
+      if(!P.ele){toast(K.sinElevacion);return;}
       closeSimplify();closeSpeedFix();
       panel.classList.remove('hidden');
       spikePreview();
@@ -1233,7 +1341,7 @@
   function toggleSpeedFix(){
     const panel=document.getElementById('speedfix-panel');
     if(panel.classList.contains('hidden')){
-      if(!timeMs){toast('Esta ruta no tiene marcas de tiempo');return;}
+      if(!hasTimeData){toast(K.sinTiempos);return;}
       if(opsList.some(o=>o.op==='reverse')){toast('Con un "invertir" pendiente no hay tiempos válidos');return;}
       closeSimplify();closeSpikes();
       // umbral inicial: el de la actividad en Ajustes → "GPS incorrecto"
@@ -1348,7 +1456,7 @@
   function toggleShift(){
     const panel=document.getElementById('shift-panel');
     if(panel.classList.contains('hidden')){
-      if(!timeMs){toast('Esta ruta no tiene marcas de tiempo');return;}
+      if(!hasTimeData){toast(K.sinTiempos);return;}
       if(opsList.some(o=>o.op==='reverse')){toast('Con un "invertir" pendiente no hay tiempos válidos');return;}
       closeSimplify();closeSpikes();closeSpeedFix();closeMerge();
       const cur=_curStartMs();
@@ -1379,8 +1487,11 @@
     const panel=document.getElementById('merge-panel');
     if(!panel.classList.contains('hidden')){closeMerge();return;}
     closeSimplify();closeSpikes();closeSpeedFix();closeShift();
+    /* Del Store, no de la red: la misma llamada sirve para rutas y para planes,
+       funciona con la copia local y no repite una petición que el listado ya
+       tiene hecha. */
     let items=[];
-    try{items=(await(await fetch('/api/routes')).json()).items||[];}catch(e){}
+    try{items=await K.list();}catch(e){}
     const sel=document.getElementById('merge-sel');
     sel.innerHTML='';
     items.filter(r=>r.public_id!==R.public_id).forEach(r=>{
@@ -1390,7 +1501,7 @@
       o.dataset.name=r.name;
       sel.appendChild(o);
     });
-    if(!sel.options.length){toast('No hay otras rutas con las que unir');return;}
+    if(!sel.options.length){toast(K.sinOtras);return;}
     _mergeNameSync();
     panel.classList.remove('hidden');
   }
@@ -1408,7 +1519,7 @@
     const other=sel.value;
     if(!other)return;
     if(opsList.length && !confirm('Los cambios sin guardar NO se incluirán en la unión. ¿Continuar?'))return;
-    const res=await fetch('/api/routes/merge',{method:'POST',
+    const res=await fetch(K.mergeApi,{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ids:[R.public_id,other],name:document.getElementById('merge-name').value.trim()})});
     const d=await res.json().catch(()=>({}));
@@ -1416,8 +1527,8 @@
     Store.syncNow({force:true});   // el servidor cambió: pon al día la copia local
     closeMerge();
     const extra=d.times_kept?'':' (tiempos descartados: se solapaban)';
-    if(confirm(`Creada «${d.name}»${extra}. ¿Abrir la ruta nueva?`))
-      location.href='/Sendero/'+encodeURIComponent(d.public_id);
+    if(confirm(`Creada «${d.name}»${extra}. ${K.abrirNueva}`))
+      location.href=K.detailUrl(d.public_id);
     else toast(`Creada «${d.name}»${extra}`);
   }
 
@@ -1428,7 +1539,7 @@
     const btn=document.getElementById('dem-btn');
     btn.disabled=true;btn.textContent='🏔 Consultando DEM…';
     try{
-      const res=await fetch(`/api/routes/${R.public_id}/elevation-dem`,{method:'POST',
+      const res=await fetch(`${api()}/elevation-dem`,{method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({base_version:R.version})});
       const d=await res.json().catch(()=>({}));
@@ -1591,7 +1702,7 @@
       speedFixPreview();
     } else {   // elevation y altitude → corrector de picos de elevación
       closeSimplify();closeSpeedFix();closeShift();closeMerge();
-      if(!P.ele){toast('Esta ruta no tiene datos de elevación');return;}
+      if(!P.ele){toast(K.sinElevacion);return;}
       document.getElementById('spike-panel').classList.remove('hidden');
       spikePreview();
     }
@@ -1603,14 +1714,14 @@
     if(opsList.length){toast('Guarda o descarta los cambios antes de dividir');return;}
     const i=selA, n=idxMap.length;
     if(i<1||i>n-2){toast('El punto de corte no puede ser el primero ni el último');return;}
-    const name=prompt('Nombre de la nueva ruta (segunda mitad):',R.name+' (2)');
+    const name=prompt(K.nombreB,R.name+' (2)');
     if(name===null)return;
-    const res=await fetch(`/api/routes/${R.public_id}/split`,{method:'POST',
+    const res=await fetch(`${api()}/split`,{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({index:i,name_b:name.trim(),base_version:R.version})});
     const d=await res.json().catch(()=>({}));
     if(!res.ok){toast(d.error||'Error al dividir');return;}
-    toast(`Ruta dividida — creada «${d.b_name}»`);
+    toast(`${K.dividida} — creada «${d.b_name}»`);
     document.getElementById('ed-body').classList.add('hidden');
     Store.syncNow({force:true});   // el servidor cambió: pon al día la copia local
     document.getElementById('ed-loading').classList.remove('hidden');
@@ -1670,7 +1781,7 @@
     const btn=document.getElementById('save-confirm');
     btn.disabled=true;btn.textContent='Guardando…';
     try{
-      const res=await fetch(`/api/routes/${R.public_id}/edit`,{method:'POST',
+      const res=await fetch(`${api()}/edit`,{method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           base_version:R.version,
@@ -1682,7 +1793,7 @@
         closeSaveModal();
         if(res.status===409){
           toast(d.error||'Conflicto de versión');
-          if(confirm('La ruta cambió en otra pestaña. ¿Recargar el editor? (se pierden los cambios locales)'))location.reload();
+          if(confirm(K.conflicto))location.reload();
         } else toast(d.error||'Error al guardar');
         return;
       }
@@ -1700,7 +1811,7 @@
   /* ── versiones ──────────────────────────────────────────────────────────── */
   async function loadVersions(){
     let d;
-    try{d=await(await fetch(`/api/routes/${R.public_id}/versions`)).json();}catch(e){return;}
+    try{d=await(await fetch(`${api()}/versions`)).json();}catch(e){return;}
     const box=document.getElementById('ver-list');
     if(!d.items.length){
       box.innerHTML='<div class="ed-empty">Sin ediciones todavía. Al guardar se creará el historial.</div>';
@@ -1719,7 +1830,7 @@
           <div class="st">${km} km · +${asc} m · ${date}</div>
         </div>
         <div class="acts">
-          <button class="btn ghost sm" title="Descargar" onclick="location.href='/api/routes/${R.public_id}/versions/${v.version_n}/gpx'">↓</button>
+          <button class="btn ghost sm" title="Descargar" onclick="location.href='${api()}/versions/${v.version_n}/gpx'">↓</button>
           ${isCur?'':`<button class="btn ghost sm" onclick="SEC.editor.restoreVersion(${v.version_n})">Restaurar</button>`}
         </div>`;
       box.appendChild(row);
@@ -1730,7 +1841,7 @@
     let msg=`Se restaurará la versión v${vn} como una versión nueva.`;
     if(opsList.length)msg+=' Los cambios sin guardar se descartarán.';
     if(!confirm(msg+' ¿Continuar?'))return;
-    const res=await fetch(`/api/routes/${R.public_id}/versions/${vn}/restore`,{method:'POST'});
+    const res=await fetch(`${api()}/versions/${vn}/restore`,{method:'POST'});
     const d=await res.json().catch(()=>({}));
     if(!res.ok){toast(d.error||'Error al restaurar');return;}
     toast(`Versión v${vn} restaurada como v${d.version}`);
@@ -1747,7 +1858,7 @@
   function goBack(){
     if(opsList.length && !confirm('Hay cambios sin guardar. ¿Salir de todas formas?'))return;
     leaving=true;
-    go('/Sendero/'+encodeURIComponent(R.public_id));
+    go(R ? K.detailUrl(R.public_id) : K.listUrl);
   }
   window.addEventListener('beforeunload',e=>{
     if(opsList.length && !leaving){e.preventDefault();e.returnValue='';}
@@ -1760,7 +1871,7 @@
     if (chart) { try { chart.destroy(); } catch (e) {} chart = null; }
     if (speedChart) { try { speedChart.destroy(); } catch (e) {} speedChart = null; }
     if (map) { try { map.remove(); } catch (e) {} map = null; }
-    P = null; idxMap = null; cur = []; cumM = null; timeMs = null;
+    P = null; idxMap = null; cur = []; cumM = null; timeMs = null; hasTimeData = false;
     undoStack = []; redoStack = []; opsList = [];
     selA = null; selB = null; baseStats = null;
     posOverride = new Map(); eleOverride = new Map();
@@ -1783,21 +1894,35 @@
     wptMarkers = [];
   }
 
+  /* Textos del markup que dependen de si se edita una RUTA o un PLAN. Los ids
+     son los mismos (es la misma sección): solo cambia lo que dicen. */
+  function applyKindUI(){
+    const set=(id,txt)=>{const el=document.getElementById(id); if(el) el.textContent=txt;};
+    set('merge-btn', K.unirBtn);
+    set('merge-hint', K.unirHint);
+    const mn=document.getElementById('merge-name');
+    if(mn) mn.placeholder = K.unirPh;
+  }
+
   async function mount(params) {
     const tok = ++_tok;
     resetState();
+    // El router manda 'plan' desde /Plan/<pid>/editor; sin él, una ruta.
+    kind = (params && params.kind === 'plan') ? 'plan' : 'route';
+    K = KINDS[kind];
+    applyKindUI();
     const loading = document.getElementById('ed-loading');
     loading.classList.remove('hidden');
-    loading.textContent = 'Cargando la ruta…';
+    loading.textContent = `Cargando ${K.el}…`;
     document.getElementById('ed-body').classList.add('hidden');
     if (!Store.isOnline()) {
       loading.textContent = 'El editor necesita conexión: trabaja sobre el archivo del servidor.';
       return;
     }
     try {
-      const res = await fetch(`/api/routes/${encodeURIComponent(params.id)}/editor`);
+      const res = await fetch(`${K.api(params.id)}/editor`);
       if (!res.ok) {
-        loading.textContent = res.status === 404 ? 'Ruta no encontrada.'
+        loading.textContent = res.status === 404 ? K.noEncontrada
                                                 : 'No se pudo abrir el editor.';
         return;
       }
@@ -1810,13 +1935,9 @@
     document.title = `${R.name} – Editor`;
     document.getElementById('ed-name').textContent = R.name;
     document.getElementById('ed-version').textContent = 'v' + R.version;
+    // Los listeners se enganchan una única vez; los valores, en cada montaje.
     if (!_detailsBound) { initDetails(); _detailsBound = true; }
-    else {
-      // Solo los valores: los listeners se enganchan una única vez.
-      document.getElementById('det-name').value = R.name || '';
-      document.getElementById('det-device').value = R.device || '';
-      document.getElementById('det-save').disabled = true;
-    }
+    else fillDetails();
     document.getElementById('dem-btn').style.display = R.dem_enabled ? '' : 'none';
     await loadPoints();
   }

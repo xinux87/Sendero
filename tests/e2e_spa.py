@@ -1242,13 +1242,218 @@ def main():
         check(parpadeos == 0,
               f"con los datos inyectados el shimmer no parpadea ({parpadeos} muestras)")
 
-        # ── 20. errores de consola ────────────────────────────────────────────
+        # ── 20. planificación editable (v0.10.0) ──────────────────────────────
+        # Un plan dejó de ser de solo lectura: se edita con el MISMO editor que
+        # una ruta (/Plan/<pid>/editor, api/planned_editor.py + PlanTarget), se
+        # une y se divide, y su ficha tiene vista 3D y el estado «realizada».
+        # Este bloque va al FINAL a propósito: edita y marca el plan que usan los
+        # anteriores, y crea uno nuevo al unir.
+        seccion("Planificación editable (ficha del plan y editor de planes)")
+        nombre_plan = planes[0]["name"]
+        alto = next((p for p in planes if "Andorra" in p["name"]), planes[0])
+
+        # (a) vista 3D de la ficha del plan. Mismo criterio que el bloque 15: con
+        # el stub de teselas el mapa es un color plano que no se distingue de uno
+        # roto, así que se quita; y sin internet se omite la parte de píxeles en
+        # vez de dar un falso fallo. El plan de la siembra es de alta montaña por
+        # lo mismo que la ruta de Andorra: el mapa en negro solo salía ahí.
+        ctx.unroute(patron_externo, stub_tesela)
+        page.goto(f"{BASE}/Plan/{alto['public_id']}", wait_until="load")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=15000)
+        page.wait_for_function(
+            "() => document.querySelector('#pl-map canvas') !== null", timeout=20000)
+        page.wait_for_timeout(6000)
+        plano_pl = len(page.locator("#pl-map").screenshot())
+        page.click("#pl-btn3d")
+        page.wait_for_timeout(10000)          # easeTo(800) + moveend + DEM
+        check(page.text_content("#pl-btn3d").strip() == "Vista 2D",
+              "el botón 3D de la ficha del plan pasa a «Vista 2D»")
+        if plano_pl < 40_000:
+            print(f"  OMITIDA  sin teselas reales ({plano_pl} B): el 3D del plan "
+                  f"no se puede juzgar aquí")
+        else:
+            en3d_pl = len(page.locator("#pl-map").screenshot())
+            check(en3d_pl > plano_pl * 0.4,
+                  f"la vista 3D del plan pinta el mapa, no un rectángulo negro "
+                  f"(2D {plano_pl // 1024} KB → 3D {en3d_pl // 1024} KB)")
+        page.click("#pl-btn3d")
+        page.wait_for_timeout(4000)
+        check(page.text_content("#pl-btn3d").strip() == "Vista 3D",
+              "y vuelve a la vista 2D")
+        ctx.route(patron_externo, stub_tesela)
+
+        # (b) marcar realizada DESDE LA FICHA (hasta la 0.10.0 solo se podía
+        # desde la tarjeta del listado).
+        page.goto(f"{BASE}/Plan/{pid_plan}", wait_until="load")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=15000)
+        page.wait_for_selector("#pl-tech .kv-row", timeout=15000)
+        page.click("#pl-more-btn")
+        check(page.is_visible("#pl-done-btn"),
+              "el ⋯ de la ficha ofrece «Marcar realizada»")
+        page.click("#pl-done-btn")
+        page.wait_for_selector("#pl-done-modal:not(.hidden)", timeout=8000)
+        check(page.locator("#pl-done-list .done-row").count() > 0,
+              "el selector «¿qué ruta la cumplió?» se llena desde el Store")
+        page.click("#pl-done-modal .modal-cta")       # «Marcarla sin ruta asociada»
+        page.wait_for_selector("#pl-done-badge .pl-done-chip", timeout=10000)
+        check(True, "marcarla sin ruta asociada enciende la chapa «✔ Realizada»")
+        check("Realizada" in (page.text_content("#pl-tech") or ""),
+              "y «Datos técnicos» gana su fila con la fecha")
+
+        page.evaluate("window.go('/planificacion')")
+        page.wait_for_selector("#sec-planes:not(.hidden)", timeout=15000)
+        # El filtro por estado arranca en «Pendientes», así que una realizada no
+        # sale hasta que se piden ver (ver «Marcar un plan como realizado»).
+        page.evaluate("SEC.planes.setEstado('todas')")
+        page.wait_for_function(
+            "() => document.querySelectorAll('#sec-planes .plan-card.done').length === 1",
+            timeout=15000)
+        hecha = page.locator("#sec-planes .plan-card.done").first
+        check(nombre_plan in (hecha.text_content() or ""),
+              f"«Mis Planes» la pinta apagada (.plan-card.done: «{nombre_plan}»)")
+
+        page.evaluate(f"window.go('/Plan/{pid_plan}')")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=10000)
+        page.wait_for_selector("#pl-done-badge .pl-done-chip", timeout=15000)
+        page.click("#pl-more-btn")
+        check((page.text_content("#pl-done-btn") or "").strip() == "Desmarcar",
+              "al volver a la ficha, el ⋯ ofrece «Desmarcar»")
+        page.click("#pl-done-btn")
+        page.wait_for_function(
+            "() => !document.querySelector('#pl-done-badge .pl-done-chip')", timeout=10000)
+        check(True, "y desmarcar apaga la chapa")
+
+        # (c) el editor, sobre un PLAN: misma sección, misma URL con /editor.
+        antes_pl = api(page, f"/api/planned/{pid_plan}")
+        page.evaluate("window.__t4 = 'vivo'")
+        page.click("#sec-plan button:has-text('✎ Editar track')")
+        page.wait_for_selector("#sec-editor:not(.hidden)", timeout=15000)
+        check(page.evaluate("window.__t4") == "vivo",
+              "de la ficha del plan al editor NO se recarga el documento")
+        check(page.url.endswith(f"/Plan/{pid_plan}/editor"),
+              f"la URL es la del editor del plan ({page.url})")
+        page.wait_for_selector("#ed-body:not(.hidden)", timeout=25000)
+        check(page.text_content("#ed-name").strip() == nombre_plan,
+              f"el editor carga el plan: «{page.text_content('#ed-name').strip()}»")
+        # Un plan no lleva <time> (no se ha hecho todavía), así que las dos
+        # herramientas que dividen por Δt no se ofrecen, en vez de fallar al pulsarlas.
+        check(not page.is_visible("#speedfix-btn") and not page.is_visible("#shift-btn"),
+              "sin marcas de tiempo, «Corregir velocidad excesiva» y «Desplazar "
+              "tiempos» no se ofrecen")
+        check(not page.is_visible("#det-device-fld"),
+              "y el campo «Dispositivo» tampoco: un plan no lo tiene")
+        check("plan" in (page.text_content("#merge-btn") or ""),
+              f"los textos van en género de plan: «{page.text_content('#merge-btn').strip()}»")
+        page.wait_for_function(
+            "() => !!Chart.getChart(document.querySelector('#edelev'))", timeout=15000)
+
+        # Recortar el inicio: arrastrando sobre el perfil se colocan A y B (el
+        # mismo camino que usa una persona; no hay atajo por JS).
+        caja = page.locator("#edelev").bounding_box()
+        yy = caja["y"] + caja["height"] / 2
+        page.mouse.move(caja["x"] + caja["width"] * 0.30, yy)
+        page.mouse.down()
+        page.mouse.move(caja["x"] + caja["width"] * 0.55, yy, steps=10)
+        page.mouse.up()
+        page.wait_for_timeout(500)
+        check(not page.locator("#op-trim-start").is_disabled(),
+              "arrastrar sobre el perfil coloca los manejadores A–B")
+        page.click("#op-trim-start")
+        page.wait_for_timeout(600)
+        check(not page.locator("#save-btn").is_disabled(),
+              "recortar el inicio deja cambios pendientes")
+        page.click("#save-btn")
+        page.wait_for_selector("#save-modal:not(.hidden)", timeout=5000)
+        page.fill("#save-summary", "Recortado el inicio por la suite e2e")
+        page.click("#save-confirm")
+        page.wait_for_function(
+            "() => document.getElementById('ed-body').classList.contains('hidden') === false"
+            " && document.getElementById('save-btn').disabled", timeout=30000)
+        check(page.text_content("#ed-version").strip() == "v2",
+              f"guardar crea la v2 del plan ({page.text_content('#ed-version').strip()})")
+        vers_pl = api(page, f"/api/planned/{pid_plan}/versions")
+        check(vers_pl and vers_pl.get("current") == 2,
+              f"GET /api/planned/<pid>/versions dice current:2 "
+              f"({vers_pl and vers_pl.get('current')})")
+        check(any(i["version_n"] == 1 and i["summary"] == "Archivo original"
+                  for i in (vers_pl or {}).get("items", [])),
+              "y guarda el GPX original como v1 (plan_versions, BLOB en la BD)")
+
+        page.click("#sec-editor button:has-text('← Volver')")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=15000)
+        check(page.url.endswith(f"/Plan/{pid_plan}"),
+              f"«← Volver» lleva a la ficha del plan ({page.url})")
+        page.wait_for_function(
+            "() => (document.getElementById('pl-tech').textContent || '')"
+            ".includes('Versión del track')", timeout=20000)
+        check("v2" in (page.text_content("#pl-tech") or ""),
+              "y la ficha enseña «Versión del track: v2»")
+        despues_pl = api(page, f"/api/planned/{pid_plan}")
+        check(despues_pl["distance_m"] < antes_pl["distance_m"],
+              f"el recorte acortó el plan ({round(antes_pl['distance_m'])} m → "
+              f"{round(despues_pl['distance_m'])} m)")
+
+        # (d) unir dos planes: crea un plan NUEVO y deja los originales intactos.
+        union = page.evaluate("""async ids => {
+            const r = await fetch('/api/planned/merge', {method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ids, name: 'Unión de la suite e2e'})});
+            return {status: r.status, d: await r.json().catch(() => ({}))};
+        }""", [p["public_id"] for p in planes[:2]])
+        check(union["status"] == 201,
+              f"POST /api/planned/merge crea el plan unido ({union['status']})")
+        page.evaluate("window.go('/planificacion')")
+        page.wait_for_selector("#sec-planes:not(.hidden)", timeout=15000)
+        page.evaluate("Store.syncNow({force: true})")
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#sec-planes .plan-card h3')]"
+            ".some(h => h.textContent.includes('Unión de la suite e2e'))", timeout=20000)
+        check(True, "y aparece en «Mis Planes» tras sincronizar")
+        sigue = api(page, f"/api/planned/{pid_plan}")
+        check(sigue is not None and sigue["public_id"] == pid_plan,
+              "los planes de origen quedan intactos")
+
+        # (e) sin conexión: marcar realizada se encola; el editor avisa y no navega.
+        page.evaluate(f"window.go('/Plan/{pid_plan}')")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=10000)
+        page.wait_for_selector("#pl-tech .kv-row", timeout=15000)
+        ctx.set_offline(True)
+        page.wait_for_timeout(800)
+        page.click("#pl-more-btn")
+        page.click("#pl-done-btn")
+        page.wait_for_selector("#pl-done-modal:not(.hidden)", timeout=8000)
+        page.click("#pl-done-modal .modal-cta")
+        page.wait_for_selector("#pl-done-badge .pl-done-chip", timeout=10000)
+        check("conexión" in (page.text_content("#toast") or ""),
+              f"sin conexión la marca se encola y lo dice: "
+              f"«{(page.text_content('#toast') or '').strip()}»")
+        page.evaluate("window.go('/planificacion')")
+        page.wait_for_selector("#sec-planes:not(.hidden)", timeout=15000)
+        page.evaluate(f"window.go('/Plan/{pid_plan}')")
+        page.wait_for_selector("#sec-plan:not(.hidden)", timeout=15000)
+        page.wait_for_selector("#pl-done-badge .pl-done-chip", timeout=15000)
+        check(True, "y la chapa sobrevive a irse a otra sección y volver")
+        page.click("#sec-plan button:has-text('✎ Editar track')")
+        page.wait_for_timeout(1200)
+        check("conexión" in (page.text_content("#toast") or ""),
+              "«✎ Editar track» sin conexión avisa en vez de abrir el editor")
+        check("/editor" not in page.url and page.is_visible("#sec-plan"),
+              f"y no navega a ninguna parte ({page.url})")
+        ctx.set_offline(False)
+        # y se deja el plan como estaba (la cola se vacía sola al volver la red)
+        page.wait_for_timeout(2500)
+        page.click("#pl-more-btn")
+        page.click("#pl-done-btn")
+        page.wait_for_function(
+            "() => !document.querySelector('#pl-done-badge .pl-done-chip')", timeout=15000)
+
+        # ── 21. errores de consola ────────────────────────────────────────────
         seccion("Errores de JavaScript")
         errs = con.limpias()
         check(not errs, "ningún error de JS ni excepción sin capturar"
               + (":\n     " + "\n     ".join(errs[:8]) if errs else ""))
 
-        # ── 21. copia local retenida por otra ventana (IndexedDB) ─────────────
+        # ── 22. copia local retenida por otra ventana (IndexedDB) ─────────────
         # Regresión de la 0.9.9. Al subir DB_VERSION (v3 → v4 en la 0.9.8), una
         # ventana con el código anterior retenía la BD: el open() de la ventana
         # actualizada no resolvía NUNCA —la app se veía a medias y sin error— y el

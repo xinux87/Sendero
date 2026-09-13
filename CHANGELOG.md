@@ -5,6 +5,59 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.10.0] — 2026-09-13
+
+### Añadido
+- **Las rutas planificadas se editan con el mismo editor que las rutas.** Desde la ficha
+  de un plan, «✎ Editar track» abre `/Plan/<id>/editor`: recortar, eliminar tramos,
+  invertir, mover e insertar puntos, waypoints, simplificar, corregir picos de elevación,
+  recalcular la elevación contra un DEM, **dividir** un plan en dos y **unir** dos planes
+  en uno nuevo. Todo con el mismo **historial de versiones** que una ruta (el GPX original
+  se archiva como v1 la primera vez que guardas, y se puede restaurar), el mismo control
+  de conflictos por `base_version` y el mismo «deshacer». Es la misma sección de la SPA:
+  no hay un segundo editor que mantener.
+- **La ficha de un plan dice si está realizado, y deja marcarlo.** Chapa «✔ Realizada»
+  sobre el mapa, fila con la fecha y enlace a la ruta que lo cumplió en «Datos técnicos»,
+  y las acciones «✔ Marcar realizada» / «Desmarcar» en el menú `⋯`, con el mismo selector
+  de ruta del listado (las que salen cerca del plan van arriba). Sin conexión se **encola**
+  y la ficha lo refleja al momento.
+- **Vista 3D en la ficha de un plan** (`Vista 3D` / `Vista 2D`), como en el detalle de una
+  ruta y con la misma secuencia: primero se inclina la cámara y el relieve se enciende al
+  acabar el movimiento, que es lo que evitaba el mapa en negro.
+- **«↺ Reanalizar» para un plan** (menú `⋯`): vuelve a leer su GPX guardado y rehace
+  distancia, desnivel, perfil y traza, sin crear versión.
+- En móvil, el cuerpo de la ficha de un plan pasa a **tres pestañas** (Perfil · Datos ·
+  Notas), como el detalle de una ruta.
+- `tests/e2e_spa.py` gana el bloque **«Planificación editable»** (31 comprobaciones: 3D,
+  marcar/desmarcar realizada desde la ficha y en el listado, el editor de un plan de punta
+  a punta, unir por API y el comportamiento sin conexión).
+
+### Cambiado
+- `api/editor.py` deja de hablar de archivos y filas: toda su E/S vive ahora en un
+  **target** (`RouteTarget` para una ruta, `PlanTarget` en `api/planned_editor.py` para un
+  plan) y el flujo de cada operación —validar `base_version`, aplicar en memoria, archivar
+  el original, escribir el activo, reanalizar y archivar la versión nueva— es **uno solo**
+  para las dos. La semántica de versionado, que es lo que no puede divergir, no está
+  duplicada.
+- El historial de un plan vive en la tabla nueva **`plan_versions`**, con el GPX dentro
+  (BLOB): el track de un plan ya vivía en la base y no en `data/gpx/`. Borrar el plan borra
+  su historial.
+- **Editar el track de un plan vacía su índice IBP** en vez de dejar uno que describe otro
+  recorrido. No se recalcula solo —el número lo da un tercero al que hay que subir el GPX—:
+  la ficha vuelve a ofrecer «Calcular». Reanalizar no lo toca, porque ahí el track no cambia.
+- El menú `⋯` de la ficha de un plan recoge ahora «↓ Descargar GPX», el estado de realizada,
+  «↺ Reanalizar», «Renombrar» y «Eliminar»; en la fila quedan «✎ Editar track», «Vista 3D» y
+  «⬇ Mapa sin conexión».
+- El resumen automático de invertir un track pasa de «Invertida la ruta» a «Invertido el
+  sentido del track» (vale para los dos).
+
+### Corregido
+- **El editor de una RUTA sin marcas de tiempo ya no ofrece herramientas que fallaban.**
+  «⚡ Corregir velocidad excesiva» y «🕐 Desplazar tiempos» necesitan Δt entre puntos; con
+  un GPX sin `<time>` (o con una ruta ya invertida, que los pierde) seguían a la vista y al
+  pulsarlas solo salía un aviso. Ahora se esconden, igual que ya se ocultaba la gráfica de
+  velocidad. Es lo normal en un plan, y de ahí salió el arreglo.
+
 ## [0.9.18] — 2026-08-17
 
 ### Corregido

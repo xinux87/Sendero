@@ -1,4 +1,7 @@
-{# Editor de rutas (sección de la SPA), con el rediseño de las otras vistas
+{# Editor de tracks (sección de la SPA): sirve para una RUTA (/Sendero/<pid>/editor)
+   y para un PLAN (/Plan/<pid>/editor) — es el mismo markup, y los textos que
+   cambian de género los pone sec/editor.js desde su objeto `K`. Con el rediseño
+   de las otras vistas
    (detalle / rutas / dashboard): todo bloque es un `.panel` (--panel + --line +
    radio 12) con su título en `.panel-title`, las cifras en Oswald y los datos en
    mono. NO cambia la lógica: los ids y los SEC.editor.* son los mismos.
@@ -30,7 +33,7 @@
   </div>
 </div>
 
-<div id="ed-loading">Cargando puntos de la ruta…</div>
+<div id="ed-loading">Cargando puntos…</div>
 
 <div id="ed-body" class="hidden">
   <div class="ed-grid">
@@ -69,7 +72,9 @@
           <label for="det-name">Nombre</label>
           <input type="text" id="det-name" maxlength="200" placeholder="Nombre de la ruta">
         </div>
-        <div class="det-fld">
+        {# Solo las rutas tienen dispositivo: en un plan, sec/editor.js esconde
+           este campo entero (fillDetails) y no lo manda en el PATCH. #}
+        <div class="det-fld" id="det-device-fld">
           <label for="det-device">Dispositivo que la grabó</label>
           <input type="text" id="det-device" maxlength="200" placeholder="Sin dispositivo">
         </div>
@@ -106,8 +111,8 @@
           <button class="btn ghost sm" id="op-trim-start" onclick="SEC.editor.opTrimStart()" disabled>✂ Recortar antes de A</button>
           <button class="btn ghost sm" id="op-trim-end" onclick="SEC.editor.opTrimEnd()" disabled>✂ Recortar después de B</button>
           <button class="btn ghost sm" id="op-del-range" onclick="SEC.editor.opDeleteRange()" disabled>␡ Eliminar tramo A–B</button>
-          <button class="btn ghost sm" id="op-reverse" onclick="SEC.editor.opReverse()">⇆ Invertir ruta</button>
-          <button class="btn ghost sm" id="op-split" onclick="SEC.editor.doSplit()" disabled>✄ Dividir ruta en A…</button>
+          <button class="btn ghost sm" id="op-reverse" onclick="SEC.editor.opReverse()">⇆ Invertir</button>
+          <button class="btn ghost sm" id="op-split" onclick="SEC.editor.doSplit()" disabled>✄ Dividir en A…</button>
           <button class="btn ghost sm" id="op-clear-sel" onclick="SEC.editor.clearSel()" disabled>✕ Quitar selección</button>
         </div>
         <div class="sel-hint" id="mode-hint">Haz click en la línea del mapa para colocar los manejadores
@@ -134,7 +139,9 @@
               <button class="btn ghost sm" onclick="SEC.editor.closeSpikes()">Cancelar</button>
             </div>
           </div>
-          <button class="btn ghost sm ed-tool-btn" onclick="SEC.editor.toggleSpeedFix()">⚡ Corregir velocidad excesiva…</button>
+          {# #speedfix-btn y #shift-btn se esconden si el track no tiene <time>:
+             sin Δt no hay nada que corregir ni que desplazar (updateTimeUI). #}
+          <button class="btn ghost sm ed-tool-btn" id="speedfix-btn" onclick="SEC.editor.toggleSpeedFix()">⚡ Corregir velocidad excesiva…</button>
           <div id="speedfix-panel" class="tool-panel hidden">
             <input type="range" id="speedfix-thr" min="5" max="200" value="40" oninput="SEC.editor.speedFixPreview()">
             <div class="tool-info" id="speedfix-info">—</div>
@@ -147,7 +154,7 @@
               <button class="btn ghost sm" onclick="SEC.editor.closeSpeedFix()">Cancelar</button>
             </div>
           </div>
-          <button class="btn ghost sm ed-tool-btn" onclick="SEC.editor.toggleShift()">🕐 Desplazar tiempos…</button>
+          <button class="btn ghost sm ed-tool-btn" id="shift-btn" onclick="SEC.editor.toggleShift()">🕐 Desplazar tiempos…</button>
           <div id="shift-panel" class="tool-panel hidden">
             <div class="tool-info">Inicio actual: <span id="shift-cur">—</span></div>
             <input type="datetime-local" id="shift-dt" step="1" class="ed-input">
@@ -158,11 +165,12 @@
               <button class="btn ghost sm" onclick="SEC.editor.closeShift()">Cancelar</button>
             </div>
           </div>
-          <button class="btn ghost sm ed-tool-btn" onclick="SEC.editor.toggleMerge()">⛓ Unir con otra ruta…</button>
+          {# El texto lo repone applyKindUI(): «otra ruta» o «otro plan». #}
+          <button class="btn ghost sm ed-tool-btn" id="merge-btn" onclick="SEC.editor.toggleMerge()">⛓ Unir con otra ruta…</button>
           <div id="merge-panel" class="tool-panel hidden">
             <select id="merge-sel" class="ed-input" onchange="SEC.editor._mergeNameSync()"></select>
             <input type="text" id="merge-name" class="ed-input" placeholder="Nombre de la ruta unida">
-            <div class="sel-hint">Crea una RUTA NUEVA con ambas; las originales
+            <div class="sel-hint" id="merge-hint">Crea una RUTA NUEVA con ambas; las originales
               no se tocan. Se ordenan por hora; si los tiempos se solapan, se eliminan.</div>
             <div class="tool-foot">
               <button class="btn sm" onclick="SEC.editor.doMerge()">Unir</button>

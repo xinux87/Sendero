@@ -5,11 +5,13 @@
    explote — pilla un selector que ya no existe, que es el fallo que no se nota
    hasta que alguien abre esa vista.
 
-   Cubre `detalle` y `plan`. Para añadir otra sección, mete su nombre en SECCIONES:
+   Cubre `detalle`, `plan` y `editor` (este último se monta DOS veces: como ruta
+   y como plan, que es lo que hace el router según la URL). Para añadir otra
+   sección, mete su nombre en SECCIONES:
    basta que su markup esté en templates/sec/<sec>.html, su JS en
    static/js/sec/<sec>.js, y que publique window.SEC.<sec>.{mount,unmount}. */
 const fs=require('fs');
-const SECCIONES=['detalle','plan'];
+const SECCIONES=['detalle','plan','editor'];
 
 function probar(sec){
   /* El documento real es shell.html CON la sección incluida dentro, y parte de lo
@@ -93,7 +95,14 @@ function probar(sec){
     .then(() => {
       console.log('mount() sin datos: OK');
       mod.unmount();
-    });
+    })
+    /* El editor es la única sección que sirve para DOS entidades (una ruta y un
+       plan, ver `K` en sec/editor.js): montarlo también como plan recorre sus
+       textos y sus ids, que es justo lo que este test sabe comprobar. */
+    .then(() => sec !== 'editor' ? null
+      : Promise.resolve(mod.mount({id: 'inexistente', kind: 'plan'}, {}))
+          .then(() => new Promise(r => setTimeout(r, 10)))
+          .then(() => { console.log('mount() como plan: OK'); mod.unmount(); }));
 }
 
 SECCIONES.reduce((p, sec) => p.then(() => probar(sec)), Promise.resolve())
