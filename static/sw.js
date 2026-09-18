@@ -62,12 +62,14 @@ const PRECACHE_URLS = [
   '/static/js/sec/plan.js',
   '/static/js/sec/detalle.js',
   '/static/js/sec/editor.js',
+  '/static/js/sec/unir.js',
   '/static/css/dashboard.css',
   '/static/css/rutas.css',
   '/static/css/planes.css',
   '/static/css/plan.css',
   '/static/css/detalle.css',
   '/static/css/editor.css',
+  '/static/css/unir.css',
   '/static/vendor/maplibre-gl-4.7.1.js',
   '/static/vendor/maplibre-gl-4.7.1.css',
   '/static/vendor/chart-4.4.1.umd.min.js',
@@ -84,15 +86,18 @@ const PRECACHE_URLS = [
 
 /* Vistas que aloja el shell: TODAS. Al navegar a cualquiera de ellas sin
    conexión se sirve SHELL y el router monta la sección; los datos los pone el
-   Store. El editor está incluido aunque no funcione sin conexión: así al menos
-   se abre y explica por qué no puede trabajar, en vez de dar una página de error. */
+   Store. El editor y «unir» están incluidos aunque no funcionen sin conexión:
+   así al menos se abren y explican por qué no pueden trabajar, en vez de dar una
+   página de error. */
 const SHELL_PATHS = [
   /^\/dashboard\/?$/,
   /^\/rutas\/?$/,
   /^\/planificacion\/?$/,
   /^\/Sendero\/[^/]+\/editor\/?$/,
+  /^\/Sendero\/[^/]+\/unir\/?$/,
   /^\/Sendero\/[^/]+\/?$/,
   /^\/Plan\/[^/]+\/editor\/?$/,
+  /^\/Plan\/[^/]+\/unir\/?$/,
   /^\/Plan\/[^/]+\/?$/,
 ];
 const hostedByShell = path => SHELL_PATHS.some(re => re.test(path));

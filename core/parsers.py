@@ -66,9 +66,18 @@ def analyse_gpx(text):
     # igual que hacen Garmin/Strava, en vez de derivar cada par de puntos consecutivos.
     speed_hist = deque()  # (time, cum_dist_m)
     cum = 0.0
+    # Índice en `coords` donde empieza cada <trkseg> con puntos (el primero es 0).
+    # Un track con varios segmentos —pérdida de GPS, o dos rutas unidas por el
+    # editor, que deja el corte para no fabricar distancia— se dibuja como un
+    # solo LineString, así que sin esto cada corte se vería como una recta que
+    # parece camino. Las stats ya lo tenían en cuenta (prev se reinicia por
+    # segmento); esto es solo para poder pintarlo.
+    seg_starts = []
     for track in gpx.tracks:
         for seg in track.segments:
             prev = None
+            if seg.points:
+                seg_starts.append(len(coords))
             for p in seg.points:
                 coords.append([p.longitude, p.latitude])
                 if prev is not None:
@@ -118,6 +127,7 @@ def analyse_gpx(text):
         "ele_max": round(ele_ext.maximum, 1) if ele_ext and ele_ext.maximum is not None else None,
         "avg_speed":  round(avg_speed, 2) if avg_speed else None,
         "started_at": started,
+        "seg_starts": seg_starts,
     }
 
     name = ""
@@ -277,6 +287,10 @@ def analyse_fit(data: bytes):
         "ele_max":    round(float(ele_max),  1) if ele_max is not None else None,
         "avg_speed":  avg_speed,
         "started_at": started_at,
+        # Un FIT es una única secuencia de `record` sin concepto de <trkseg>: o
+        # hay track (un solo segmento) o no hay nada. Se devuelve igualmente para
+        # que los llamadores no tengan que distinguir el formato.
+        "seg_starts": [0] if coords else [],
     }
     if fit_sport:
         stats["_fit_sport"] = fit_sport

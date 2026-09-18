@@ -9,15 +9,16 @@ Monolito Flask + SQLite que sube/visualiza GPX y FIT, les asocia fotos (locales 
 Immich por referencia), genera thumbnails PNG de cada track y guarda un resumen por ruta.
 
 ## Qué forma tiene hoy
-**Una SPA**: las 6 vistas (dashboard, rutas, planes, detalle de ruta, detalle de plan,
-editor) son secciones de un único documento (`templates/shell.html`), y todo el JS de
-vista vive en `static/js/sec/` (ver "Frontend"). Cambiar de sección no pide ningún
+**Una SPA**: las 7 vistas (dashboard, rutas, planes, detalle de ruta, detalle de plan,
+editor, unir) son secciones de un único documento (`templates/shell.html`), y todo el JS
+de vista vive en `static/js/sec/` (ver "Frontend"). Cambiar de sección no pide ningún
 documento nuevo: solo el JSON que haga falta, y a menudo ni eso.
 
-Son 6 vistas y **7 URLs**: la sección `editor` sirve para dos entidades, una ruta
-(`/Sendero/<pid>/editor`) y un plan (`/Plan/<pid>/editor`, desde la v0.10.0). Es el
-mismo archivo con el mismo markup; lo que cambia va en el objeto `K` de
-`sec/editor.js` y en el `RouteTarget`/`PlanTarget` del servidor.
+Son 7 vistas y **9 URLs**: dos secciones sirven para dos entidades cada una, una ruta y
+un plan. El `editor` (`/Sendero/<pid>/editor` y `/Plan/<pid>/editor`, desde la v0.10.0)
+y `unir` (`/Sendero/<pid>/unir` y `/Plan/<pid>/unir`, desde la v0.11.7). Cada una es el
+mismo archivo con el mismo markup; lo que cambia va en su objeto `K`
+(`sec/editor.js`, `sec/unir.js`) y, en el servidor, en el `RouteTarget`/`PlanTarget`.
 
 **Y una PWA que funciona sin conexión**, apoyada en un Service Worker que precachea el
 shell y el código, y en un almacén local (IndexedDB) que se pone al día con
@@ -32,7 +33,10 @@ sincronización delta. Lo que eso significa en la práctica:
   **marcar un plan como realizado** (se encolan y se envían al volver la red).
 - **NO funciona sin conexión, a propósito**: el **editor** —el de una ruta y el de un
   plan, que son el mismo— (opera sobre el estado guardado en el servidor y cada guardado
-  lleva `base_version`; encolar eso sería inventarse decisiones del servidor), subir rutas
+  lleva `base_version`; encolar eso sería inventarse decisiones del servidor), **unir**
+  (la decisión la toma el servidor mirando la geometría de los dos tracks enteros, que el
+  cliente no tiene: la vista se abre y lo explica, pero no previsualiza ni crea nada),
+  subir rutas
   o fotos, Immich, reescanear (rutas y planes), calcular el índice IBP y borrar. Todas
   avisan en vez de fallar en silencio: «✎ Editar track» de la ficha de un plan ni siquiera
   navega, avisa y se queda donde está.
@@ -54,13 +58,21 @@ sincronización delta. Lo que eso significa en la práctica:
 # desarrollo
 pip install -r requirements-dev.txt   # incluye requirements.txt + pytest
 python app.py                      # http://localhost:8080, init_db() automático
-python -m pytest                   # 129 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
+python -m pytest                   # 170 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
                                    #   actividades (el catálogo y su cableado), la edición de PLANES
                                    #   (test_plan_editing.py: targets, versiones, unir, dividir, IBP),
+                                   #   la UNIÓN inteligente (test_merge.py: geometría, propuestas,
+                                   #   rendimiento y los dos endpoints, con preview),
                                    #   dedup, geocode, ibp, sync y las columnas de los dos listados
+
+# OJO: en esta máquina NO hay `node` instalado, así que los seis smokes de
+# JavaScript de abajo NO se pueden lanzar aquí (se verificaron en un navegador
+# real con Playwright, canal `msedge`). Sigue siendo obligatorio pasarlos donde
+# sí lo haya: son la única red que cubre ese código.
 node tests/sw_smoke.js             # Service Worker: install/activate + estrategias (solo Node)
-node tests/sec_smoke.js            # sec/detalle.js, sec/plan.js y sec/editor.js (como ruta Y como plan)
-                                   #   cargan contra los ids reales del markup
+node tests/sec_smoke.js            # sec/detalle.js, sec/plan.js, sec/editor.js y sec/unir.js
+                                   #   (los dos últimos, como ruta Y como plan) cargan contra
+                                   #   los ids reales del markup
 node tests/tiles_smoke.js          # geometría del corredor de teselas (§6.2)
 node tests/slope_smoke.js          # escala de pendiente (color verde→rojo de traza y perfil)
 node tests/speedfix_smoke.js       # velocidad excesiva y convergencia de «Corregir todo»
@@ -145,13 +157,17 @@ core/
                   esquema de sincronización: sync_seq/sync_log + los 9 triggers,
                   sync_cursor()/sync_epoch()/entity_rev()
   sync.py       — lógica PURA de la sincronización: diff_manifest(local, remoto) →
-                  {missing, stale, extra}, decimate() y resample() para ?lite=1
+                  {missing, stale, extra}, decimate() y resample() para ?lite=1,
+                  más decimate_indices()/remap_indices()/decimate_with_segments()
+                  para que los cortes de `seg_starts` sobrevivan al decimado
                   (tests en tests/test_sync.py)
   parsers.py    — analyse_gpx() y analyse_fit() → devuelven (stats, coords, elev, name, creator).
                   FIT con garmin-fit-sdk (SDK oficial); _fit_dt() normaliza datetimes a naive-UTC
                   como hacía fitparse — no devolver datetimes aware (rompe merge_gpx e Immich)
   thumbs.py     — generate_thumb(coords, gpx_file) → PNG 400px en data/thumbs/
   editing.py    — lógica pura del editor: extract_points(), apply_ops(), fit_to_gpx()
+                  y smart_merge() — la UNIÓN inteligente de dos o más GPX, ver
+                  «Unir rutas y planes» (merge_gpx() queda como envoltorio)
   summaries.py  — auto_summary() y auto_summary_planned()
   exif.py       — extrae lat/lon/taken_at de fotos subidas
   geocode.py    — reverse_geocode(lat,lon) → 'Localidad, Región' o None. Best-effort
@@ -170,17 +186,22 @@ core/
                   Solo el camino GPX-por-token; añade únicamente 'pydantic' a deps.
 
 api/
-  routes.py     — CRUD de rutas + rescan + thumb + stats
+  routes.py     — CRUD de rutas + rescan + thumb + stats; y las páginas
+                  /Sendero/<pid> y /Sendero/<pid>/unir (shell.html)
   editor.py     — EDITOR: la página, /points, el guardado por ops, el DEM y las
                   versiones. La E/S vive en un TARGET (`RouteTarget` aquí,
                   `PlanTarget` en planned_editor.py) y el flujo de cada operación
                   (run_points/run_edit/run_elevation_dem/run_list_versions/
-                  run_restore/commit_new_version) es común a rutas y planes
+                  run_restore/commit_new_version) es común a rutas y planes.
+                  También la UNIÓN, que no depende del target (opera sobre
+                  objetos gpxpy en memoria): merge_options/run_merge/
+                  merge_report_lean/merge_preview_response
   photos.py     — subida y borrado de fotos locales; proxy de fotos Immich
   planned_editor.py — EDITOR DE PLANES: `PlanTarget` (la E/S del editor sobre
                   planned_routes.gpx_data + la tabla plan_versions) y los endpoints
                   espejo de los de ruta. El FLUJO no está aquí: lo pone api/editor.py
-  planned.py    — CRUD de rutas planificadas, /api/planned/geojson (las trazas para
+  planned.py    — CRUD de rutas planificadas y sus páginas (/Plan/<pid> y
+                  /Plan/<pid>/unir), /api/planned/geojson (las trazas para
                   el mapa de la sección), el estado de "realizada" del PATCH
                   (completed_at + completed_route → completed_route_id) y el índice
                   IBP: /api/planned/<id>/ibp lo calcula, create_planned lo intenta
@@ -211,13 +232,14 @@ un hilo de gunicorn (evita duplicar el importador con 2 workers).
 `tests/` — pytest sin BD ni Flask (funciones puras): `conftest.py` trae un constructor
 de GPX sintéticos (`make_gpx_xml`) y un FIT de muestra (`tests/fixtures/Activity.fit`).
 Si tocas una op del editor o el aplanado, añade/ajusta el test correspondiente.
-Además hay cinco pruebas de humo de JavaScript que se lanzan con **Node a pelo** (sin npm
+Además hay seis pruebas de humo de JavaScript que se lanzan con **Node a pelo** (sin npm
 ni dependencias, regla 1; pytest ignora los `.js`): `node tests/sw_smoke.js` ejecuta
 `static/sw.js` con `caches`/`fetch` simulados y comprueba install/activate y qué
-estrategia le toca a cada URL; `node tests/sec_smoke.js` carga `static/js/sec/detalle.js` y
-`static/js/sec/plan.js` contra los ids reales de su markup **más el de `shell.html`** (el
-documento real es la suma de los dos: las acciones de cabecera viven en el shell), los
-monta con el Store devolviendo `null` y así pilla un selector que ya no existe. Si añades
+estrategia le toca a cada URL; `node tests/sec_smoke.js` carga `static/js/sec/detalle.js`,
+`plan.js`, `editor.js` y `unir.js` contra los ids reales de su markup **más el de
+`shell.html`** (el documento real es la suma de los dos: las acciones de cabecera viven en
+el shell), los monta con el Store devolviendo `null` y así pilla un selector que ya no
+existe — `editor` y `unir` se montan **dos veces**, como ruta y como plan. Si añades
 una sección al array `SECCIONES`, hereda la comprobación;
 `node tests/tiles_smoke.js` mide el corredor de teselas; `node tests/slope_smoke.js`
 comprueba la escala de pendiente (que sea absoluta, que la ventana aplane el ruido del
@@ -230,10 +252,10 @@ con gzip/brotli (flask-compress en `app.py`, mínimo 500 bytes), y los binarios 
 caché: thumbs con ETag/304 (revalidación: se regeneran con el mismo nombre), fotos
 locales inmutables con max-age 1 año, proxys Immich con caché privada de 7 días.
 
-### Frontend — una SPA, un documento, 6 secciones
+### Frontend — una SPA, un documento, 7 secciones
 
 **Todas las vistas viven en `templates/shell.html`**, que no lleva datos dentro y
-aloja las 6 secciones. Cada una son tres archivos con el mismo nombre:
+aloja las 7 secciones. Cada una son tres archivos con el mismo nombre:
 
 | Sección | URL | Markup | Lógica | Estilos |
 |---|---|---|---|---|
@@ -243,15 +265,17 @@ aloja las 6 secciones. Cada una son tres archivos con el mismo nombre:
 | `detalle` | `/Sendero/<public_id>` | `sec/detalle.html` | `js/sec/detalle.js` | `css/detalle.css` |
 | `plan` | `/Plan/<public_id>` | `sec/plan.html` | `js/sec/plan.js` | `css/plan.css` |
 | `editor` | `/Sendero/<public_id>/editor` **y** `/Plan/<public_id>/editor` | `sec/editor.html` | `js/sec/editor.js` | `css/editor.css` |
+| `unir` | `/Sendero/<public_id>/unir` **y** `/Plan/<public_id>/unir` | `sec/unir.html` | `js/sec/unir.js` | `css/unir.css` |
 
 El router (`static/js/core/router.js`) monta la sección según `location.pathname`,
 así que **navegar entre vistas no pide ningún documento**: solo el JSON que haga
 falta, y a menudo ni eso (lo tiene el Store).
 
-**Las seis vistas siguen el rediseño**, con la opción **2a** en pantalla grande y
+**Las siete vistas siguen el rediseño**, con la opción **2a** en pantalla grande y
 la **2d** en móvil: `detalle`, `rutas` y `dashboard` desde la v0.9.0, `planes` +
-`plan` desde la v0.9.3 y `editor` desde la v0.9.4. El patrón, si añades una
-séptima: panel `--panel` + borde `--line` + radio 12, título de panel en
+`plan` desde la v0.9.3, `editor` desde la v0.9.4 y `unir` desde la v0.11.7 (nació
+ya con él). El patrón, si añades una
+octava: panel `--panel` + borde `--line` + radio 12, título de panel en
 `.panel-title`, cifras en Oswald, datos en mono, y las unidades en el título del
 panel en vez de en el eje de la gráfica.
 
@@ -285,13 +309,15 @@ sobre el color, no blanca). **Nada de hex sueltos** en plantillas ni en el CSS d
 las secciones: si necesitas un color que no está, añade el token aquí. Las únicas
 excepciones son los `rgba()` de velos y separadores del propio rediseño, los
 colores de serie de las gráficas (elevación `#f0b070`, velocidad `#3d9be9`, FC
-`#e34b4b`, barras `#3f5a49`/`#4e7159`/`#e8863c`), que van en el JS que las pinta,
+`#e34b4b`, barras `#3f5a49`/`#4e7159`/`#e8863c`), que van en el JS que las pinta
+—`sec/unir.js` reusa los dos primeros para los tracks A y B de su previsualización,
+y su `css/unir.css` no lleva ni un hex—,
 y los iconos del botón «Mi ubicación» en `base.html`: van dentro de un `data:URI`
 porque una `url()` no puede leer una variable CSS, y **repiten el valor** de
 `--pr-yellow` y `--gr-red` (si cambias esos tokens, cámbialos también ahí).
 
 > **En `templates/` solo hay tres cosas**: `base.html` (el chrome: cabecera, modal
-> de Ajustes, CSS global), `shell.html` (el shell de la SPA) y `sec/` con las 6
+> de Ajustes, CSS global), `shell.html` (el shell de la SPA) y `sec/` con las 7
 > secciones. Nada más. La app multipágina anterior (`app.html`, `sendero.html`,
 > `editor.html`, `rutas.html`, `overview.html`, `planificacion.html`,
 > `plan_detalle.html`) se borró tras la v0.7.1; si necesitas ver cómo era algo
@@ -302,7 +328,9 @@ rompe de una forma distinta: (1) el archivo en `templates/sec/`, incluido en
 `shell.html`; (2) su ruta en `ROUTES` de `router.js`; (3) su `.js` y `.css` en
 `PRECACHE_URLS` de `static/sw.js` (si no, no se puede montar sin conexión); (4) su
 URL en `SHELL_PATHS` del mismo archivo (si no, sin conexión da la página de aviso
-en vez del shell); (5) la ruta Flask que sirva `shell.html`.
+en vez del shell); (5) la ruta Flask que sirva `shell.html`. La sección `unir`
+(v0.11.7) es el ejemplo reciente de las cinco, y añadió una sexta que conviene no
+olvidar: su nombre en `SECCIONES` de `tests/sec_smoke.js`.
 
 **Sin build step (regla 1), pero el JS ya no va todo inline.** Reparto:
 
@@ -320,6 +348,8 @@ static/icons/      icon-192.png, icon-512.png, icon-maskable-512.png, generados 
                    static/icon.svg con cairosvg (el maskable al 80% sobre el fondo)
 static/shared.js   ACTIVITIES (lo INYECTA base.html desde core/activities.py, no
                    se escribe aquí)/activityOf/iconSvg/_loadActImages, BASEMAP_TILES,
+                   gapFeatures/addGapLayers/GAP_MIN_M (los huecos entre
+                   segmentos del track, ver «Huecos entre segmentos»),
                    SLOPE_SCALE/slopeColor/slopeProfile/slopeBuckets/
                    slopeGradientExpr/slopeChartGradient/slopeLegendHtml
                    (color por pendiente de los dos detalles),
@@ -332,8 +362,8 @@ static/js/core/    chrome.js  helpers globales ($, toast, fmtKm/fmtDur/fmtDate, 
                               llaman los onclick=)
                    loader.js  loadOnce()/loadCssOnce(): inyecta el <script>/<link>
                               de una sección una sola vez
-                   router.js  Router de las 6 vistas en 7 URLs (el editor tiene una
-                              por entidad, con `kind`) + window.go()
+                   router.js  Router de las 7 vistas en 9 URLs (el editor y unir
+                              tienen una por entidad, con `kind`) + window.go()
                    store.js   IndexedDB + sincronización delta + outbox (§4/§7)
                    tiles.js   mapa sin conexión de UNA ruta: corredor de teselas
                               del track, caché `sendero-tiles-v1` y su UI (§6.2)
@@ -357,17 +387,19 @@ archivo, nunca en `mount()`.
 | Archivo | Ruta Flask | Contenido |
 |---------|-----------|-----------|
 | `templates/base.html` | — | CSS global, header (con el badge `#net-badge` de estado de conexión), toast, modal de Ajustes, `<link rel="manifest">` y `theme-color`. Carga `static/vendor/*`, `static/fonts/fonts.css`, `static/shared.js` y `static/js/core/chrome.js` (que registra el Service Worker). No redeclares en una plantilla nada que ya esté en `shared.js`/`chrome.js` (dos `const` globales con el mismo nombre en scripts distintos = SyntaxError) |
-| `templates/shell.html` | **todas** las vistas (`/dashboard`, `/rutas`, `/planificacion`, `/Sendero/<id>`, `/Sendero/<id>/editor`, `/Plan/<id>`, `/app-shell`) | Shell de la SPA: incluye los 6 `templates/sec/*.html`, la tab bar, las acciones de cabecera por sección (`data-sec-actions`), carga `core/loader.js`+`store.js`+`router.js` y llama a `Router.start()`. Cero datos inyectados salvo el `bootstrap_json` opcional de la primera carga (`/app-shell` lo sirve **sin** él: es el que precachea el SW) |
+| `templates/shell.html` | **todas** las vistas (`/dashboard`, `/rutas`, `/planificacion`, `/Sendero/<id>`, `/Sendero/<id>/editor`, `/Sendero/<id>/unir`, `/Plan/<id>`, `/Plan/<id>/editor`, `/Plan/<id>/unir`, `/app-shell`) | Shell de la SPA: incluye los 7 `templates/sec/*.html`, la tab bar, las acciones de cabecera por sección (`data-sec-actions`), carga `core/loader.js`+`store.js`+`router.js` y llama a `Router.start()`. Cero datos inyectados salvo el `bootstrap_json` opcional de la primera carga (`/app-shell` lo sirve **sin** él: es el que precachea el SW) |
 | `templates/sec/detalle.html` | (sección `detalle` del shell) | Detalle de ruta con el rediseño 2a/2d: **mapa cabecera** (`.d-hero`, 360 px, con el título y el chip de actividad encima del velo), banda de 7 métricas (`#d-stats`), y cuerpo a dos columnas (perfil + velocidad + FC + fotos ‖ datos técnicos + calidad del track + resumen). En móvil el cuerpo son pestañas: `data-tab` en la sección y `data-dtab` en cada bloque (ver «Pestañas del detalle en móvil»). Los ids genéricos llevan prefijo `d-` (`#d-map`, `#d-stats`, `#d-elev`, `#d-notes`…) para no chocar con otras secciones del mismo documento |
-| `templates/sec/plan.html` | (sección `plan` del shell) | Ficha de una ruta planificada: mapa cabecera con el chip de actividad y la chapa **✔ Realizada** (`#pl-done-badge`), banda de métricas, perfil, **dificultad IBP** (`#pl-ibp-panel`), datos técnicos y notas. En la fila de acciones: `✎ Editar track`, `Vista 3D` (`#pl-btn3d`) y `⬇ Mapa sin conexión` (`#pl-offline-btn`); tras el `⋯` (`#pl-actions-more`): descargar GPX, marcar/desmarcar realizada (`#pl-done-btn` + el modal `#pl-done-modal`), `↺ Reanalizar` (`#pl-rescan-btn`), renombrar y eliminar. En móvil, tres pestañas (`data-tab`/`data-dtab`). Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
+| `templates/sec/plan.html` | (sección `plan` del shell) | Ficha de una ruta planificada: mapa cabecera con el chip de actividad y la chapa **✔ Realizada** (`#pl-done-badge`), banda de métricas, perfil, **dificultad IBP** (`#pl-ibp-panel`), datos técnicos y notas. En la fila de acciones, en este orden: `✎ Editar track`, `⛓ Unir…` (`#pl-unir-btn`), `Vista 3D` (`#pl-btn3d`) y `⬇ Mapa sin conexión` (`#pl-offline-btn`); tras el `⋯` (`#pl-actions-more`): descargar GPX (`#pl-download-btn`), marcar/desmarcar realizada (`#pl-done-btn` + el modal `#pl-done-modal`), `↺ Reanalizar` (`#pl-rescan-btn`), renombrar y eliminar. En móvil, tres pestañas (`data-tab`/`data-dtab`). Lógica en `static/js/sec/plan.js`, estilos en `static/css/plan.css` |
 | `templates/sec/dashboard.html` | (sección `dashboard`) | "Analítica global": selector de año, 5 KPIs, desnivel por mes, zonas más visitadas, almacenamiento, mapa de todas las rutas, "Por actividad", "Rutas por año" y récords. Lógica en `static/js/sec/dashboard.js` |
 | `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros (píldoras de actividad a la vista; fecha y **buscador** tras el botón `⋯`, ver «Cabecera de filtros»), mapa de visión general, tres vistas (⊞ Cuadrícula · ☰ Tabla · ▤ Panel), modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
 | `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa (marcadores de salida **y** la traza de cada plan, ver abajo), alta por GPX, **marcar un plan como realizado** (botón por tarjeta + selector `#done-modal` de la ruta que lo cumplió), la chapa del **índice IBP** y el filtro de estado `#pg-filters` (Pendientes · Realizadas · Todas, que filtra también el mapa). Lógica en `static/js/sec/planes.js` |
-| `templates/sec/editor.html` | (sección `editor`) | Editor de tracks, el MISMO para una ruta y para un plan (los textos con género los pone `sec/editor.js` desde `K`). Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` o `GET /api/planned/<id>/editor` |
+| `templates/sec/editor.html` | (sección `editor`) | Editor de tracks, el MISMO para una ruta y para un plan (los textos con género los pone `sec/editor.js` desde `K`). Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` o `GET /api/planned/<id>/editor`. **Unir NO está aquí** desde la v0.11.7: es la sección `unir` |
+| `templates/sec/unir.html` | (sección `unir`) | Unir dos tracks en uno nuevo, a pantalla completa y el MISMO markup para una ruta y para un plan (los textos con género los pone `sec/unir.js` desde `K`). Mapa `#un-map` + panel lateral de 380 px con cuatro pasos: «Con qué unir» (`#un-pick-panel`), «Propuestas» (`#un-props-panel`), «Ajustes» (`#un-tune`) y «Resultado» (`#un-result-panel`). Ver «Unir rutas y planes» |
 
 ### Navegación
 - **La URL canónica de todo es el `public_id`**, en rutas y en planes: `/Sendero/<pid>`,
-  `/Sendero/<pid>/editor`, `/Plan/<pid>`, `/Plan/<pid>/editor`. Por nombre el servidor redirige 302 (enlaces y
+  `/Sendero/<pid>/editor`, `/Sendero/<pid>/unir`, `/Plan/<pid>`, `/Plan/<pid>/editor`,
+  `/Plan/<pid>/unir`. Por nombre el servidor redirige 302 (enlaces y
   marcadores viejos siguen funcionando), pero no lo generes: el nombre es ambiguo con
   rutas repetidas y cambia al renombrar. Única excepción viva: las tarjetas de récords
   del dashboard, porque el caché de stats en `settings` solo guarda el nombre.
@@ -387,10 +419,14 @@ archivo, nunca en `mount()`.
   **solo con conexión** (si no, avisa y no navega: el editor no puede cargar sin servidor).
   El "← Volver" del editor usa `K.detailUrl(pid)`, así que vuelve a `/Sendero/<pid>` o a
   `/Plan/<pid>` según lo que se estuviera editando
-- **El router tiene 7 entradas para 6 secciones** (`ROUTES` en `router.js`): la del editor
-  está dos veces, una por entidad, y pasa `params.kind` (`'route'` | `'plan'`). Cada editor
-  va ANTES que su detalle, porque `/Sendero/<id>/editor` también encaja en el patrón de
-  `/Sendero/<id>`. Lo mismo en `SHELL_PATHS` de `static/sw.js`: sin `/Plan/<id>/editor` ahí,
+- Ficha de un plan → unir: `SEC.plan.openUnir()` → `go('/Plan/<pid>/unir')`; detalle de una
+  ruta → `SEC.detalle.openUnir()` → `go('/Sendero/<pid>/unir')` (este cierra antes el menú
+  `⋯`). Las dos **exigen conexión**, como `openEditor()`: sin ella avisan y no navegan
+- **El router tiene 9 entradas para 7 secciones** (`ROUTES` en `router.js`): las del editor
+  y las de `unir` están dos veces, una por entidad, y pasan `params.kind`
+  (`'route'` | `'plan'`). Cada editor y cada `unir` van ANTES que su detalle, porque
+  `/Sendero/<id>/editor` y `/Sendero/<id>/unir` también encajan en el patrón de
+  `/Sendero/<id>`. Lo mismo en `SHELL_PATHS` de `static/sw.js`: sin `/Plan/<id>/unir` ahí,
   esa URL daría sin conexión la página de aviso en vez del shell
 - Renombrar ruta **ya no toca la URL**: al ir por `public_id` la URL no depende del
   nombre (antes hacía falta `history.replaceState`)
@@ -418,11 +454,12 @@ archivo, nunca en `mount()`.
 | GET | `/api/routes/<id>/thumb` | sirve el PNG del track (image/png) |
 | GET | `/api/routes/<id>/gpx` | descarga el archivo GPX/FIT original |
 | GET | `/Sendero/<public_id>/editor` | `shell.html` (sección `editor`); por nombre redirige 302 al `public_id` |
+| GET | `/Sendero/<public_id>/unir` | `shell.html` (sección `unir` con `kind:'route'`); por nombre redirige 302 al `public_id`. **Sin `bootstrap_json`**: la unión la calcula el servidor a partir de los archivos guardados y la sección pide al Store lo que necesita |
 | GET | `/api/routes/<public_id>/editor` | metadatos de arranque del editor (nombre, versión, `gps_thresholds` con los TRES umbrales de la actividad, `gps_max_speed`, `gps_issues`, `dem_enabled`). Antes iban inyectados en la plantilla |
 | GET | `/api/routes/<id>/points` | puntos completos para el editor: arrays paralelos lonlat/ele/time/hr 1:1 con los trkpt + `segments` + `version` |
 | POST | `/api/routes/<id>/edit` | guarda edición: `{base_version, summary, ops}`; 409 si base_version ≠ actual |
 | POST | `/api/routes/<id>/split` | divide en el punto `index`: la original se recorta (versión nueva) y la 2ª mitad pasa a ruta nueva; las fotos se quedan en la original |
-| POST | `/api/routes/merge` | `{ids, name}` → RUTA NUEVA con las rutas unidas (originales intactas); orden cronológico, tiempos descartados si se solapan (`times_kept` en la respuesta) |
+| POST | `/api/routes/merge` | Unión inteligente → RUTA NUEVA (las originales intactas). Body `{ids, name, preview?, options?{reverse, trim, join_gap, tol_m, proposal, start, end, pieces}}` (`pieces` = montaje manual, ver «Unir rutas y planes»). Con **`preview:true`** no crea nada: 200 `{preview, report, stats, elevation}` (el perfil del resultado, ≤501 puntos). Sin él: 201 `{id, public_id, name, times_kept, report}` con el informe **sin geometrías** (`merge_report_lean`). Opciones mal formadas o `proposal` fuera de rango → 400. Ver «Unir rutas y planes» |
 | POST | `/api/routes/<id>/elevation-dem` | recalcula la elevación de todos los puntos contra el OpenTopoData de Ajustes (versión nueva); 400 sin `DEM_URL`, 409 por `base_version`, 502 si el DEM falla |
 | GET | `/api/routes/<id>/versions` | historial de versiones (desc) |
 | POST | `/api/routes/<id>/versions/<vn>/restore` | restaura la versión vn como versión nueva |
@@ -444,11 +481,12 @@ archivo, nunca en `mount()`.
 | GET | `/api/planned/<id>/gpx` | descarga GPX del plan |
 | POST | `/api/planned/<id>/ibp` | calcula (o recalcula) el índice IBP del plan subiendo su GPX a ibpindex.com. 400 sin clave o sin GPX, 502 si el servicio falla (con SU mensaje), 200 `{ibp_index, ibp_modality, ibp_all}`. NO se encola sin conexión: el número lo decide un tercero |
 | GET | `/Plan/<public_id>/editor` | `shell.html` (sección `editor` con `kind:'plan'`); por nombre redirige 302 al `public_id`. Sin `bootstrap_json`, como el de una ruta |
+| GET | `/Plan/<public_id>/unir` | `shell.html` (sección `unir` con `kind:'plan'`); por nombre redirige 302 al `public_id`. Sin `bootstrap_json`, como el de una ruta |
 | GET | `/api/planned/<id>/editor` | metadatos de arranque del editor de un plan: `kind:'plan'`, nombre, `version`, `gps_thresholds`, `gps_max_speed`, `dem_enabled`, `has_times` (parseando el GPX) y `gps_issues` **siempre vacío** (un plan no es un track grabado: no tiene saltos de receptor que avisar) |
 | GET | `/api/planned/<id>/points` | puntos completos del plan para el editor (mismo formato que el de una ruta: lonlat/ele/time/hr + `segments` + `version`) |
 | POST | `/api/planned/<id>/edit` | guarda edición: `{base_version, summary, ops}`; 409 si `base_version` ≠ actual. Crea versión nueva y **vacía el índice IBP** |
 | POST | `/api/planned/<id>/split` | divide el plan en el punto `index`: el original se recorta (versión nueva) y la 2ª mitad pasa a plan nuevo, que hereda la actividad y nace SIN índice IBP |
-| POST | `/api/planned/merge` | `{ids, name}` → PLAN NUEVO con los planes unidos (los originales intactos). Solo plan + plan, ver «Editor de tracks» |
+| POST | `/api/planned/merge` | Espejo exacto del de rutas (mismo body, mismo `preview`, mismas respuestas; el flujo es el mismo `run_merge`) → PLAN NUEVO, los originales intactos. Solo plan + plan, ver «Unir rutas y planes» |
 | POST | `/api/planned/<id>/elevation-dem` | recalcula la elevación del plan contra el DEM de Ajustes (versión nueva); 400 sin `DEM_URL`, 409 por `base_version`, 502 si el DEM falla |
 | GET | `/api/planned/<id>/versions` | historial de versiones del plan (desc) |
 | POST | `/api/planned/<id>/versions/<vn>/restore` | restaura la versión vn como versión nueva |
@@ -471,7 +509,7 @@ archivo, nunca en `mount()`.
 
 ### Helper `_build_route_dict(rid)` en `api/routes.py`
 Construye el dict completo de una ruta (geojson, elevation, heart_rate, speed, photos,
-auto_summary, thumb_file, `version`, `n_points`…). Lo usan `get_route()` (API JSON) y
+auto_summary, thumb_file, `version`, `n_points`, `seg_starts`…). Lo usan `get_route()` (API JSON) y
 `sendero_page()` (inyección en template). **Si añades campos al objeto ruta,
 añádelos aquí.** `n_points` se calcula aquí y no en `_route_payload()` a propósito:
 tiene que ser el número de puntos del track COMPLETO, antes de que `?lite=1` decime
@@ -487,8 +525,8 @@ versionado:
   vértice = `move_point`, Alt+click = `delete_points`, click en la línea =
   `insert_point`, Shift+click = waypoint).
 - **Recortes y estructura**: recortar inicio/fin, eliminar tramo intermedio, invertir
-  ruta, dividir en dos (`POST /split`, server-side sobre el estado guardado) y unir
-  rutas (`POST /api/routes/merge`, que crea una ruta NUEVA).
+  ruta y dividir en dos (`POST /split`, server-side sobre el estado guardado). **Unir
+  ya no está aquí**: desde la v0.11.7 es su propia sección (ver «Unir rutas y planes»).
 - **Correcciones**: simplificación Douglas-Peucker con preview (compila a
   `delete_points`), picos de elevación (`set_ele`), velocidad excesiva (saltos de GPS:
   los puntos que exigirían superar el umbral de la actividad — Ajustes → "GPS
@@ -525,11 +563,12 @@ mismas** para las dos. Los errores de E/S con mensaje para el usuario viajan com
   en una ruta, solo `reason == 'edit'` limpia `dup_suspect_of` (dividir, DEM o restaurar no lo
   tocaban y siguen sin tocarlo); en un plan, **cualquier** versión nueva vacía el índice IBP.
 - **En el cliente pasa lo mismo con `K`** (objeto `KINDS` de `sec/editor.js`): la base de la
-  API (`api(pid)`), `mergeApi`, `detailUrl`, `listUrl`, `list()` (= `Store.routes()` o
-  `Store.planned()`, o sea que el selector de «Unir» sale del almacén local y no de la red),
-  `device` y todos los textos con género. **En ese archivo no se escribe `/api/routes` ni
-  `/Sendero/` a mano**: todo cuelga del helper `api()`, y el router es quien dice de qué se
-  trata con `params.kind`.
+  API (`api(pid)`), `detailUrl`, `listUrl`, `device` y todos los textos con género
+  (`el`, `dividida`, `nombreB`, `invertir`, `conflicto`…). **En ese archivo no se escribe
+  `/api/routes` ni `/Sendero/` a mano**: todo cuelga del helper `api()`, y el router es
+  quien dice de qué se trata con `params.kind`. `mergeApi`/`list()` y los textos de unir
+  se fueron con la sección `unir`, y con ellos `applyKindUI()`: los textos del editor que
+  dependían del género ya no están en el markup.
 - **`has_times`** llega en los metadatos de arranque de las dos (en una ruta se deduce de
   `started_at`; en un plan hay que parsear el GPX, que son unas decenas). Si es falso, el
   editor **esconde** `#speedfix-btn` («⚡ Corregir velocidad excesiva») y `#shift-btn`
@@ -538,7 +577,6 @@ mismas** para las dos. Los errores de E/S con mensaje para el usuario viajan com
   seguían a la vista para soltar un aviso al pulsarlas.
 - Lo que **no** tiene un plan: dispositivo (su campo se esconde entero, y el PATCH de planes
   no lo acepta), thumbnails, avisos GPS guardados y re-detección de actividad al reparsear.
-- **Unir es plan + plan o ruta + ruta**, nunca mezclado: ver `WHATS_NEXT.md` (descartado).
 
 **«✔ Corregir todo» tiene que converger EN UNA PASADA, y lo comprueba** (v0.9.7). No es
 un detalle de comodidad: si al guardar reaparecen avisos, el usuario no sabe si la
@@ -671,6 +709,298 @@ iteración en un sitio, cámbialo en los dos** (`core/parsers.py` y `core/editin
   DEM y restaurar) y no se recalcula solo: es un número de un tercero al que hay que subir
   el GPX entero. El plan que nace de un split o de un merge tampoco lo calcula. `rescan`
   **no** lo toca: ahí el track es el mismo. Ver «Índice IBP de un plan».
+
+### Unir rutas y planes (`core/editing.py::smart_merge` + `sec/unir.*`)
+Desde la v0.11.7 unir dos tracks **no es una herramienta del editor**: es una sección
+propia a pantalla completa (`/Sendero/<pid>/unir` y `/Plan/<pid>/unir`) y, por debajo,
+una función que mira la GEOMETRÍA en vez de concatenar a ciegas. El caso real que lo
+obligó: dos planes de Wikiloc, «PARTE A» (un bucle P→Q→P) y «PARTE B» (Q→desvío→P,
+volviendo pegado al tramo P→Q). Pegar A y B a lo bruto daba B al revés con una recta de
+3 km por el medio, el tramo P→Q duplicado y el final montado sobre el inicio. Hoy la
+propuesta 0 es «A (2ª mitad, invertida) + B»: 16,5 km, circular y sin repetir nada.
+
+**El servidor: `smart_merge(gpxs, names, *, reverse=None, trim=True, join_gap=None,
+tol_m=30, gap_join_m=50, out_and_back_frac=0.5, proposal=0) -> (xml, report)`.**
+`merge_gpx()` sigue existiendo como envoltorio (devuelve `(xml, times_kept)`). Lo que
+hace, y lo que NO se puede tocar sin rehacerlo:
+
+- **Nunca reconstruye puntos**: reordena los `GPXTrackPoint` originales, así que `<time>`,
+  HR y extensiones sobreviven intactos. Misma disciplina que las ops del editor.
+- **Con tiempos REALES en todas las entradas no se invierte nada**: manda el reloj.
+  «Tiempos reales» = `_real_times()`, o sea span > 0 **y** monótonos: un track dibujado a
+  mano en Wikiloc pone el MISMO `<time>` en sus 422 puntos, y **eso no son tiempos** — si
+  se cuentan como tales, el track no se puede orientar y sale al revés. Si los rangos se
+  solapan, se descartan todos los `<time>` (`times_kept:false`), como siempre.
+- **Recorte del solape** contiguo a cada costura, solo si tiene cuerpo (≥3 puntos y
+  ≥2·`tol_m`): un cruce suelto no es una costura. Se busca solo contra la parte ANTERIOR,
+  no contra todo lo acumulado.
+- **Cierre de circular**: si la cola se monta sobre el inicio se recorta, pero con tope
+  (`_LOOP_MAX_FRAC`, ¼ del recorrido) — una **ida y vuelta** también acaba donde empezó y
+  sin tope se comería medio track. Ida y vuelta (solape > 50 % del corto, `out_and_back_frac`)
+  y cierre que se pasa del tope **se avisan y no se recortan**. `_closes()` usa
+  `max(tol_m, gap_join_m)`: con solo `tol` un bucle que cerraba a 30,4 m salía «sin cerrar»,
+  y eso decide qué propuesta gana.
+- **El hueco** que queda se une en recta si es ≤ `gap_join_m` (50 m); si no, se deja como
+  corte de segmento (que es lo que luego el detalle pinta como hueco, ver la sección
+  siguiente). `join_gap=True/False` lo fuerza en las dos direcciones.
+- **Costuras INTERIORES y propuestas.** Hay **dos clases de junta** (`_split_units`): por
+  **extremo** —un extremo de una entrada cae (≤ `tol_m`) sobre un punto interior de otra, a
+  más de 3·`tol_m` de sus extremos medido A LO LARGO del track— y, desde la v0.11.7, por
+  **tramo común** (`_overlap_runs`): el principio y el fin de cada tramo contiguo en que las
+  dos van pegadas, anotados en las dos entradas. La segunda es la que permite partir un track
+  por donde REENCUENTRA al otro, que no es extremo de nada: sin ella, «bucle + desvío que
+  vuelve a la junta» (PARTE A + PARTE B → Ruta Pichones) se llevaba la copia duplicada del
+  sendero común (16,5 km en vez de 15,5). Tres constantes que no son cosméticas:
+  `_DETOUR_MIN_M` (500 m) es **histéresis** —dos dibujos del mismo sendero se despegan
+  decenas de metros continuamente (medido: huecos de 37-310 m dentro de 5 km compartidos) y
+  sin fundir esos tramos salían juntas falsas que multiplicaban la enumeración—;
+  `_JUNCTION_MERGE_M` (250 m) fusiona juntas que describen el mismo sitio (la de extremo y la
+  de tramo salían a 107 m en los GPX reales) y es el margen de extremo de las juntas por tramo
+  (con solo 3·tol, el solape de una costura normal partía el track a 100 m del final);
+  `_MAX_JUNCTIONS` (4 por track, ≤5 piezas) es el freno de la enumeración junto con
+  `_MAX_CHAINS` (medido: 96 cadenas en el caso real). Con las piezas se enumeran los
+  ensamblajes posibles (`_chains` + `_whole_chains`). Se devuelven **≤5** en `report["proposals"]`, la 0 es la
+  mejor, y `proposal` elige cuál se ensambla. El orden es el que define qué es un buen
+  recorrido: **cierra circuito > repite menos metros (`repeated_m`) > deja menos hueco
+  (los que se unen en recta NO cuentan, o una propuesta que se deja medio track fuera
+  ganaría por 30 m) > usa más piezas > invierte menos**. Una propuesta válida tiene que
+  **tocar todas las entradas** y llevar **alguna entera** (si no, «unir» acabaría
+  devolviendo solo A, o dos trozos sueltos). La unión de toda la vida —entradas enteras,
+  en el orden dado— se cuela siempre en la lista aunque puntúe mal: puede ser justo lo que
+  se pedía. **El ranking no premia la longitud**: entre dos recorridos que cierran y no
+  repiten decide `n_rev`, así que la propuesta que lleva el trozo duplicado del otro track
+  no gana por ser más larga. **Etiquetas**: «1ª/2ª mitad» solo con dos mitades y una sola
+  aparición; si una entrada sale más de una vez o va partida en más de dos, los trozos van
+  por kilómetros («A (km 0→4,1) + B (km 0→6,1) + A (km 4,1→9,5)», que es la etiqueta real
+  de Pichones, con `order [0,1,0]`: aquí es donde más se nota que `order`/`reversed` van por
+  PIEZA).
+- **Con `reverse` explícito, o con tiempos reales en TODAS las entradas, no se parte nada**
+  y hay una sola propuesta (`proposal` debe ser 0): invertir «la entrada i entera» solo
+  significa algo sobre entradas sin partir.
+- **Inicio y fin a elegir** (`start`/`end`, cadenas `"<i><s|e>"`: `"0s"` = inicio del
+  track que se une, `"1e"` = fin del elegido; `None` = automático): el recorrido tiene que
+  empezar y acabar cerca de esos puntos. Tres reglas: (1) **se pide por PUNTO, no por
+  extremo** — en un bucle `0s` y `0e` valen los dos y decide el ranking; (2) la holgura es
+  `close_tol = max(tol_m, gap_join_m)` (50 m), por el mismo motivo que `_closes()`: el fin de
+  PARTE B cae a 30,0 m clavados del de PARTE A y con `tol` a secas salía «imposible»; (3)
+  **pedir extremos nunca falla**: si ninguna propuesta cumple, salen todas,
+  `endpoints_applied:false` y un aviso; si alguna cumple, `proposals` trae SOLO esas (única
+  excepción a «la unión clásica siempre está en la lista»). Pedirlos enumera propuestas
+  aunque no haya juntas interiores (hace falta poder reordenar), con tiempos reales puede
+  obligar a invertir (se pierden los `<time>`, con aviso) y con `reverse` explícito solo se
+  reordena (si no cuadra, manda `reverse` y se avisa). `start == end` → 400.
+- **Montaje manual (`pieces`, «unirV2»)**: el usuario dicta los trozos y el servidor solo
+  arregla las costuras. `options.pieces = [{track, from_m, to_m}, …]` (≥1; `track` = índice en
+  `ids`; **`from_m > to_m` = trozo invertido**; corte al vértice más cercano, nunca se
+  interpolan puntos). Con `pieces` se **ignoran** `reverse`/`proposal`/`start`/`end` (aviso,
+  no error) y aplican `trim`/`join_gap`/`tol_m`. Dos trozos seguidos del mismo track,
+  contiguos y en el mismo sentido se encadenan **sin costura** (ni junta, ni hueco, ni
+  recorte: montar dos mitades devuelve el track entero); el resto pasa por `_seam` + cierre
+  de circular + política de tiempos de siempre, y un hueco que queda como corte avisa «Hueco
+  de X entre el trozo N y el N+1: quedará un corte de segmento». Trozo de <2 puntos o <2·tol
+  → 400. **Todas las distancias de un track —`from_m`/`to_m`, `track_lengths_m` y las
+  `pieces` de las propuestas— van en la MISMA escala, la de `_Poly.cum`** (planar 2D, con el
+  salto entre segmentos), que NO es la de `analyse_gpx` (~1-3 % de diferencia) a propósito:
+  así una pieza de una propuesta se puede devolver tal cual como pieza manual. Si cambias
+  `_Poly.cum`, cambias el contrato del cliente. El informe añade `manual` y
+  `track_lengths_m` (los dos **siempre**) y, en manual, una única propuesta «Montaje manual»
+  cuyas `pieces` son las **reales tras el recorte** (`trimmed_head_m`, `trimmed_tail_m`,
+  `requested`). OJO: `gaps`/`junctions` **se saltan las uniones sin costura**, así que no
+  están alineadas con las piezas; el cliente reproduce la regla en `seamGaps()`.
+- **El índice de rejilla (`_Poly`, celda 2·`tol_m`, distancia punto→tramo) no es una
+  optimización, es un requisito**: la distancia punto↔traza en bruto es O(n·m) y con
+  2×20 000 puntos serían 4·10⁸ comparaciones en Python. `tests/test_merge.py` exige la
+  unión de esos dos tracks en **menos de 2 s** (va sobre 1,2 s).
+
+**Claves de `report`**: `order`, `reversed`, `trimmed_m`, `gap_m`, `gap_joined`, `gaps[]`,
+`closed_loop`, `closed_trim_m`, `times_kept`, `warnings[]`, `junctions`, `n_points`,
+`tracks[]`, `segments[]`, `proposal`, `repeated_m`, `had_times[]`,
+`endpoints_applied` (`null` si no se pidió nada, `true`/`false` si sí), `start_point`,
+`end_point` (primer y último punto del resultado ensamblado), `endpoints[{track, name, s, e}]`
+(los extremos ORIGINALES de cada entrada, sin orientar) y
+`proposals[{k, label, distance_m, closed_loop, repeated_m, gap_m, n_pieces,
+pieces[{track, name, reversed, from_m, to_m, len_m}], reversed_inputs[], segments_lite}]`.
+**TRAMPA: `order`/`reversed`/`trimmed_m`/`tracks` van por PIEZA ensamblada, no por
+entrada** — en cuanto hay una junta interior, `order` puede repetir un índice o dejarse
+alguno fuera. Lo que va por ENTRADA es `had_times` y el `reversed_inputs` de cada
+propuesta (`null` ahí = esa entrada se usa por trozos).
+
+**Los endpoints** son `POST /api/routes/merge` y `POST /api/planned/merge`, y el flujo es
+**común** (`api/editor.py`: `merge_options` → `run_merge` → `merge_report_lean` /
+`merge_preview_response`; `api/planned_editor.py` los importa). Unir no pasa por el TARGET
+del editor a propósito: opera sobre objetos gpxpy en memoria y no toca la E/S de ninguna
+entidad. Body `{ids, name, preview?, options?{reverse, trim, join_gap, tol_m, proposal, start, end, pieces}}`;
+con `preview:true` **no se crea nada** (200 `{preview, report, stats, elevation}` — `elevation`
+es la serie `[{d,e}]` del resultado pasada por `core.sync.resample`, hasta **501** puntos, y solo
+va en la preview), sin él se crea
+(201, con el informe ya sin geometrías). Opciones mal formadas o `proposal` fuera de rango
+→ 400. Lo cubre `tests/test_merge.py` (30 tests: geometría, propuestas con el fixture
+sintético «bucle + ramal desde un punto interior», rendimiento y los dos endpoints).
+
+**El cliente (`sec/unir.js` + `sec/unir.html` + `css/unir.css`)** solo pinta lo que dice el
+informe: **toda la decisión la toma el servidor**. Como el editor, sirve para las dos
+entidades con un objeto `K` (`params.kind`), y **en ese archivo no se escribe `/api/routes`
+ni `/Sendero/` a mano**. Pantalla completa: a la izquierda `.un-left`, con el mapa `#un-map` y **debajo el perfil de
+elevación del resultado** (`#un-elev-panel`, el mapa cede altura); a la derecha un panel de
+380 px con cuatro pasos —«Propuestas»
+(tarjetas; **oculto si hay ≤1**; el hover pinta esa propuesta en gris punteado con las
+capas `mg-hover-*`, sin elegirla), «Inicio y fin» (`#un-ends`: dos `<select>` `#un-start`/`#un-end`
+con «Automático» + los cuatro extremos), «Ajustes» (`<details>` plegable) y «Resultado» (cuatro
+cifras, avisos, nombre y `#un-create`)—. Lo que hay que saber si lo tocas:
+
+- **Capas del mapa**: `un-a*` para el track que se está uniendo y `mg-*` para la
+  previsualización (lo que se conserva, lo que se descarta en punteado, el hueco, las
+  flechas de sentido y los círculos de junta). Se reponen en `map.on('sendero:basemap')`
+  (regla 15), y **ese repintado NO se puede guardar con `map.isStyleLoaded()`**: en ese
+  evento todavía devuelve `false`, así que salir de la capa offline dejaba el mapa sin
+  capas y sin forma de recuperarlas. La única guarda es la de idempotencia
+  (`if (map.getSource('un-a')) return`).
+- **Cada cambio relanza la previsualización con debounce de 250 ms Y token**: sin el token,
+  una respuesta lenta de la opción anterior pinta encima de la nueva y el mapa deja de
+  describir lo que dicen los controles.
+- **Los toggles «Invertir A/B» salen de `reversed_inputs`**, no de `reversed`. Un `null`
+  ahí se pinta «parcial» y **deshabilitado**: la propuesta elegida usa esa entrada por
+  trozos e invertirla entera no significa nada. Pulsar uno pone `reverse` explícito, con lo
+  que el servidor deja de enumerar: las tarjetas desaparecen y sale «↩ Volver a las
+  propuestas» (`#un-back-props`). Cambiar la **tolerancia** (`#un-tol`) resetea `proposal` a
+  0, porque con otra tolerancia las piezas ya no son las mismas.
+- **`MG_GAP_JOIN_M` (50) en `unir.js` es copia de `gap_join_m` del servidor** — no viaja en
+  el informe y solo se usa para decidir si la chapa «hueco X» de una propuesta merece
+  salir. Si cambias uno, cambia el otro.
+- **«Con qué unir» es un POPUP, no un panel** (v0.11.7): `#un-pick-modal` (overlay con el
+  buscador `#un-search` y la lista `#un-list`, candidatos de `K.list()` —el **Store**—
+  ordenados por cercanía a los extremos del track, grupo «Cercanos» a <3 km) más el chip
+  `#un-pick-chip` de la cabecera («Con: PARTE B · 11,4 km · a 2,98 km») con `#un-change`
+  («Cambiar» / «Elegir con qué unir» en ámbar sin candidato). Se abre solo al montar sin
+  candidato y con conexión (sin conexión no se abre y el botón queda deshabilitado; sin
+  candidatos dice `K.sinOtras` y ofrece «← Volver»). Cierra por ✕, «Cancelar», velo y Escape
+  — ese listener de `document` se registra **una vez al cargar el archivo** y comprueba
+  `pickOpen` y que la sección no esté `hidden`. Y la trampa del modal Immich:
+  `#sec-unir .un-overlay.hidden{display:none}` va justo detrás de
+  `#sec-unir .un-overlay{display:flex}`. `resetState()` lo cierra (es `position:fixed`).
+- **El perfil** se pinta con las funciones de `shared.js`, igual que la ficha de un plan
+  (`slopeProfile`/`slopeGradientPlugin`/`slopeLegendHtml`), y valen las mismas trampas:
+  degradado como VALOR (nunca opción scriptable), `chart.render()` para el crosshair, cerrojo
+  `_syncing`, `onHover` que descarta el `mouseout`, `ctx.onmouseleave` por asignación. El hover
+  va en las dos direcciones con la capa `mg-keep-hit` y el punto `mg-hover-point`. Para pasar de
+  `d` a coordenada, `buildResult()` acumula km sobre `report.segments` **sin sumar el salto entre
+  segmentos** (como `analyse_gpx`) y **escala el total al último `d` de `elevation`**: los
+  segmentos del informe vienen decimados y sin esa escala el crosshair se desplaza hacia el final.
+- **Inicio y fin**: `#un-start`/`#un-end` mandan `options.start`/`end` (`null` = automático);
+  cambiar cualquiera resetea `proposal` a 0, reelegir candidato los devuelve a «Automático», y
+  **el mismo extremo en los dos no se manda** (es un 400 seguro): se marca en ámbar y se espera.
+  Si `report.endpoints_applied === false` los dos selects van en ámbar y el aviso del servidor
+  sale en `#un-warns`. Los marcadores de inicio/fin (sobre `start_point`/`end_point`) son
+  **PUNTOS** del tamaño de la traza —verde `--sage` el inicio, rojo `--gr-red` el fin, y uno solo
+  a dos colores si `closed_loop` o están a <30 m (el caso real cierra a 30,4 m)—, no chapas con
+  texto: la chapa «INICIO» tapaba justo el tramo que se quería mirar (v0.11.7); el nombre va en
+  el `title`. Ellos y los cuatro puntitos de `endpoints[]` son **marcadores DOM**: sobreviven a `sendero:basemap` y se quitan en
+  `clearMap()`/`unmount()`, junto con el `Chart` del perfil y el `.hover-infobox`.
+- **Modo «Montaje» (unirV2)**: la sección tiene dos modos, conmutador `#un-mode` en la
+  cabecera (Automático · Montaje), preferencia en `sessionStorage` (`sendero_unir_modo_v1`);
+  cambiar de modo **no pierde** candidato ni trozos. En Montaje la columna izquierda pasa a
+  ser mapa → **perfil de A** (`#un-src-a`) → **perfil de B** (`#un-src-b`) → **línea de tiempo**
+  (`#un-timeline`) → perfil del resultado; y a la derecha «Propuestas» e «Inicio y fin» se
+  esconden y aparece «Montaje» (`#un-pieces-panel`, la lista de clips en texto con las piezas
+  REALES tras el recorte). Se selecciona un tramo **arrastrando** sobre un perfil fuente (el
+  sentido del arrastre cuenta: de derecha a izquierda = invertido; «＋ Añadir invertido» le da la
+  vuelta a lo que diga la selección; doble click/«Todo» = el track entero), y el tramo se
+  ilumina en el mapa (`un-sel-line`). Cada clip tiene ◀ ▶ ↔ ✕ y el separador entre clips dice el
+  estado de la costura (✓ cosida · ⚠ hueco · ✂ solape recortado). El cliente manda
+  `options.pieces` y **no manda** `proposal`/`start`/`end`/`reverse`. **`track_lengths_m` manda
+  sobre el último `d` de la serie ligera**: al llegar se reescalan `cum`, la serie de elevación,
+  los trozos y la selección con el mismo factor (`applyTrackLens`, una vez por entrada); sin
+  reescalar la elevación, el eje del perfil y la selección hablan de escalas distintas. Los
+  perfiles fuente van sin degradado (cada uno del color de su entrada) y con `events: []` (el
+  gesto es un arrastre sobre el propio canvas). B entera se pinta atenuada en `un-b*`. Los dos
+  `Chart` fuente se destruyen en `unmount()`, al volver a Automático y (solo B) al cambiar de
+  candidato — `clearMap()` **no** los destruye: son el material del montaje. La línea de tiempo
+  es lo único de la vista con `overflow-x` propio.
+  - **La rejilla de Montaje es OTRA** (v0.11.7): bajo `#sec-unir.is-montaje`, `.un-left` y
+    `.un-side` pasan a `display:contents` y cada panel se coloca por `grid-area`
+    (`map/srca/srcb/tl/pieces/tune/result/elev`), sin mover nodos del DOM. ≥1000 px:
+    `map map srca srca / map map srcb srcb / tl tl tl tl / pieces tune result result /
+    elev elev elev elev` (la línea de tiempo bajo el mapa a todo el ancho desde la v0.11.7;
+    el mapa ≈55 % de ancho y **mide lo que los dos perfiles fuente apilados**:
+    `align-self:stretch`, sin alto propio, `min-height` solo como suelo); 768-999: dos
+    columnas; <768: una. Los paneles que el JS esconde con `display:none` no ocupan celda.
+    Automático no cambia (medido: misma rejilla y mismos bounds).
+  - **Cambiar de modo cambia el tamaño del mapa: el encuadre va DESPUÉS del resize.**
+    `afterResize()` (doble `requestAnimationFrame` con `map.resize()`) + `fitCurrent()`
+    (informe → `fitReport`; Montaje con B cargada → `fitBoth`, bounds A+B; si no → `fitA`).
+    Encuadrar en el mismo tick calcula la cámara para el lienzo viejo: el síntoma era entrar
+    en Montaje y ver media ruta. `refitNext` es de un solo uso al volver a Automático (el
+    informe se rehace); fuera de eso, cambiar una opción **no** le mueve la cámara al usuario.
+  - **«Ajustar» en cada separador con costura** (`.un-seam-fit`, en la línea de tiempo Y en la
+    lista de `#un-pieces-panel`; `fitSeam(k)`, v0.11.7): recorta los dos trozos hasta el par de
+    vértices más cercano entre sus dos tracks. Solo sale donde hay costura de verdad (regla de
+    `seamGaps()`). El final efectivo de un trozo es siempre `to_m` y el inicio `from_m`,
+    invertido o no; lo que cambia con `from_m > to_m` es la dirección de la ventana
+    (`fitWindow`), y el ajuste **solo recorta**. **Una pulsada ITERA** (`FIT_MAX_PASSES`) con
+    ventanas de 3 km que llegan siempre hasta el borde ORIGINAL del trozo: con una sola pasada
+    un punto de encuentro a 5,4 km del final se quedaba a medio camino, y sin el borde original
+    el descenso caía en un mínimo local (264 m en vez de 5). Dos umbrales a propósito:
+    `FIT_MIN_GAIN_M` (5 m) deshabilita el botón, `FIT_STEP_GAIN_M` (0,5 m) para la iteración.
+    Si dejara un trozo por debajo de 2·tol, no se aplica y avisa con toast. 37 ms con los GPX
+    reales.
+  - **Barra de scroll de `#un-timeline`**: fina y en `--sage`. Trampa: en Chromium poner
+    `scrollbar-width` hace que se ignoren los `::-webkit-scrollbar`, así que los estándar van
+    tras `@supports not selector(::-webkit-scrollbar)` (solo Firefox). Y en Chromium headless no
+    se pinta ninguna barra: para verlas, `headless=False` y
+    `--disable-features=OverlayScrollbar,FluentOverlayScrollbar`.
+  - **Hover de las dos fuentes (solo Montaje)**: `srcHover = {i, d}` es el hermano de `hoverD`;
+    si los dos están vivos manda el del resultado (el `.hover-infobox` es uno solo). Perfil →
+    mapa va por listeners del propio `<canvas>` (enganchados una vez; los perfiles fuente
+    siguen con `events: []`, así que ahí no aplican las trampas de `onHover`, pero sí
+    `_syncing` y `render()`), y no actúa mientras `dragI !== null`. Mapa → perfil va por
+    `un-a-hit`/`un-b-hit` (debajo de `mg-keep-hit`) con **UN solo handler para las dos**: A y
+    B se solapan por diseño, los dos eventos se disparan a la vez y gana el vértice más
+    cercano. Los `map.on(...)` se registran en `initMap()`, no en `addDataLayers()` (que se
+    reejecuta tras `sendero:basemap`). Punto propio `un-src-hover-point`.
+- **Requiere conexión**: la sección se monta igual sin ella (está en `SHELL_PATHS`) pero
+  avisa con `K.offline` y no previsualiza ni crea nada.
+- `window.SEC.unir = {mount, unmount, retry, searchChanged, openPick, closePick, changePick
+  (alias de openPick), veilClick, backFromPick, backToProposals, toggleRev, optsChanged, setGap,
+  endsChanged, setMode, srcAll, srcAdd, clearPieces, fitSeam, doMerge}`.
+
+### Huecos entre segmentos (`seg_starts`)
+Un GPX con varios `<trkseg>` —se perdió la señal, o son dos tracks unidos y la unión dejó
+el corte a propósito para no fabricar distancia— se dibuja como **un solo LineString**, así
+que MapLibre une los extremos y el corte parece un camino recto que nadie anduvo. Las
+stats siempre estuvieron bien (`analyse_gpx()` reinicia la distancia en cada segmento):
+esto es solo la representación, y desde la v0.11.7 se pinta.
+
+- **Servidor**: columna `seg_starts TEXT JSON` en `routes` **y** en `planned_routes` (los
+  índices de `geojson` donde empieza cada segmento; `[0]` = uno solo; NULL = desconocido ⇒
+  el cliente pinta como antes). La calculan `analyse_gpx()` y `analyse_fit()` dentro de
+  `stats` (un FIT no tiene `<trkseg>`: `[0]` si hay puntos) y la escriben importar,
+  reescanear y **cada reanálisis del editor**. Las rutas ya importadas la ganan al
+  reescanearlas o al guardar una edición: **no hay backfill masivo** al arrancar (sería
+  reparsear cientos de GPX).
+- **No va en ningún índice de cobertura** (regla 12) y **no hizo falta subir `DB_VERSION`**
+  (regla 11): no se lee en ningún listado, solo en `_build_route_dict`/`_build_plan_dict`
+  y en el editor, siempre por id, que ya leen la fila entera.
+- **En `?lite=1` los índices hay que REMAPEARLOS**, porque apuntan al `geojson` sin decimar:
+  lo hace `decimate_with_segments()` (`core/sync.py`), que conserva el punto del corte **y
+  el anterior** —si no, el decimado se comería justo la marca, o el hueco dibujado se
+  tragaría hasta `step-1` puntos de track de verdad— y traduce las marcas con
+  `decimate_indices()` + `remap_indices()`. El `bootstrap_json` de `/Sendero/<pid>` es la
+  misma variante ligera, así que coincide. El dict de un plan **no** tiene variante ligera:
+  ahí los índices no se remapean nunca.
+- **Cliente**: `gapFeatures()` / `addGapLayers()` / `GAP_MIN_M` (20 m: por debajo de eso es
+  una pausa, no un hueco) en `static/shared.js`, compartidas por las dos fichas para que no
+  puedan divergir. Cada corte son DOS capas —`d-gaps-mask`/`d-gaps-dash` en el detalle de
+  una ruta y `pl-gaps-mask`/`pl-gaps-dash` en el de un plan—: una ancha del color del
+  lienzo (`--bg-deep`) que **tapa** la recta de debajo, y otra fina punteada en `--muted`.
+  Los dos colores se leen con `getComputedStyle` del `:root` de `base.html` (MapLibre
+  necesita un color literal), así que siguen siendo tokens y no hex sueltos (regla 9).
+- **Se añaden DESPUÉS de la traza** (MapLibre dibuja en el orden en que se añaden) y
+  **ANTES de la capa de hover**, que debe quedar arriba. En el detalle de una ruta el mapa
+  se recrea entero al cambiar de capa base, así que no hay que reponerlas; en la ficha de
+  un plan van dentro de `drawTrack()`, que ya se re-ejecuta tras `sendero:basemap`
+  (regla 15).
+- **No tocan `lineMetrics` ni el degradado por pendiente**: son capas aparte encima, no
+  cambian la fuente de la traza.
 
 ### Catálogo de actividades (`core/activities.py`) — un deporte, un archivo
 **Añadir un deporte es editar `core/activities.py` y subir `APP_VERSION`. Nada más.**
@@ -879,10 +1209,13 @@ su canvas medía 0). `resetView()` vuelve siempre a «Perfil».
 
 Las acciones del mapa cabecera viven en `.d-hero-actions`, que está FUERA de
 `.d-hero` (que recorta con `overflow:hidden`) y dentro de `.d-hero-wrap`: así en
-pantalla estrecha pueden caer debajo del mapa en flujo normal. Sobre el mapa solo
-están «✎ Editar track» y «↓ Exportar GPX»; el resto va tras el `⋯`
-(`#d-actions-more`), **también en escritorio** — si automatizas un click en
-«Renombrar», «Reescanear» o «Eliminar», abre antes el menú.
+pantalla estrecha pueden caer debajo del mapa en flujo normal. En la fila están
+«✎ Editar track», «↓ Exportar GPX», «Vista 3D» (`#d-btn3d`) y el `⋯`
+(`#d-more-btn`); tras ese menú (`#d-actions-more`) van **cinco** entradas, en
+este orden: «↺ Reescanear» (`#rescan-btn`), «⬇ Mapa sin conexión», «⛓ Unir…»
+(`#d-unir-btn`), «Renombrar» y «Eliminar». El menú es así **también en
+escritorio** — si automatizas un click en cualquiera de esas cinco, ábrelo antes
+(`SEC.detalle.openUnir()` además lo cierra él mismo al navegar).
 
 ### Mapa base offline autoalojado (PMTiles)
 La 5ª capa del selector, «Offline (local)», es la única que no depende de terceros: la
@@ -939,7 +1272,8 @@ servidor encendido; esto no.
   mira su licencia antes de dejar que se pre-descargue.
 
 ### Botón «Mi ubicación» (`addGeolocate()` en `static/shared.js`)
-Los **seis** mapas lo llevan: centra el mapa en el usuario y lo sigue mientras no arrastre.
+Los **siete** mapas lo llevan (el de `unir` desde la v0.11.7): centra el mapa en el usuario
+y lo sigue mientras no arrastre.
 Es el `GeolocateControl` de MapLibre, no un control propio, y se añade siempre con
 `addGeolocate(map, esquina)` justo después del `NavigationControl` — así los textos, los
 avisos de error y el estilo se tocan en un solo sitio. La ubicación la da el dispositivo,
@@ -976,8 +1310,9 @@ así que **funciona sin conexión** si el mapa base está descargado.
   `map.remove()`, el watch se queda abierto — es la fuga nº 1 de esta conversión, pero
   gastando batería.
 - Lo cubre el bloque 16 de `tests/e2e_spa.py`, que da permiso y ubicación falsa a Chromium y
-  comprueba en los seis mapas que el punto acaba **en el centro** del contenedor, que sin
-  permiso avisa en español, y que al cambiar de sección el watch del GPS se cierra.
+  comprueba en los seis mapas que cubre (el de `unir` todavía no está en su lista) que el
+  punto acaba **en el centro** del contenedor, que sin permiso avisa en español, y que al
+  cambiar de sección el watch del GPS se cierra.
 
 ### Escrituras en el detalle (`static/js/sec/detalle.js`)
 Dos categorías, y la diferencia importa:
@@ -1299,8 +1634,12 @@ que no son opcionales si lo tocas:
 El detalle de una ruta planificada. Desde la v0.10.0 no es una vista de solo lectura:
 
 - **Acciones de cabecera**: en la fila, `✎ Editar track` (→ `/Plan/<pid>/editor`,
-  `openEditor()`, que **exige conexión** y si no la hay avisa sin navegar), `Vista 3D`
-  (`#pl-btn3d`) y `⬇ Mapa sin conexión` (`#pl-offline-btn`). Tras el `⋯`
+  `openEditor()`, que **exige conexión** y si no la hay avisa sin navegar), `⛓ Unir…`
+  (`#pl-unir-btn` → `/Plan/<pid>/unir`, `openUnir()`, online-only por el mismo motivo),
+  `Vista 3D`
+  (`#pl-btn3d`) y `⬇ Mapa sin conexión` (`#pl-offline-btn`). Con la quinta acción la
+  rejilla 2×2 de ≤600 px queda impar, así que `#pl-more-btn` ocupa la fila entera
+  (`grid-column:1 / -1`). Tras el `⋯`
   (`#pl-actions-more`): `↓ Descargar GPX` (solo si el plan guarda su archivo),
   `✔ Marcar realizada` / `Desmarcar` (`#pl-done-btn`), `↺ Reanalizar` (`#pl-rescan-btn`),
   `Renombrar` y `Eliminar`. **`#pl-offline-btn` tiene que seguir a la vista**: la suite e2e
@@ -1709,6 +2048,11 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
     recreando el mapa (ver `plan.js` y `sec/detalle.js`/`sec/rutas.js` respectivamente).
     Lo que NO hay que repintar son los controles ni los marcadores DOM (el punto de «Mi
     ubicación» es uno de ellos, por eso no aparece en ningún repintado).
+    **Y ese repintado no se guarda nunca con `map.isStyleLoaded()`**: `sendero:basemap` se
+    dispara en el `styledata` del estilo nuevo, donde todavía devuelve `false`, así que la
+    guarda se tragaría el repintado entero y el mapa se quedaría sin capas de datos (pasó
+    en `sec/unir.js` al salir de la capa offline). La guarda correcta es la de
+    idempotencia: «¿ya existe mi fuente? pues no la vuelvas a añadir».
 
 16. **El Service Worker NO cachea documentos que lleven datos inyectados dentro.**
     `/Sendero/<pid>` trae la ruta en `bootstrap_json`, así que su HTML es una copia de
@@ -1754,6 +2098,7 @@ El logo de la cabecera es `static/icon.svg` (La Traza). La carpeta `static/` se 
 | signature | TEXT | Huella SEMÁNTICA del entreno (`route_signature`): `started_at` al minuto + primer/último punto a 4 decimales (~11 m). Sin timestamps cae a distancia(100 m)+nº puntos. Dedup BLANDA. Índice propio `idx_routes_signature`. Deliberadamente NO incluye distancia cuando hay hora (el hash por igualdad daría falsos negativos en las fronteras de cubo). Solo al importar, no se recalcula |
 | dup_suspect_of | INTEGER | id de la ruta a la que se parece, cuando la ingesta AUTOMÁTICA (`?auto=1`) la importó pese al aviso semántico. NULL = limpia. Se lee en el listado → va en `idx_routes_list_cov5` (regla 12). Se limpia al editar la ruta o con `PATCH {dup_suspect_of:null}` ("descartar aviso") |
 | locality | TEXT | Sitio donde se hizo la ruta ("Localidad, Región"), por geocoding inverso del punto de inicio (`core/geocode.py`, `GEOCODE_URL` en Ajustes → Editor). Se rellena best-effort al importar (`create_route`) y al reescanear una ruta que aún no la tenga (`_reanalyse_and_update`, backfill vía "Re-escanear"); NULL = servicio desactivado o geocoding fallido. Se lee en el listado y se muestra en la tarjeta de "Mis Rutas" y en el detalle → va en `idx_routes_list_cov5` (regla 12) |
+| seg_starts | TEXT JSON | Índices de `geojson` donde empieza cada `<trkseg>` (`[0]` = un solo segmento; NULL = desconocido, o sea rutas anteriores a la columna hasta que se reescaneen). Lo que hace que el detalle dibuje los cortes como **hueco** en vez de la recta que MapLibre traza entre segmentos (ver «Huecos entre segmentos»). Lo calculan `analyse_gpx`/`analyse_fit` y lo escriben `create_route`, `rescan_route` y cada reanálisis del editor. **NO va en ningún índice de cobertura** (regla 12) y **no obliga a subir `DB_VERSION`** (regla 11): no se lee en el listado, solo en `_build_route_dict` y el editor, siempre por id. En `?lite=1` hay que remapearlo (`decimate_with_segments()`) |
 | public_id | TEXT | Identificador **opaco no secuencial** (`secrets.token_urlsafe(8)`, ~11 chars) expuesto en TODAS las URLs `/api/routes/<public_id>/...`; la PK entera `id` queda solo interna (FKs, `versions/<route_id>/`, prefijo de nombre de foto). Evita que CrowdSec vea enumeración al pedir las miniaturas del listado. Índice UNIQUE `idx_routes_public_id`; se lee en el listado → va en `idx_routes_list_cov5` (regla 12). Se fija al importar (con reintento por colisión) y por backfill en `init_db()`; NO se recalcula. Los endpoints resuelven `public_id`→`id` con `rid_from_public()` en su 1ª línea (thumb/gpx/foto consultan `WHERE public_id=?` directo). Al añadirlo se invalidó la caché del cliente (regla 11) |
 
 ### Tabla `route_versions`
@@ -1818,6 +2163,12 @@ llamada) e `ibp_at` (cuándo se calculó). Las dos primeras se leen en el listad
 van en `idx_planned_list_cov3` (regla 12); `ibp_all` **no**, a propósito: solo lo
 miran el PATCH de actividad y el endpoint de cálculo, siempre por id, así que la
 fila se lee entera de todas formas.
+
+**Huecos entre segmentos** (v0.11.7): `seg_starts` (TEXT JSON), exactamente igual que en
+`routes` —ver allí y «Huecos entre segmentos»—. Tampoco se lee en el listado, así que no
+va en `idx_planned_list_cov3` ni obligó a subir `DB_VERSION`; solo lo mira
+`_build_plan_dict`, por id. Aquí **no** hay variante ligera, así que sus índices no se
+remapean nunca.
 
 **La v0.10.0 no añadió ninguna columna aquí**, aunque el plan ya se edite: el historial
 vive en su propia tabla (`plan_versions`) y el `version` del dict sale de `MAX(version_n)`,
@@ -1925,18 +2276,30 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   contenido WebGL (MapLibre) y los `<canvas>` de Chart.js no se repintan para el
   viewport ampliado que usa `full_page=True`, así que se ven cortados o comprimidos
   aunque en pantalla estén bien. Para juzgar el aspecto, captura del viewport.
-- **Docker Desktop sobre WSL2 (esta instalación) puede dejar procesos `gunicorn`/
-  `watch.py` huérfanos** tras varios `docker compose down`/`up --build` seguidos: el
-  proceso sigue vivo (visible en `ps aux` del host, propiedad de `root`) y sigue
-  atendiendo el puerto publicado con código *antiguo*, aunque `docker ps` ya no liste
-  ningún contenedor y el contenedor "actual" tenga el código correcto. Síntoma: cambios
-  en el código que no se reflejan en `localhost:8090` aunque el build no dé error y
-  `docker compose exec` confirme que el archivo en el contenedor es el correcto.
-  Diagnóstico: `ps aux | grep gunicorn` — si hay procesos con una hora de arranque muy
-  anterior al último `docker compose up`, son huérfanos. Solución: `sudo kill -9
-  <esos PIDs>` y volver a `docker compose up -d --build` (puede generar un nuevo huérfano
-  si lo que mueres es el proceso supervisado por `restart: unless-stopped`; conviene
-  `docker compose down` primero para quitar esa política antes de matar).
+- **Eran DOS motores Docker, no «procesos huérfanos».** Hasta la v0.11.7 aquí se
+  documentaba que Docker Desktop sobre WSL2 dejaba `gunicorn`/`watch.py` huérfanos tras
+  varios `down`/`up --build`. **No era eso**: en esta máquina había un `dockerd` **nativo
+  dentro de Ubuntu** (systemd, con autoarranque) que levantaba el stack viejo desde
+  `/mnt/c/Users/xinux/Documents/Sendero` y retenía el 8090 con su `docker-proxy`, además
+  de Docker Desktop. Los tres síntomas, que engañan por separado:
+  (a) `docker ps` **no lista** el contenedor que está atendiendo el 8090 (lo tiene el otro
+  motor), así que los cambios no se reflejan aunque el build vaya bien;
+  (b) si Desktop levanta su stack a la vez, los dos abren la MISMA `data/sendero.db` y el
+  de producción empieza a dar **500 `unable to open database file`**;
+  (c) Docker Desktop, al arrancar, **tapa `/var/run/docker.sock` y `/run/docker.sock`**
+  del nativo, así que el mismo comando habla con un motor u otro según el momento.
+  Diagnóstico: `wsl -d Ubuntu -u root -e ss -ltnp | grep 8090` (quién tiene el puerto) y
+  `ps -eo pid,lstart,cmd | grep gunicorn` (desde cuándo lleva vivo).
+  Solución aplicada: `systemctl disable --now docker docker.socket containerd` dentro de
+  Ubuntu, matar los zombis con `ctr -n moby tasks kill`, y quedarse con **un solo motor**
+  (Docker Desktop) con la integración WSL activada para Ubuntu (Settings → Resources →
+  WSL integration).
+- **En esta máquina no hay `node`.** Los seis smoke tests de JavaScript
+  (`sw_smoke.js`, `sec_smoke.js`, `tiles_smoke.js`, `slope_smoke.js`, `speedfix_smoke.js`
+  y `gps_parity_smoke.js`) **no se pueden lanzar aquí**; lo que se ha hecho en su lugar
+  es verificar en un navegador real con Playwright, canal `msedge`. No los des por
+  pasados: si tocas ese código, pásalos donde haya Node (instalarlo está en la lista de
+  «Para hacer» de `WHATS_NEXT.md`).
 
 ## Antes de dar por buena una tarea
 - ¿Sigue arrancando `python app.py` e `init_db()` sin error?
@@ -1990,6 +2353,38 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   salir con cambios sin guardar sigue preguntando. Ya no basta `beforeunload`: salir del
   editor puede ser un simple cambio de sección, y de eso se encarga un listener en fase de
   captura dentro de `sec/editor.js`.
+- Si tocaste la **unión** (`core/editing.py::smart_merge`, `merge_options`/`run_merge` de
+  `api/editor.py`, los dos endpoints `/merge`): `python -m pytest tests/test_merge.py`, que
+  además de la geometría y las propuestas vigila el **rendimiento** (2×20 000 puntos en
+  menos de 2 s: si te cargas el índice de rejilla, la unión pasa a O(n·m) y el test lo
+  pilla). Y comprueba las tres que se rompen calladas: que un track con todos los `<time>`
+  iguales siga **sin contar como que tiene tiempos**; que `order`/`reversed`/`trimmed_m`
+  sigan siendo **por pieza** y los toggles del cliente sigan saliendo de
+  `reversed_inputs`; que `MG_GAP_JOIN_M` de `sec/unir.js` siga valiendo lo mismo que
+  `gap_join_m` del servidor (50); que `start`/`end` mal formados o fuera de rango den 400 en
+  **los dos** endpoints y una combinación imposible avise en vez de fallar; y que
+  `start_point`/`end_point` sigan siendo el primer/último punto de `segments` (dependen de que
+  `decimate` conserve los extremos). Y en el montaje manual: que `pieces` siga sin fallar
+  cuando llegan `reverse`/`proposal`/`start` (avisa, no 400), que `from_m > to_m` siga
+  significando invertido, y que las distancias sigan en la escala de `_Poly.cum`.
+- Si tocaste la sección `unir`: **pruébala con un PLAN y con una RUTA** (es el mismo
+  archivo, `params.kind`), y con **conexión y sin ella** (sin red se monta y avisa, no
+  falla). ¿Sigue sin aparecer ningún `/api/routes` ni `/Sendero/` a mano en `sec/unir.js`
+  (todo por `K`)? ¿`unmount()` destruye el mapa? ¿Entrar y salir de la capa offline
+  repinta las capas `un-a*`/`mg-*` —y el repintado sigue **sin** guardarse con
+  `map.isStyleLoaded()`, regla 15—? ¿A **420 px** de ancho el panel no saca scroll
+  horizontal? ¿El perfil, los marcadores de inicio/fin y el `.hover-infobox` se destruyen en
+  `unmount()`/`clearMap()`, y el hover perfil↔mapa se apaga al salir del perfil? ¿Sigue sin
+  mandarse `start`/`end` cuando son el mismo extremo? En Montaje: ¿los dos perfiles fuente se
+  destruyen al volver a Automático y en `unmount()`, la selección por arrastre sigue
+  iluminando el tramo en el mapa, y las selecciones se reescalan con `track_lengths_m`? Y
+  `node tests/sec_smoke.js`, que la monta como las dos entidades.
+- Si tocaste los **huecos entre segmentos** (`seg_starts`, `gapFeatures`/`addGapLayers`,
+  `decimate_with_segments`): míralo en las **dos fichas** (ruta y plan) y comprueba que
+  `?lite=1` sigue coherente —los índices remapeados apuntan al mismo sitio del track
+  decimado, y el `bootstrap_json` de `/Sendero/<pid>` es esa misma variante—. Las capas van
+  encima de la traza y debajo del hover, y no deben tocar `lineMetrics` ni el degradado por
+  pendiente. `python -m pytest tests/test_sync.py tests/test_parsers.py`.
 - Si tocaste el editor: **pruébalo también con un PLAN** (`/Plan/<pid>/editor`), que es la
   otra mitad. ¿Lo nuevo va sobre el TARGET y no en un `if kind == 'plan'`? ¿Sigue sin
   aparecer ningún `/api/routes` ni `/Sendero/` a mano en `sec/editor.js` (todo por `K`)?
@@ -2014,7 +2409,7 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si creaste un mapa nuevo o tocaste el selector de capas: ¿pasa por
   `buildStyle(defaultBasemap(...))` y por `applyBasemap()`, y repinta sus capas de datos
   al entrar/salir de la capa offline? (regla 15). ¿Lleva su `addGeolocate(map, esquina)`
-  como los otros seis? Y si tiene un re-encuadre **automático**, ¿lo frena
+  como los otros siete? Y si tiene un re-encuadre **automático**, ¿lo frena
   `geoTracking(map)`? (ver «Botón Mi ubicación»: si no, le roba la cámara al usuario).
 - Si tocaste `makeCard` o el CSS de `.card`: están en `sec/rutas.*`, y el CSS va escopado
   bajo `#sec-rutas` (sin el prefijo pisaría a `.plan-card` y a las tarjetas del detalle).
@@ -2041,8 +2436,9 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
 - Si tocaste la política del índice IBP al editar un plan: lo correcto es **vaciarlo**, no
   recalcularlo (está en «Descartado» de `WHATS_NEXT.md`). Y `rescan` no debe tocarlo.
 - Si tras `docker compose up -d --build` los cambios no se reflejan en `localhost:8090`
-  pese a que el build no falla: revisa el quirk de procesos huérfanos de Docker
-  Desktop/WSL2 antes de sospechar del código.
+  pese a que el build no falla (o si el de producción da 500 `unable to open database
+  file`): revisa el quirk de los **dos motores Docker** antes de sospechar del código —
+  `wsl -d Ubuntu -u root -e ss -ltnp | grep 8090` dice quién tiene el puerto.
 - Si tocaste el mapa de "Mis Rutas" (`sec/rutas.js`): ¿las líneas (`ov-lines`) siguen
   respetando los filtros de actividad/fecha vía `applyLineFilter()`, o se te ha colado un
   caso que las muestra sin filtrar? ¿sigue usando `fitMap(true)` en el primer encuadre

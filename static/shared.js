@@ -228,6 +228,75 @@ function applyBasemap(map,capa){
   return true;                  // el llamador debe repintar sus capas
 }
 
+/* ── Huecos entre segmentos del track ───────────────────────────────────────
+   Un GPX con varios <trkseg> —pérdida de señal, o dos rutas unidas por el
+   editor, que deja el corte a propósito para no fabricar distancia— se dibuja
+   como UN solo LineString, así que MapLibre une los extremos y el corte parece
+   un camino recto que nunca se anduvo. Las stats siempre estuvieron bien
+   (analyse_gpx reinicia la distancia en cada segmento): esto es solo la
+   representación.
+
+   El servidor manda `seg_starts` (índices de geojson donde empieza cada
+   segmento) en el dict de la ruta y en el del plan; aquí se pinta cada corte
+   con DOS capas encima de la traza: una ancha del color del lienzo, que tapa la
+   recta de debajo, y otra fina punteada en gris, que dice "aquí no hay track".
+   Lo comparten sec/detalle.js y sec/plan.js para que no puedan divergir. */
+
+const GAP_MIN_M = 20;         // por debajo de esto es una pausa, no un hueco
+
+function _cssVar(name,fallback){
+  try{
+    const v=getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v||fallback;
+  }catch(e){ return fallback; }
+}
+
+function _gapDistM(a,b){
+  const R=6371000,r=Math.PI/180,dLa=(b[1]-a[1])*r,dLo=(b[0]-a[0])*r;
+  const s=Math.sin(dLa/2)**2+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+
+/* Un LineString de 2 puntos por cada corte con más de GAP_MIN_M de separación. */
+function gapFeatures(coords,segStarts,minM){
+  const out=[];
+  if(!coords||coords.length<2||!segStarts||segStarts.length<2) return out;
+  const lim=(minM===undefined)?GAP_MIN_M:minM;
+  segStarts.forEach(i=>{
+    if(!(i>0)||i>=coords.length) return;
+    const a=coords[i-1],b=coords[i];
+    if(!a||!b||_gapDistM(a,b)<lim) return;
+    out.push({type:'Feature',properties:{},
+      geometry:{type:'LineString',coordinates:[a,b]}});
+  });
+  return out;
+}
+
+/* Añade (o repone, tras un cambio de estilo) las capas de hueco. `prefijo` es
+   el de la vista ('d-' en el detalle de una ruta, 'pl-' en el de un plan).
+   Devuelve cuántos huecos se pintaron. Llamar DESPUÉS de las capas de la traza:
+   MapLibre dibuja en el orden en que se añaden. */
+function addGapLayers(map,coords,segStarts,prefijo){
+  if(!map) return 0;
+  const src=(prefijo||'')+'gaps';
+  [src+'-mask',src+'-dash'].forEach(id=>{ if(map.getLayer(id)) map.removeLayer(id); });
+  if(map.getSource(src)) map.removeSource(src);
+  const feats=gapFeatures(coords,segStarts);
+  if(!feats.length) return 0;
+  map.addSource(src,{type:'geojson',
+    data:{type:'FeatureCollection',features:feats}});
+  /* Tapa la traza de debajo (línea + ribete). MapLibre necesita un color
+     literal, así que el token se lee del :root de base.html. */
+  map.addLayer({id:src+'-mask',type:'line',source:src,
+    layout:{'line-cap':'butt','line-join':'round'},
+    paint:{'line-color':_cssVar('--bg-deep','#070c09'),'line-width':8}});
+  map.addLayer({id:src+'-dash',type:'line',source:src,
+    layout:{'line-cap':'butt','line-join':'round'},
+    paint:{'line-color':_cssVar('--muted','#8b9a8f'),'line-width':2,
+           'line-opacity':.85,'line-dasharray':[2,2]}});
+  return feats.length;
+}
+
 /* ── Escala de pendiente (verde → rojo) ─────────────────────────────────────
    Colorea la traza del mapa y el perfil de elevación del detalle de una RUTA y
    del de un PLAN por lo empinado del terreno: verde llano, rojo pared. La usan

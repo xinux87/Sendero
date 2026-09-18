@@ -7,7 +7,9 @@
    el código por separado de los datos (§5), que es lo que hace posible arrancar
    sin servidor.
 
-   Aquí viven las SEIS vistas: dashboard, rutas, planes, detalle, plan y editor.
+   Aquí viven las SIETE vistas: dashboard, rutas, planes, detalle, plan, editor
+   y unir (la unión de dos tracks, que desde la v0.11.7 es una vista propia a
+   pantalla completa en vez de un panel del editor).
    Antes eran 4 documentos distintos (app.html con tres secciones, sendero.html,
    plan_detalle.html y editor.html). Ya no queda ninguna vista fuera, así que
    `hosted()` (static/js/core/router.js) siempre acierta y no hay recargas de
@@ -59,6 +61,7 @@
 {% include "sec/detalle.html" %}
 {% include "sec/plan.html" %}
 {% include "sec/editor.html" %}
+{% include "sec/unir.html" %}
 {% endblock %}
 
 {% block bottombar %}

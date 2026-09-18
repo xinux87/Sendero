@@ -29,8 +29,11 @@ import core.config as cfg
 from core.database import db, rid_from_public, set_public_id
 from core.dem import dem_elevations, DemError
 from core.editing import (
-    load_gpx, extract_points, apply_ops, split_track, merge_gpx, EditError
+    load_gpx, extract_points, apply_ops, split_track, smart_merge,
+    endpoint_spec, normalize_pieces, EditError
 )
+from core.parsers import analyse_gpx
+from core.sync import resample
 from api.routes import _build_route_dict, _reanalyse_and_update
 
 editor_bp = Blueprint("editor", __name__)
@@ -372,6 +375,131 @@ def run_restore(target, vn):
     return jsonify(target.build_dict())
 
 
+def merge_options(data):
+    """Opciones de unión del body (`options`) → kwargs de smart_merge().
+
+    Todo es opcional: sin `options` la unión decide sola (orienta cada track,
+    recorta el solape de la costura y une el hueco si es corto). El editor las
+    manda cuando el usuario toca algo en la previsualización.
+
+    `proposal` (0 por defecto) elige uno de los ensamblajes que devuelve el
+    informe en `proposals[]` — 0 es el mejor. Fuera de rango es 400, igual que
+    una `reverse` que no cuadre. Con `reverse` explícita solo existe la
+    propuesta 0 (ver core/editing.py::smart_merge).
+
+    `start`/`end` son los extremos del RESULTADO: «<i><s|e>», con `i` = índice
+    de la entrada en `ids` y `s`/`e` = inicio o fin de su archivo («0s», «1e»).
+    Aquí se valida el formato y que no sean el mismo extremo; que el índice
+    exista lo comprueba smart_merge, que es quien sabe cuántas entradas hay.
+
+    `pieces` es el MONTAJE MANUAL ([{track, from_m, to_m}, …]): el usuario dicta
+    los trozos y el servidor arregla las costuras. Aquí se valida su formato
+    (400 en español, sin leer ningún archivo); el índice de `track` lo
+    comprueba smart_merge. Con `pieces`, `reverse`/`proposal`/`start`/`end` se
+    IGNORAN, así que ni se validan —un extremo mal escrito que de todas formas
+    no se va a usar no puede tumbar la unión—: se pasan tal cual para que
+    smart_merge los avise.
+    """
+    opts = data.get("options") or {}
+    if not isinstance(opts, dict):
+        raise EditError("El campo «options» debe ser un objeto")
+    kw = {}
+    if opts.get("pieces") is not None:
+        kw["pieces"] = normalize_pieces(opts["pieces"])
+    manual = "pieces" in kw
+    if opts.get("proposal") is not None:
+        if manual:
+            kw["proposal"] = opts["proposal"]      # ignorado: solo el aviso
+        else:
+            try:
+                kw["proposal"] = int(opts["proposal"])
+            except (TypeError, ValueError):
+                raise EditError("«proposal» debe ser un número entero")
+            if kw["proposal"] < 0:
+                raise EditError("«proposal» debe ser un número entero")
+    rev = opts.get("reverse")
+    if rev is not None:
+        if manual:
+            kw["reverse"] = []                     # ignorado: solo el aviso
+        elif not isinstance(rev, list):
+            raise EditError("«reverse» debe ser una lista de booleanos")
+        else:
+            kw["reverse"] = [bool(x) for x in rev]
+    if opts.get("trim") is not None:
+        kw["trim"] = bool(opts["trim"])
+    if opts.get("join_gap") is not None:
+        kw["join_gap"] = bool(opts["join_gap"])
+    if opts.get("tol_m") is not None:
+        try:
+            kw["tol_m"] = max(1.0, min(500.0, float(opts["tol_m"])))
+        except (TypeError, ValueError):
+            raise EditError("«tol_m» debe ser un número de metros")
+    specs = {}
+    for field in ("start", "end"):
+        val = opts.get(field)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            continue
+        if manual:
+            kw[field] = str(val)                     # ignorado: solo el aviso
+            continue
+        specs[field] = endpoint_spec(val, field)     # 400 si el formato no vale
+        kw[field] = str(val).strip().lower()
+    if len(specs) == 2 and specs["start"] == specs["end"]:
+        raise EditError("El inicio y el fin no pueden ser el mismo extremo")
+    return kw
+
+
+def run_merge(gpxs, names, data):
+    """Une los GPX ya cargados con las opciones del body → (xml, report).
+
+    Lo comparten /api/routes/merge y /api/planned/merge: unir no depende del
+    target (opera sobre objetos gpxpy en memoria), así que leer las opciones en
+    los dos sitios sería duplicar justo lo que no puede divergir.
+    """
+    return smart_merge(gpxs, names, **merge_options(data))
+
+
+def merge_report_lean(report):
+    """El informe sin las trazas: `tracks`/`segments` solo valen para pintar la
+    previsualización y pesan (miles de coordenadas).
+
+    `proposals` SÍ se conserva —es lo que explica por qué el resultado es el que
+    es— pero también sin geometría: `segments_lite` solo vale para pintarlas en
+    la previsualización.
+
+    `endpoints_applied`, `start_point`, `end_point` y `endpoints` se conservan:
+    son cuatro coordenadas y un booleano, y dicen dónde ha acabado empezando y
+    terminando lo que se acaba de crear. `manual` y `track_lengths_m` también:
+    un booleano y un número por entrada.
+    """
+    lean = {k: v for k, v in report.items() if k not in ("tracks", "segments")}
+    lean["proposals"] = [{k: v for k, v in p.items() if k != "segments_lite"}
+                         for p in report.get("proposals", [])]
+    return lean
+
+
+def merge_preview_response(xml, report):
+    """Previsualización: informe + métricas + perfil del resultado, SIN crear nada.
+
+    El perfil (`elevation`, lista [{d,e}] con d en km) va remuestreado a ≤500
+    puntos con la MISMA llamada que el modo ligero del detalle (`resample`), que
+    es lo que una gráfica puede pintar: sin él la sección `unir` no podría
+    enseñar el perfil de lo que se va a crear sin crearlo antes.
+    """
+    stats, coords, elev, _name, _creator = analyse_gpx(xml)
+    return jsonify({
+        "preview": True,
+        "report": report,
+        "elevation": resample(elev),
+        "stats": {
+            "distance_m": stats["distance_m"],
+            "ascent_m": stats["ascent_m"],
+            "descent_m": stats["descent_m"],
+            "n_points": len(coords),
+        },
+    })
+
+
 def download_version_response(target, vn):
     target.version_meta(vn)          # 404 si esa versión no existe
     try:
@@ -558,8 +686,13 @@ def split_route(rid):
 def merge_routes():
     """Une 2+ rutas en una RUTA NUEVA; las originales quedan intactas.
 
-    Orden cronológico si todas tienen tiempos; si los rangos se solapan, se
-    descartan todos los <time> (times_kept=false en la respuesta)."""
+    Body: {ids, name, preview?, options?{reverse, trim, join_gap, tol_m}}.
+    Con `preview:true` NO se crea nada: se devuelve el informe de la unión y las
+    métricas del resultado, para que el editor lo pinte y el usuario decida.
+
+    Orden cronológico si todas tienen tiempos (y entonces no se invierte nada);
+    si los rangos se solapan, se descartan todos los <time> (times_kept=false).
+    """
     data = request.get_json(force=True, silent=True) or {}
     ids = data.get("ids")
     if not isinstance(ids, list) or len(ids) < 2 or len(set(ids)) != len(ids):
@@ -583,9 +716,11 @@ def merge_routes():
         except Exception as e:
             return jsonify({"error": f"Archivo ilegible en «{r['name']}»: {e}"}), 400
     try:
-        xml, times_kept = merge_gpx(gpxs)
+        xml, report = run_merge(gpxs, [r["name"] for r, _ in rows], data)
     except EditError as e:
         return jsonify({"error": str(e)}), 400
+    if data.get("preview"):
+        return merge_preview_response(xml, report)
 
     name = (data.get("name") or "").strip() or " + ".join(r["name"] for r, _ in rows)
     stem = Path(rows[0][0]["gpx_file"]).stem
@@ -607,7 +742,8 @@ def merge_routes():
     if err:
         return err
     return jsonify({"id": b_public, "public_id": b_public, "name": name,
-                    "times_kept": times_kept}), 201
+                    "times_kept": report["times_kept"],
+                    "report": merge_report_lean(report)}), 201
 
 
 @editor_bp.route("/api/routes/<rid>/elevation-dem", methods=["POST"])

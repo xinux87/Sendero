@@ -143,6 +143,12 @@
       layout: {'line-join': 'round', 'line-cap': 'round'},
       paint: grad ? {'line-gradient': grad, 'line-width': 3.4, 'line-opacity': .95}
                   : {'line-color': actColor, 'line-width': 3, 'line-opacity': .95}});
+    /* Cortes entre <trkseg> (un plan unido con «Unir» deja el corte a propósito
+       para no fabricar distancia): se tapan y se marcan con una línea punteada,
+       o la recta que MapLibre traza entre segmentos parecería camino. Va
+       DESPUÉS de la traza para dibujarse encima; como esto es drawTrack(), se
+       repone solo tras 'sendero:basemap' (regla 15). */
+    addGapLayers(map, coords, current.seg_starts, 'pl-');
     // inicio (verde) y fin (rojo) como capas circle, no como marcadores DOM
     map.addSource('pl-ruta-extremos', {type: 'geojson', data: {type: 'FeatureCollection', features: [
       {type: 'Feature', properties: {tipo: 'Inicio'}, geometry: {type: 'Point', coordinates: coords[0]}},
@@ -971,6 +977,15 @@
     go(`/Plan/${encodeURIComponent(pid)}/editor`);
   }
 
+  /* «Unir» tiene pantalla propia desde que salió del editor. Mismo motivo que
+     openEditor() para exigir conexión: la pantalla trabaja sobre el estado
+     guardado en el servidor y sin él no podría ni cargar. */
+  function openUnir() {
+    if (!pid) return;
+    if (!needOnline('Unir necesita conexión con el servidor')) return;
+    go(`/Plan/${encodeURIComponent(pid)}/unir`);
+  }
+
   /* Re-parsea el GPX guardado del plan y devuelve el dict completo, igual que
      GET /api/planned/<pid>. Necesita conexión: lo hace el servidor. */
   async function rescanPlan(btn) {
@@ -1191,7 +1206,7 @@
     mount, unmount, retry, setTab,
     openActivityPicker, closeActivityPicker, pickActivity,
     saveNotes, downloadGpx, renamePlan, removePlan, downloadMap, computeIbp,
-    openEditor, toggle3D, rescanPlan,
+    openEditor, openUnir, toggle3D, rescanPlan,
     toggleDone, openDoneModal, closeDoneModal, filterDoneList, markDone, undoDone,
   };
 })();

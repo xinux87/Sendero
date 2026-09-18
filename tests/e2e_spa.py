@@ -1342,8 +1342,12 @@ def main():
               "tiempos» no se ofrecen")
         check(not page.is_visible("#det-device-fld"),
               "y el campo «Dispositivo» tampoco: un plan no lo tiene")
-        check("plan" in (page.text_content("#merge-btn") or ""),
-              f"los textos van en género de plan: «{page.text_content('#merge-btn').strip()}»")
+        # Los textos con género salen del objeto `K` de sec/editor.js. «Unir» ya
+        # no vive aquí (es la sección `unir` desde la v0.11.7), así que el testigo
+        # es el placeholder del nombre, que es el otro texto de `K` que se ve.
+        ph_nombre = page.get_attribute("#det-name", "placeholder") or ""
+        check("plan" in ph_nombre,
+              f"los textos van en género de plan: «{ph_nombre}»")
         page.wait_for_function(
             "() => !!Chart.getChart(document.querySelector('#edelev'))", timeout=15000)
 

@@ -1,0 +1,299 @@
+{# Sección `unir`: unir DOS tracks en uno nuevo, a pantalla completa. Sirve para
+   un PLAN (/Plan/<pid>/unir) y para una RUTA (/Sendero/<pid>/unir) — es el mismo
+   markup, y los textos que cambian de género los pone sec/unir.js desde su
+   objeto `K`, igual que hace el editor.
+
+   Antes esto vivía dentro del editor, en un panel de 330 px de la columna
+   lateral («⛓ Unir con otra…»): elegir con qué unir era un <select>, las
+   propuestas se leían en un hueco de tres líneas y el mapa lo compartía con la
+   edición de puntos. Aquí la unión tiene la pantalla entera: mapa a la
+   izquierda y los pasos a la derecha (propuestas · ajustes · resultado). Con
+   qué unir ya no es un panel: es el popup #un-pick-modal y el chip de la
+   cabecera.
+
+   Rediseño 2a/2d como el resto: todo bloque es un `.panel` (--panel + --line +
+   radio 12) con su título en `.panel-title`, las cifras en Oswald y los datos en
+   mono. Ojo con los ids: los usa el JS por getElementById, así que renombrar uno
+   lo rompe en silencio (#un-map, #un-list, #un-proposals, #un-result…). #}
+<section id="sec-unir" class="sec hidden">
+
+{# ── CABECERA ─────────────────────────────────────────────────────────────── #}
+<div class="un-head">
+  <div class="un-head-l">
+    {# El destino real lo pone sec/unir.js (K.detailUrl del que se está uniendo);
+       este valor solo sirve si se pulsa antes de que cargue nada. #}
+    <a class="btn ghost sm" id="un-back" data-nav="/planificacion">← Volver</a>
+    <div class="un-title">
+      <div class="un-title-row"><h1 id="un-title-name">Unir</h1></div>
+      <div class="un-sub" id="un-hint">Elige con qué unir; se propone el mejor encaje
+        y puedes afinarlo. Los originales no se tocan.</div>
+    </div>
+  </div>
+  {# Conmutador de modo. «Automático» es lo de siempre (el servidor enumera los
+     ensamblajes y se elige uno); «Montaje» es el modo tipo editor de vídeo: se
+     recortan trozos de cada perfil y se ordenan a mano en una línea de tiempo,
+     y el servidor solo arregla las costuras. La preferencia se recuerda en
+     sessionStorage (es una preferencia, no un dato). #}
+  <div class="un-head-r">
+    {# Con qué se está uniendo, en UNA línea. El panel «Con qué unir» ocupaba una
+       caja entera de la columna (y una celda de la rejilla de Montaje) para algo
+       que se toca una vez: ahora la lista vive en el popup #un-pick-modal y aquí
+       solo queda el chip con lo elegido y el botón que lo reabre. Sin candidato
+       el chip dice «Sin elegir» y el botón pasa a ámbar («Elegir con qué unir»):
+       es la única acción que queda por hacer. #}
+    <div class="un-pick-line">
+      <span class="un-pick-chip" id="un-pick-chip">Sin elegir</span>
+      <button class="btn ghost sm un-pick-btn" id="un-change" type="button"
+              onclick="SEC.unir.openPick()">Cambiar</button>
+    </div>
+    <div class="un-mode" id="un-mode" role="group" aria-label="Modo de unión">
+      <button class="un-mode-opt on" id="un-mode-auto" type="button"
+              onclick="SEC.unir.setMode('auto')">Automático</button>
+      <button class="un-mode-opt" id="un-mode-man" type="button"
+              onclick="SEC.unir.setMode('montaje')">Montaje</button>
+    </div>
+  </div>
+</div>
+
+{# Sin conexión no se previsualiza nada: la unión la calcula el servidor (mira
+   la geometría de los dos tracks, que el cliente no tiene enteros). #}
+<div id="un-offline" class="un-offline hidden"></div>
+<div id="un-load-error" class="load-error hidden">
+  <span class="le-msg"></span>
+  <button class="btn sm" onclick="SEC.unir.retry()">↻ Reintentar</button>
+</div>
+
+<div class="un-grid">
+  {# ── MAPA + PERFIL ───────────────────────────────────────────────────────
+     La columna izquierda es el lienzo: el mapa arriba (que cede altura) y,
+     debajo, el perfil de elevación DEL RESULTADO. Mismo reparto que el editor
+     (mapa + gráficas en la columna ancha), con la diferencia de que aquí el
+     conjunto se ajusta al alto de la ventana: mirar el mapa ES la tarea. #}
+  <div class="un-left">
+  <div class="un-map-wrap">
+    <div id="un-map"></div>
+    {# Leyenda A/B sobre el mapa: la rellena mergeRenderTune() con los colores de
+       serie (los pinta el JS, como el resto de colores de serie). #}
+    <div class="mg-legend" id="un-legend"></div>
+  </div>
+
+  {# ── MODO MONTAJE: los dos perfiles fuente + la línea de tiempo ───────────
+     Solo en modo «Montaje» (los esconde/enseña sec/unir.js con style.display,
+     no con .hidden: el mapa cede altura y estos paneles son `flex:none`).
+
+     Sobre cada perfil se ARRASTRA para elegir un tramo (mismo gesto que la
+     selección A–B del editor); el tramo elegido se resalta también en el mapa.
+     «＋ Añadir trozo» lo mete al final de la línea de tiempo, «＋ Añadir
+     invertido» lo mete con el sentido cambiado (from_m > to_m, que es como el
+     servidor entiende «invertido»). #}
+  <div class="panel un-src-panel" id="un-src-a-panel" style="display:none">
+    <div class="panel-head">
+      <span class="panel-title" id="un-src-a-title">A</span>
+      <span class="panel-sub mono" id="un-src-a-sub"></span>
+    </div>
+    <div class="chart-box src"><canvas id="un-src-a"></canvas></div>
+    <div class="un-src-foot">
+      <span class="un-src-range mono" id="un-src-a-range"></span>
+      <span class="un-src-btns">
+        <button class="btn ghost sm" id="un-src-a-all" type="button"
+                onclick="SEC.unir.srcAll(0)">Todo</button>
+        <button class="btn ghost sm" id="un-src-a-addr" type="button"
+                onclick="SEC.unir.srcAdd(0,true)">＋ Añadir invertido</button>
+        <button class="btn sm" id="un-src-a-add" type="button"
+                onclick="SEC.unir.srcAdd(0,false)">＋ Añadir trozo</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="panel un-src-panel" id="un-src-b-panel" style="display:none">
+    <div class="panel-head">
+      <span class="panel-title" id="un-src-b-title">B</span>
+      <span class="panel-sub mono" id="un-src-b-sub"></span>
+    </div>
+    <div class="chart-box src"><canvas id="un-src-b"></canvas></div>
+    <div class="un-src-foot">
+      <span class="un-src-range mono" id="un-src-b-range"></span>
+      <span class="un-src-btns">
+        <button class="btn ghost sm" id="un-src-b-all" type="button"
+                onclick="SEC.unir.srcAll(1)">Todo</button>
+        <button class="btn ghost sm" id="un-src-b-addr" type="button"
+                onclick="SEC.unir.srcAdd(1,true)">＋ Añadir invertido</button>
+        <button class="btn sm" id="un-src-b-add" type="button"
+                onclick="SEC.unir.srcAdd(1,false)">＋ Añadir trozo</button>
+      </span>
+    </div>
+  </div>
+
+  {# La línea de tiempo: un clip por trozo, de ancho proporcional a su longitud,
+     y entre clips el estado de la costura (cosida / hueco / solape recortado)
+     cuando ya hay informe. En móvil es lo ÚNICO que puede desbordar, con su
+     propio scroll horizontal. #}
+  <div class="panel un-tl-panel" id="un-tl-panel" style="display:none">
+    <div class="panel-head">
+      <span class="panel-title">Línea de tiempo</span>
+      <span class="panel-sub mono" id="un-tl-sub"></span>
+      <button class="un-change" id="un-tl-clear" type="button"
+              onclick="SEC.unir.clearPieces()">Vaciar</button>
+    </div>
+    <div class="un-tl" id="un-timeline"></div>
+  </div>
+
+  {# Perfil del resultado ensamblado. La serie la da la previsualización
+     (`elevation`, ≤500 puntos): sin candidato elegido no hay resultado, así que
+     el panel lo dice en vez de enseñar un lienzo vacío. Se pinta igual que el
+     perfil de la ficha de un plan —degradado por pendiente + leyenda— y
+     comparte con el mapa el hover sincronizado. #}
+  <div class="panel un-elev-panel" id="un-elev-panel">
+    <div class="panel-head">
+      <span class="panel-title">Perfil de elevación · m</span>
+      <span class="panel-sub mono" id="un-elev-sub"></span>
+    </div>
+    <div id="un-slope-legend" class="slope-legend"></div>
+    <div id="un-elev-empty" class="un-elev-empty">Elige con qué unir para ver el perfil del resultado.</div>
+    <div class="chart-box" id="un-elev-box"><canvas id="un-elev"></canvas></div>
+  </div>
+  </div>
+
+  {# ── PANEL LATERAL (scroll propio) ───────────────────────────────────────── #}
+  <div class="un-side">
+
+    {# Propuestas de ensamblaje: solo aparecen si el servidor devuelve más de una
+       (pasa cuando un extremo de una entrada cae sobre un punto INTERIOR de la
+       otra y se puede partir por ahí). Las pinta renderProposals() en
+       sec/unir.js con sus listeners de ratón; el markup solo pone el
+       contenedor. El panel entero se esconde con style.display desde el JS. #}
+    <div class="panel" id="un-props-panel" style="display:none">
+      <div class="panel-head">
+        <span class="panel-title">Propuestas</span>
+        <span class="panel-sub mono">pasa el ratón para verla en el mapa</span>
+      </div>
+      <div class="mg-props" id="un-proposals"></div>
+      {# display:none inline: lo enseña el JS con style.display='' cuando
+         «Invertir A/B» ha forzado la orientación y, con ella, el servidor ha
+         dejado una sola propuesta. #}
+      <button class="btn ghost sm mg-back" id="un-back-props" style="display:none"
+              onclick="SEC.unir.backToProposals()">↩ Volver a las propuestas</button>
+      {# Las piezas de la propuesta elegida: con una junta interior, «A» puede ser
+         media A y la leyenda de colores no basta. #}
+      <div class="mg-pieces" id="un-pieces"></div>
+    </div>
+
+    {# El montaje en texto (modo «Montaje»): la lista de trozos en orden, con las
+       mismas acciones que los clips de la línea de tiempo y, cuando ya hay
+       informe, las piezas REALES tras el recorte del solape. #}
+    <div class="panel" id="un-pieces-panel" style="display:none">
+      <div class="panel-head">
+        <span class="panel-title">Montaje</span>
+        <span class="panel-sub mono" id="un-pieces-sub"></span>
+      </div>
+      <div class="un-pcs" id="un-pieces-list"></div>
+    </div>
+
+    {# Inicio y fin del recorrido unido. Los cuatro extremos posibles son los de
+       las dos entradas («0s» inicio de A, «0e» fin de A, «1s»/«1e» los de B) y
+       van a `options.start`/`options.end`; vacío = automático (lo decide el
+       servidor con la geometría). No va dentro de «Ajustes» a propósito: es de
+       lo que más se toca, y plegado no se encontraría.
+       Los nombres los rellena renderEnds() en sec/unir.js (del informe si ya
+       hay previsualización, y si no del Store). #}
+    <div class="panel" id="un-ends" style="display:none">
+      <div class="panel-head">
+        <span class="panel-title">Inicio y fin</span>
+        <span class="panel-sub mono" id="un-ends-sub">automático</span>
+      </div>
+      <div class="un-ends-body">
+        <div class="un-fld">
+          <label for="un-start">Empezar en</label>
+          <select id="un-start" class="un-input" onchange="SEC.unir.endsChanged('start')"></select>
+        </div>
+        <div class="un-fld">
+          <label for="un-end">Terminar en</label>
+          <select id="un-end" class="un-input" onchange="SEC.unir.endsChanged('end')"></select>
+        </div>
+        <div class="un-ends-err" id="un-ends-err"></div>
+      </div>
+    </div>
+
+    <details class="panel un-tune" id="un-tune" style="display:none">
+      <summary class="panel-title">Ajustes</summary>
+      <div class="un-tune-body">
+        <div class="mg-revs">
+          <button class="mg-tgl" id="un-rev-a" onclick="SEC.unir.toggleRev(0)">↔ Invertir A</button>
+          <button class="mg-tgl" id="un-rev-b" onclick="SEC.unir.toggleRev(1)">↔ Invertir B</button>
+        </div>
+        <label class="mg-check">
+          <input type="checkbox" id="un-trim" checked onchange="SEC.unir.optsChanged()">
+          <span>Recortar solape en la costura</span>
+        </label>
+        <div class="mg-note" id="un-trim-info"></div>
+        <div class="mg-lbl" id="un-gap-lbl">Hueco: —</div>
+        <div class="mg-seg">
+          <button class="mg-opt on" id="un-gap-auto" onclick="SEC.unir.setGap('auto')">Automático</button>
+          <button class="mg-opt" id="un-gap-join" onclick="SEC.unir.setGap('join')">Unir en recta</button>
+          <button class="mg-opt" id="un-gap-cut" onclick="SEC.unir.setGap('cut')">Dejar corte</button>
+        </div>
+        <div class="mg-tol">
+          <label for="un-tol">Tolerancia del solape · m</label>
+          <input type="number" id="un-tol" class="un-input" min="5" max="200" step="5" value="30"
+                 oninput="SEC.unir.optsChanged()">
+        </div>
+      </div>
+    </details>
+
+    <div class="panel" id="un-result-panel">
+      <div class="panel-head">
+        <span class="panel-title">Resultado</span>
+        <span class="panel-sub mono" id="un-result-sub"></span>
+      </div>
+      <div id="un-empty" class="un-empty">Elige con qué unir.</div>
+      <div id="un-result" class="hidden">
+        <div class="un-stats" id="un-stats"></div>
+        <div class="mg-summary" id="un-summary"></div>
+        <div class="mg-warns" id="un-warns"></div>
+        <div class="un-fld">
+          <label for="un-name">Nombre</label>
+          <input type="text" id="un-name" class="un-input" maxlength="200" placeholder="Nombre">
+        </div>
+        <button class="btn un-wide" id="un-create" onclick="SEC.unir.doMerge()">Crear</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{# ── POPUP «CON QUÉ UNIR» ────────────────────────────────────────────────────
+   Elegir con qué unir se hace UNA vez y luego estorba: al principio era un
+   panel fijo de la columna derecha (y una celda entera de la rejilla de
+   Montaje), plegado a una fila con `.is-picked`. Ahora es este popup, con el
+   mismo markup y las mismas filas de siempre.
+
+   Mismo patrón que el `#pl-done-modal` de la ficha de un plan: velo a pantalla
+   completa (`.un-overlay`, position:fixed) + caja `.un-modal`. OJO con la
+   especificidad: `#sec-unir .un-overlay.hidden` va INMEDIATAMENTE detrás de
+   `#sec-unir .un-overlay` en unir.css, o el popup aparece solo al cargar (es la
+   trampa del modal de Immich del detalle).
+
+   Se cierra con ✕, con «Cancelar» (que solo se ve si ya hay un candidato: sin
+   uno, cancelar no deja nada en pantalla), con un click en el velo y con Escape
+   (ese listener se registra UNA vez al cargar sec/unir.js, no en mount()). #}
+<div id="un-pick-modal" class="un-overlay hidden" onclick="SEC.unir.veilClick(event)">
+  <div class="un-modal">
+    <div class="un-modal-head">
+      <h2 id="un-pick-title">Con qué unir</h2>
+      <span class="panel-sub mono" id="un-pick-sub"></span>
+      <button class="btn ghost sm un-x" id="un-pick-x" type="button"
+              title="Cerrar" aria-label="Cerrar"
+              onclick="SEC.unir.closePick()">✕</button>
+    </div>
+    <input type="text" id="un-search" class="un-input" placeholder="Buscar por nombre…"
+           autocomplete="off" oninput="SEC.unir.searchChanged()">
+    <div id="un-list" class="un-list"></div>
+    {# «← Volver» solo cuando no hay NADA con lo que unir: ahí el popup no ofrece
+       ninguna salida útil y quedarse en la vista no lleva a ninguna parte. #}
+    <button class="btn ghost un-wide" id="un-pick-back" type="button" style="display:none"
+            onclick="SEC.unir.backFromPick()">← Volver</button>
+    <button class="btn ghost un-wide" id="un-pick-cancel" type="button" style="display:none"
+            onclick="SEC.unir.closePick()">Cancelar</button>
+  </div>
+</div>
+</section>

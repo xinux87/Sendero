@@ -25,9 +25,12 @@
    Un solo editor para DOS entidades: desde la v0.10.0 esta misma sección edita
    también una ruta PLANIFICADA (`planned_routes`), con URL /Plan/<pid>/editor.
    El router pasa `params.kind` ('route' | 'plan') y todo lo que difiere entre
-   las dos (URLs de la API, a dónde vuelve «← Volver», de dónde sale la lista
-   para «Unir», y los textos) vive en el objeto `K`. NO se duplica el archivo:
-   la paridad doOp()/apply_ops() ya cuesta bastante de mantener en un solo sitio.
+   las dos (URLs de la API, a dónde vuelve «← Volver» y los textos) vive en el
+   objeto `K`. NO se duplica el archivo: la paridad doOp()/apply_ops() ya cuesta
+   bastante de mantener en un solo sitio.
+
+   Unir dos tracks NO se hace aquí: es su propia sección (static/js/sec/unir.js,
+   /Sendero/<pid>/unir y /Plan/<pid>/unir), con su propia previsualización.
 
    Contrato: mount(params, opts) / unmount(). params.id = public_id,
    params.kind = 'route' (por defecto) | 'plan'. */
@@ -43,16 +46,14 @@
 
   /* ── ruta o plan: lo único que cambia ─────────────────────────────────────
      La API de planes es un espejo exacto de la de rutas (los mismos endpoints
-     bajo /api/planned), así que basta con parametrizar la base de las URLs, de
-     dónde sale el listado para «Unir» y los textos (que llevan género). Todo lo
-     demás —ops, deshacer, versiones, avisos GPS— es idéntico. */
+     bajo /api/planned), así que basta con parametrizar la base de las URLs y
+     los textos (que llevan género). Todo lo demás —ops, deshacer, versiones,
+     avisos GPS— es idéntico. */
   const KINDS = {
     route: {
       api: pid => '/api/routes/' + encodeURIComponent(pid),
-      mergeApi: '/api/routes/merge',
       detailUrl: pid => '/Sendero/' + encodeURIComponent(pid),
       listUrl: '/rutas',
-      list: () => Store.routes(),
       device: true,                       // un plan no tiene dispositivo
       label: 'ruta',
       el: 'la ruta',
@@ -63,20 +64,12 @@
       invertir: 'Invertir la ruta eliminará las marcas de tiempo de los puntos. ¿Continuar?',
       nombreB: 'Nombre de la nueva ruta (segunda mitad):',
       dividida: 'Ruta dividida',
-      unirBtn: '⛓ Unir con otra ruta…',
-      unirHint: 'Crea una RUTA NUEVA con ambas; las originales no se tocan. ' +
-                'Se ordenan por hora; si los tiempos se solapan, se eliminan.',
-      unirPh: 'Nombre de la ruta unida',
-      sinOtras: 'No hay otras rutas con las que unir',
-      abrirNueva: '¿Abrir la ruta nueva?',
       conflicto: 'La ruta cambió en otra pestaña. ¿Recargar el editor? (se pierden los cambios locales)',
     },
     plan: {
       api: pid => '/api/planned/' + encodeURIComponent(pid),
-      mergeApi: '/api/planned/merge',
       detailUrl: pid => '/Plan/' + encodeURIComponent(pid),
       listUrl: '/planificacion',
-      list: () => Store.planned(),
       device: false,
       label: 'plan',
       el: 'el plan',
@@ -87,12 +80,6 @@
       invertir: 'Invertir el plan eliminará las marcas de tiempo de los puntos. ¿Continuar?',
       nombreB: 'Nombre del nuevo plan (segunda mitad):',
       dividida: 'Plan dividido',
-      unirBtn: '⛓ Unir con otro plan…',
-      unirHint: 'Crea un PLAN NUEVO con ambos; los originales no se tocan. ' +
-                'Se ordenan por hora; si los tiempos se solapan, se eliminan.',
-      unirPh: 'Nombre del plan unido',
-      sinOtras: 'No hay otros planes con los que unir',
-      abrirNueva: '¿Abrir el plan nuevo?',
       conflicto: 'El plan cambió en otra pestaña. ¿Recargar el editor? (se pierden los cambios locales)',
     },
   };
@@ -306,7 +293,7 @@
       else if(viewMax>t){viewMax=t;}
     }
     closeSimplify();closeSpikes();closeSpeedFix();   // previews de herramientas: obsoletos tras cambiar el estado
-    closeShift();closeMerge();
+    closeShift();
     updateVerts();
     renderWpts();
     updateIssueOverlays();
@@ -1458,7 +1445,7 @@
     if(panel.classList.contains('hidden')){
       if(!hasTimeData){toast(K.sinTiempos);return;}
       if(opsList.some(o=>o.op==='reverse')){toast('Con un "invertir" pendiente no hay tiempos válidos');return;}
-      closeSimplify();closeSpikes();closeSpeedFix();closeMerge();
+      closeSimplify();closeSpikes();closeSpeedFix();
       const cur=_curStartMs();
       document.getElementById('shift-cur').textContent=new Date(cur).toLocaleString('es-ES');
       document.getElementById('shift-dt').value=_toLocalInput(cur);
@@ -1480,56 +1467,6 @@
     doOp({op:'shift_time',seconds,
       desc:`Desplazados los tiempos ${sign}${p(Math.floor(s/3600))}:${p(Math.floor(s%3600/60))}:${p(s%60)}`});
     toast('Tiempos desplazados (se aplican al guardar)');
-  }
-
-  /* ── unir con otra ruta ─────────────────────────────────────────────────── */
-  async function toggleMerge(){
-    const panel=document.getElementById('merge-panel');
-    if(!panel.classList.contains('hidden')){closeMerge();return;}
-    closeSimplify();closeSpikes();closeSpeedFix();closeShift();
-    /* Del Store, no de la red: la misma llamada sirve para rutas y para planes,
-       funciona con la copia local y no repite una petición que el listado ya
-       tiene hecha. */
-    let items=[];
-    try{items=await K.list();}catch(e){}
-    const sel=document.getElementById('merge-sel');
-    sel.innerHTML='';
-    items.filter(r=>r.public_id!==R.public_id).forEach(r=>{
-      const o=document.createElement('option');
-      o.value=r.public_id;
-      o.textContent=`${r.name} (${((r.distance_m||0)/1000).toFixed(1)} km)`;
-      o.dataset.name=r.name;
-      sel.appendChild(o);
-    });
-    if(!sel.options.length){toast(K.sinOtras);return;}
-    _mergeNameSync();
-    panel.classList.remove('hidden');
-  }
-  function _mergeNameSync(){
-    const sel=document.getElementById('merge-sel');
-    const other=sel.options[sel.selectedIndex]?.dataset.name||'';
-    document.getElementById('merge-name').value=`${R.name} + ${other}`;
-  }
-  function closeMerge(){
-    const panel=document.getElementById('merge-panel');
-    if(panel)panel.classList.add('hidden');
-  }
-  async function doMerge(){
-    const sel=document.getElementById('merge-sel');
-    const other=sel.value;
-    if(!other)return;
-    if(opsList.length && !confirm('Los cambios sin guardar NO se incluirán en la unión. ¿Continuar?'))return;
-    const res=await fetch(K.mergeApi,{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ids:[R.public_id,other],name:document.getElementById('merge-name').value.trim()})});
-    const d=await res.json().catch(()=>({}));
-    if(!res.ok){toast(d.error||'Error al unir');return;}
-    Store.syncNow({force:true});   // el servidor cambió: pon al día la copia local
-    closeMerge();
-    const extra=d.times_kept?'':' (tiempos descartados: se solapaban)';
-    if(confirm(`Creada «${d.name}»${extra}. ${K.abrirNueva}`))
-      location.href=K.detailUrl(d.public_id);
-    else toast(`Creada «${d.name}»${extra}`);
   }
 
   /* ── elevación desde DEM ────────────────────────────────────────────────── */
@@ -1695,13 +1632,13 @@
     viewMax=Math.min(total,it.d_to+m);
     applyZoom();
     if(it.type==='speed'){
-      closeSimplify();closeSpikes();closeShift();closeMerge();
+      closeSimplify();closeSpikes();closeShift();
       const thr=document.getElementById('speedfix-thr');
       thr.value=Math.min(200,Math.max(5,Math.round(it.threshold)));thr._initialized=true;
       document.getElementById('speedfix-panel').classList.remove('hidden');
       speedFixPreview();
     } else {   // elevation y altitude → corrector de picos de elevación
-      closeSimplify();closeSpeedFix();closeShift();closeMerge();
+      closeSimplify();closeSpeedFix();closeShift();
       if(!P.ele){toast(K.sinElevacion);return;}
       document.getElementById('spike-panel').classList.remove('hidden');
       spikePreview();
@@ -1881,7 +1818,7 @@
     mode = 'select';
     leaving = false;
     // Todos los paneles de herramientas, cerrados
-    ['simp-panel', 'spike-panel', 'speedfix-panel', 'shift-panel', 'merge-panel']
+    ['simp-panel', 'spike-panel', 'speedfix-panel', 'shift-panel']
       .forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     const sm = document.getElementById('save-modal');
     if (sm) sm.classList.add('hidden');
@@ -1894,23 +1831,12 @@
     wptMarkers = [];
   }
 
-  /* Textos del markup que dependen de si se edita una RUTA o un PLAN. Los ids
-     son los mismos (es la misma sección): solo cambia lo que dicen. */
-  function applyKindUI(){
-    const set=(id,txt)=>{const el=document.getElementById(id); if(el) el.textContent=txt;};
-    set('merge-btn', K.unirBtn);
-    set('merge-hint', K.unirHint);
-    const mn=document.getElementById('merge-name');
-    if(mn) mn.placeholder = K.unirPh;
-  }
-
   async function mount(params) {
     const tok = ++_tok;
     resetState();
     // El router manda 'plan' desde /Plan/<pid>/editor; sin él, una ruta.
     kind = (params && params.kind === 'plan') ? 'plan' : 'route';
     K = KINDS[kind];
-    applyKindUI();
     const loading = document.getElementById('ed-loading');
     loading.classList.remove('hidden');
     loading.textContent = `Cargando ${K.el}…`;
@@ -1971,20 +1897,17 @@
        la página al activarse una versión nueva del Service Worker: esas ops solo
        existen en memoria hasta que se pulsa Guardar. */
     pendientes: () => opsList.length,
-    _mergeNameSync,
     applyShift,
     applySimplify,
     applySpeedFix,
     applySpikes,
     clearSel,
-    closeMerge,
     closeSaveModal,
     closeShift,
     closeSimplify,
     closeSpeedFix,
     closeSpikes,
     doDem,
-    doMerge,
     doSave,
     doSplit,
     edZoomReset,
@@ -2004,7 +1927,6 @@
     simpPreview,
     speedFixPreview,
     spikePreview,
-    toggleMerge,
     toggleShift,
     toggleSimplify,
     toggleSpeedFix,

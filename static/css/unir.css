@@ -1,0 +1,653 @@
+/* Sección `unir` — mismo lenguaje que el resto del rediseño: paneles `--panel` +
+   borde `--line` + radio 12, título de panel en `.panel-title` (mono, versalitas,
+   salvia), cifras en Oswald (`--display`) y datos y etiquetas en mono (`--mono`).
+
+   Escopado bajo #sec-unir: `.panel`, `.stat`, `.skel`, `.load-error` y las
+   `.mg-*` de la previsualización existen también en otras vistas (el editor trae
+   sus propias `.mg-*`), y en la SPA las secciones comparten documento.
+
+   La forma es la del editor —lienzo a la izquierda, columna de paneles a la
+   derecha— pero aquí el mapa ocupa el alto de la ventana y la columna tiene su
+   propio scroll: en unir, mirar el mapa ES la tarea (se compara un encaje con
+   otro), así que no debe irse al hacer scroll por las propuestas.
+
+   Sin hex sueltos: todo sale de los tokens de base.html. Los colores de las dos
+   trazas (A ámbar cálido, B azul) son colores de SERIE y viven en el JS que
+   pinta, como en las gráficas. */
+
+/* ── cabecera ──────────────────────────────────────────────────────────────── */
+#sec-unir .un-head{display:flex;justify-content:space-between;align-items:flex-end;
+  gap:16px;flex-wrap:wrap;margin:26px 0 14px}
+#sec-unir .un-head-l{display:flex;align-items:center;gap:14px;min-width:0}
+#sec-unir .un-title{min-width:0}
+#sec-unir .un-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+#sec-unir .un-title h1{font-size:26px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.05em;line-height:1.1;margin:0;overflow-wrap:anywhere}
+#sec-unir .un-sub{font-family:var(--mono);font-size:11px;color:var(--muted-dim);
+  letter-spacing:.03em;margin-top:5px;line-height:1.5}
+
+/* Sin conexión: la unión la calcula el servidor, así que aquí no hay nada que
+   encolar — se avisa y se deja mirar. */
+#sec-unir .un-offline{margin:0 0 12px;padding:10px 14px;font-size:12.5px;
+  color:var(--pr-yellow);background:rgba(227,178,60,.10);
+  border:1px solid rgba(227,178,60,.3);border-radius:10px;line-height:1.5}
+#sec-unir .un-offline.hidden{display:none}
+#sec-unir .load-error{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  margin:0 0 12px;padding:12px 16px;background:var(--panel);
+  border:1px solid var(--gr-red);border-radius:10px;font-size:13px}
+#sec-unir .load-error.hidden{display:none}
+#sec-unir .load-error .le-msg{color:var(--ink);flex:1;min-width:200px}
+
+/* ── rejilla: mapa a pantalla | columna de paneles con scroll propio ───────── */
+/* 216px = cabecera de la app + el aire de la sección + la cabecera de la vista +
+   el margen de abajo (medido en pantalla: el mapa empieza en y≈190). Es una
+   aproximación a ojo, como el 55vh del editor: lo que importa es que el mapa
+   llene la ventana SIN pasarse, o el pie de la página queda debajo del pliegue. */
+#sec-unir .un-grid{display:grid;grid-template-columns:1fr 380px;gap:16px;
+  align-items:stretch;--un-h:calc(100vh - 216px)}
+/* Las dos columnas miden LO MISMO: la fila de la rejilla la dicta el panel derecho
+   (sus cinco pasos, sin scroll propio) y la columna del mapa se estira hasta ahí
+   — el mapa crece (flex:1) y el perfil queda fijo debajo. --un-h es solo el
+   mínimo, para que sin candidato elegido no quede un mapa enano. El mapa se
+   entera del cambio de alto por el ResizeObserver de unir.js (map.resize()). */
+/* La columna del lienzo: mapa arriba y perfil del resultado debajo. El alto de
+   la ventana lo lleva la COLUMNA, y el mapa es el que cede (`flex:1`), para que
+   el perfil quepa siempre entero: un perfil recortado no describe nada. */
+#sec-unir .un-left{display:flex;flex-direction:column;gap:14px;min-width:0;
+  min-height:max(var(--un-h),420px)}
+#sec-unir .un-map-wrap{position:relative;border-radius:12px;border:1px solid var(--line);
+  overflow:hidden;flex:1 1 auto;min-height:200px}
+#sec-unir #un-map{position:absolute;inset:0}
+#sec-unir .un-side{display:flex;flex-direction:column;gap:14px;min-width:0;
+  min-height:max(var(--un-h),420px)}
+
+/* ── paneles ───────────────────────────────────────────────────────────────── */
+#sec-unir .panel{background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:14px 16px;min-width:0;flex:none}
+#sec-unir .panel-head{display:flex;align-items:baseline;justify-content:space-between;
+  gap:12px;margin-bottom:10px}
+#sec-unir .panel-sub{font-family:var(--mono);font-size:10.5px;color:var(--muted-dim);
+  text-align:right;white-space:nowrap}
+#sec-unir .un-wide{width:100%}
+#sec-unir .un-empty{color:var(--muted);font-size:12.5px;line-height:1.55}
+#sec-unir .hidden{display:none}
+
+/* ── campos ────────────────────────────────────────────────────────────────── */
+#sec-unir .un-input{width:100%;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--line-strong);border-radius:8px;padding:8px 11px;
+  font-family:inherit;font-size:13px;box-sizing:border-box}
+#sec-unir .un-input:focus{outline:none;border-color:var(--pr-yellow)}
+#sec-unir .un-fld{display:flex;flex-direction:column;gap:5px;margin:10px 0}
+#sec-unir .un-fld label{font-family:var(--mono);font-size:9.5px;color:var(--muted-dim);
+  text-transform:uppercase;letter-spacing:.14em}
+
+/* ── «con qué unir»: el popup ────────────────────────────────────────────────
+   Elegir con qué unir se hace una vez, así que ya no gasta un panel de la
+   columna (ni una celda de la rejilla de Montaje): la lista vive en un popup y
+   en la cabecera solo queda el chip de lo elegido.
+
+   `.un-overlay.hidden` va INMEDIATAMENTE detrás de `.un-overlay` y con
+   especificidad doble — la trampa del modal de Immich del detalle: sin eso gana
+   el `display:flex` y el popup se ve al cargar. */
+#sec-unir .un-overlay{position:fixed;inset:0;background:rgba(7,12,9,.82);display:flex;
+  align-items:center;justify-content:center;padding:16px;z-index:1000}
+#sec-unir .un-overlay.hidden{display:none}
+/* Alto acotado: la caja nunca pasa del 90 % de la ventana y la que se lleva el
+   scroll es la lista (`.un-list`), no el popup entero — el buscador tiene que
+   seguir a la vista mientras se busca. */
+#sec-unir .un-modal{background:var(--panel);border:1px solid var(--line-strong);
+  border-radius:13px;width:100%;max-width:520px;padding:18px;box-sizing:border-box;
+  display:flex;flex-direction:column;max-height:90vh;max-height:90dvh}
+#sec-unir .un-modal-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+#sec-unir .un-modal-head h2{flex:none;font-size:22px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.03em;line-height:1.1;margin:0}
+#sec-unir .un-modal-head .panel-sub{flex:1;text-align:right}
+#sec-unir .un-modal .un-x{flex:none;padding:4px 10px;line-height:1}
+#sec-unir .un-modal .un-wide{margin-top:12px}
+
+/* ── el chip de la cabecera ──────────────────────────────────────────────────
+   «Con: <nombre> · 11,4 km · a 2,98 km» en una línea. El nombre puede ser largo
+   (los de Wikiloc lo son): elipsis y el texto entero en el `title`. */
+#sec-unir .un-pick-line{display:flex;align-items:center;gap:8px;min-width:0}
+#sec-unir .un-pick-chip{min-width:0;max-width:340px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11px;
+  color:var(--muted);border:1px solid var(--line);border-radius:999px;
+  padding:5px 12px;background:var(--panel)}
+#sec-unir .un-pick-chip.on{color:var(--ink);border-color:var(--line-strong)}
+#sec-unir .un-pick-chip .un-pick-km{color:var(--pr-yellow)}
+/* Sin candidato, elegir uno es LO único que queda por hacer: el botón se pinta
+   como acción principal (ámbar), no como un «cambiar» cualquiera. */
+#sec-unir .un-pick-btn.need{border-color:var(--pr-yellow);color:var(--pr-yellow)}
+#sec-unir .un-pick-btn[disabled]{opacity:.45;cursor:not-allowed}
+
+/* ── «con qué unir»: la lista de candidatos ────────────────────────────────── */
+#sec-unir .un-list{margin-top:10px;max-height:60vh;overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:var(--line-strong) var(--bg)}
+/* La barra fina del proyecto (misma que #ver-list del editor y .imgrid del detalle). */
+#sec-unir .un-list::-webkit-scrollbar{width:6px}
+#sec-unir .un-list::-webkit-scrollbar-track{background:var(--bg);border-radius:3px}
+#sec-unir .un-list::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:3px}
+#sec-unir .un-list::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+#sec-unir .un-list.is-off{opacity:.45;pointer-events:none}
+#sec-unir .un-group{font-family:var(--mono);font-size:9px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted-faint);margin:10px 0 5px}
+#sec-unir .un-group:first-child{margin-top:0}
+#sec-unir .un-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  background:transparent;border:1px solid var(--line);border-radius:10px;
+  padding:8px 10px;margin-bottom:6px;cursor:pointer;color:var(--ink);
+  font-family:inherit;transition:border-color .15s,background .15s}
+#sec-unir .un-row:hover{border-color:var(--muted-dim);background:var(--panel-2)}
+#sec-unir .un-row.on{border-color:var(--pr-yellow);background:rgba(227,178,60,.08)}
+#sec-unir .un-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+#sec-unir .un-row-name{display:flex;align-items:center;gap:7px;font-size:12.5px;
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sec-unir .un-row-meta{font-family:var(--mono);font-size:10px;color:var(--muted-dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sec-unir .un-row-d{flex:none;font-family:var(--mono);font-size:10px;
+  color:var(--pr-yellow);white-space:nowrap}
+/* Chip de actividad: el SVG ya viene con su círculo del color del catálogo
+   (core/activities.py, la única fuente de verdad) — aquí solo el hueco. */
+#sec-unir .un-act{flex:none;display:flex;align-items:center;justify-content:center}
+#sec-unir .un-act svg{display:block}
+#sec-unir .un-none{color:var(--muted);font-size:12px;padding:8px 0}
+#sec-unir .un-change{background:transparent;border:1px solid var(--line-strong);
+  border-radius:999px;color:var(--muted);padding:3px 11px;font-family:var(--mono);
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;
+  flex:none;transition:color .15s,border-color .15s}
+#sec-unir .un-change:hover{color:var(--ink);border-color:var(--muted-dim)}
+
+/* ── propuestas de ensamblaje ─────────────────────────────────────────────────
+   Una tarjeta por propuesta (radio), con sus chapas de circular / repetido /
+   hueco / piezas. Solo se ven cuando hay más de una: con una sola, el JS esconde
+   el panel entero con style.display. */
+#sec-unir .mg-props{display:flex;flex-direction:column;gap:6px}
+#sec-unir .mg-props:empty{display:none}
+#sec-unir .mg-prop{display:flex;align-items:flex-start;gap:8px;cursor:pointer;
+  border:1px solid var(--line-strong);border-radius:10px;padding:8px 10px;
+  transition:border-color .15s,background .15s}
+#sec-unir .mg-prop:hover{border-color:var(--muted-dim)}
+#sec-unir .mg-prop.on{border-color:var(--pr-yellow);background:rgba(227,178,60,.08)}
+#sec-unir .mg-prop input{flex:none;margin:2px 0 0;accent-color:var(--pr-yellow)}
+#sec-unir .mg-prop-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+#sec-unir .mg-prop-lbl{font-family:var(--mono);font-size:11px;color:var(--ink);
+  line-height:1.35;overflow-wrap:anywhere}
+#sec-unir .mg-prop-best{font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--sage);margin-left:6px;white-space:nowrap}
+#sec-unir .mg-chips{display:flex;flex-wrap:wrap;gap:4px}
+#sec-unir .mg-chip{font-family:var(--mono);font-size:9px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--muted-dim);border:1px solid var(--line);
+  border-radius:999px;padding:2px 7px;white-space:nowrap}
+#sec-unir .mg-chip.km{color:var(--ink)}
+#sec-unir .mg-chip.loop{color:var(--sage);border-color:rgba(143,182,159,.35)}
+#sec-unir .mg-chip.rep{color:var(--pr-yellow);border-color:rgba(227,178,60,.35)}
+#sec-unir .mg-chip.norep{color:var(--muted-faint)}
+#sec-unir .mg-back{align-self:flex-start;margin-top:8px}
+/* Piezas de la propuesta elegida (vacío = sin junta interior: no se ve). */
+#sec-unir .mg-pieces{font-family:var(--mono);font-size:10.5px;color:var(--muted);
+  line-height:1.55;margin-top:8px}
+#sec-unir .mg-pieces:empty{display:none}
+#sec-unir .mg-pieces .t{display:block;font-size:9.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted-dim)}
+
+/* ── leyenda A/B, sobre el mapa ───────────────────────────────────────────────
+   El color de cada chapa lo pone el JS (son los colores de serie, como el resto
+   de colores que pinta el JS). Vacía no ocupa nada. */
+#sec-unir .mg-legend{position:absolute;left:12px;bottom:12px;z-index:2;
+  display:flex;flex-direction:column;gap:4px;max-width:min(360px,calc(100% - 100px));
+  pointer-events:none}
+#sec-unir .mg-legend:not(:empty){background:rgba(7,12,9,.78);border:1px solid var(--line);
+  border-radius:10px;padding:8px 11px}
+#sec-unir .mg-legend .mg-leg{display:flex;align-items:center;gap:7px;
+  font-family:var(--mono);font-size:10.5px;color:var(--muted);min-width:0}
+#sec-unir .mg-legend .mg-leg b{flex:none;width:16px;height:3px;border-radius:2px}
+#sec-unir .mg-legend .mg-leg span{min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+
+/* ── perfil de elevación del resultado ───────────────────────────────────────
+   Debajo del mapa, en la columna del lienzo. Es el mismo perfil que pinta la
+   ficha de un plan (degradado por pendiente + leyenda de la escala): las
+   funciones son las de shared.js, así que lo único propio de aquí es la caja. */
+#sec-unir .un-elev-panel{flex:none}
+#sec-unir .chart-box{position:relative;height:170px}
+/* Sin candidato elegido no hay resultado del que enseñar el perfil: se dice, y
+   el lienzo no ocupa (un <canvas> vacío parece una gráfica que no carga). */
+#sec-unir .un-elev-panel.is-empty .chart-box,
+#sec-unir .un-elev-panel.is-empty .slope-legend{display:none}
+#sec-unir .un-elev-panel:not(.is-empty) .un-elev-empty{display:none}
+#sec-unir .un-elev-empty{color:var(--muted-faint);font-size:12px;line-height:1.55;
+  padding:6px 0 2px}
+#sec-unir #un-elev{cursor:crosshair}
+
+/* Leyenda de la escala de pendiente, entre la cabecera del perfil y la gráfica.
+   El degradado y las marcas los escribe slopeLegendHtml() (static/shared.js) en
+   estilos inline: los colores de la escala viven en el JS que pinta, como el
+   resto de colores de serie, y así la leyenda no puede desfasarse de la traza. */
+#sec-unir .slope-legend{display:flex;align-items:center;gap:8px;justify-content:flex-end;
+  margin:-2px 0 6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted-faint)}
+#sec-unir .slope-legend:empty{display:none}
+#sec-unir .slope-legend .sl-scale{position:relative;display:block;width:136px;height:17px}
+#sec-unir .slope-legend .sl-bar{position:absolute;top:0;left:0;right:0;height:6px;
+  border-radius:3px;border:1px solid var(--line)}
+#sec-unir .slope-legend .sl-ticks i{position:absolute;top:8px;font-style:normal;
+  letter-spacing:0;color:var(--muted-dim);white-space:nowrap}
+
+/* Cuadro flotante del hover sincronizado mapa↔perfil (mismas reglas que en
+   plan.css y detalle.css). OJO: nace con display:none para que no aparezca antes
+   del primer hover, así que para mostrarlo hay que forzar display:block —
+   limpiar el estilo inline lo devuelve a este none. */
+#sec-unir .hover-infobox{position:absolute;z-index:6;pointer-events:none;display:none;
+  background:rgba(11,18,14,.92);border:1px solid var(--line-strong);border-radius:8px;
+  padding:6px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.6;
+  white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+#sec-unir .hover-infobox .hb-km{font-weight:500;color:var(--pr-yellow);margin-bottom:2px}
+
+/* ── inicio y fin: marcadores del mapa ───────────────────────────────────────
+   Marcadores DOM (no capas): sobreviven al setStyle() de un cambio de capa base,
+   así que no hay que reponerlos (regla 15). El color lo pone el JS en `--c`,
+   leído de los tokens con getComputedStyle (un marcador inline necesita un color
+   literal, como MapLibre). */
+/* Inicio (verde) y fin (rojo): un PUNTO del tamaño de la traza, no una chapa con
+   texto — la chapa tapaba justo el tramo que se quería mirar. Si coinciden, un
+   solo punto a dos colores (`--c2` es la mitad derecha). El nombre va en `title`. */
+#sec-unir .un-emark{width:13px;height:13px;border-radius:50%;box-sizing:border-box;
+  background:linear-gradient(90deg,var(--c,var(--sage)) 50%,var(--c2,var(--c,var(--sage))) 50%);
+  border:2px solid var(--bg-deep);box-shadow:0 0 0 1px rgba(236,229,216,.35),0 1px 4px rgba(0,0,0,.6);
+  cursor:help}
+/* Los cuatro extremos ORIGINALES: puntos pequeños que explican a qué se refiere
+   cada opción del desplegable. Sin etiqueta a la vista (serían cuatro chapas
+   encima del track): el nombre va en el `title`. */
+#sec-unir .un-edot{width:9px;height:9px;border-radius:50%;opacity:.85;
+  background:var(--c,var(--ink));border:2px solid var(--bg-deep);
+  box-shadow:0 1px 4px rgba(0,0,0,.6);cursor:help}
+
+/* ── inicio y fin: los dos desplegables ────────────────────────────────────── */
+#sec-unir .un-ends-body{display:flex;flex-direction:column;gap:4px}
+#sec-unir .un-ends-body .un-fld{margin:6px 0 0}
+#sec-unir select.un-input{cursor:pointer;appearance:none;
+  padding-right:26px;text-overflow:ellipsis}
+/* Ámbar: o el usuario ha pedido el mismo extremo dos veces, o el servidor no ha
+   podido cumplir lo pedido (`endpoints_applied:false`). En los dos casos lo que
+   se ve en el mapa NO es lo que dicen estos controles, y eso hay que cantarlo. */
+#sec-unir select.un-input.mg-warn{border-color:var(--pr-yellow);
+  background:rgba(227,178,60,.08)}
+#sec-unir .un-ends-err{font-family:var(--mono);font-size:10.5px;color:var(--pr-yellow);
+  line-height:1.5;margin-top:6px}
+#sec-unir .un-ends-err:empty{display:none}
+
+/* ── ajustes (plegable) ────────────────────────────────────────────────────── */
+#sec-unir .un-tune summary{cursor:pointer;list-style:none;display:flex;
+  align-items:center;justify-content:space-between}
+#sec-unir .un-tune summary::-webkit-details-marker{display:none}
+#sec-unir .un-tune summary::after{content:'▾';color:var(--muted-dim);font-size:11px;
+  transition:transform .15s}
+#sec-unir .un-tune[open] summary::after{transform:rotate(180deg)}
+#sec-unir .un-tune-body{display:flex;flex-direction:column;gap:9px;margin-top:12px;
+  padding-top:12px;border-top:1px solid var(--line)}
+#sec-unir .mg-revs{display:flex;gap:7px}
+#sec-unir .mg-tgl{flex:1;background:transparent;border:1px solid var(--line-strong);
+  border-radius:8px;color:var(--muted);padding:7px 4px;font-family:var(--mono);
+  font-size:10.5px;letter-spacing:.06em;cursor:pointer;transition:color .15s,background .15s}
+#sec-unir .mg-tgl:hover{color:var(--ink)}
+#sec-unir .mg-tgl.on{background:var(--pr-yellow);border-color:var(--pr-yellow);color:var(--bg)}
+/* «Parcial»: la propuesta elegida usa esa entrada por trozos, así que invertirla
+   entera no significa nada. Se deja a la vista (explica por qué) pero apagado. */
+#sec-unir .mg-tgl.partial{color:var(--muted-faint);border-style:dashed;cursor:not-allowed}
+#sec-unir .mg-tgl.partial:hover{color:var(--muted-faint)}
+#sec-unir .mg-check{display:flex;align-items:center;gap:7px;font-size:11.5px;
+  color:var(--ink);cursor:pointer}
+#sec-unir .mg-check input{accent-color:var(--pr-yellow)}
+#sec-unir .mg-note{font-family:var(--mono);font-size:10.5px;color:var(--muted-dim)}
+#sec-unir .mg-lbl{font-family:var(--mono);font-size:11px;color:var(--ink)}
+/* Segmentado del hueco: el mismo lenguaje que las píldoras de filtro. */
+#sec-unir .mg-seg{display:flex;border:1px solid var(--line-strong);border-radius:999px;
+  overflow:hidden}
+#sec-unir .mg-opt{flex:1;background:transparent;border:0;color:var(--muted);padding:6px 3px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  cursor:pointer;transition:color .15s,background .15s}
+#sec-unir .mg-opt:hover{color:var(--ink)}
+#sec-unir .mg-opt.on{background:var(--pr-yellow);color:var(--bg)}
+#sec-unir .mg-tol{display:flex;align-items:center;gap:8px}
+#sec-unir .mg-tol label{flex:1;font-family:var(--mono);font-size:9.5px;color:var(--muted-dim);
+  text-transform:uppercase;letter-spacing:.12em}
+#sec-unir .mg-tol input{width:86px;flex:none}
+
+/* ── resultado ─────────────────────────────────────────────────────────────── */
+#sec-unir .un-stats{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px}
+#sec-unir .stat{background:var(--panel-2);border:1px solid var(--line);
+  border-radius:10px;padding:10px 12px;min-width:0}
+#sec-unir .stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted-dim);margin-bottom:5px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+#sec-unir .stat .v{font-family:var(--display);font-weight:500;font-size:23px;line-height:1;
+  white-space:nowrap}
+#sec-unir .stat .v small{font-size:11px;color:var(--muted);font-family:var(--display)}
+#sec-unir .stat.acc{border-left-width:3px;border-left-style:solid;
+  border-left-color:var(--pr-yellow)}
+#sec-unir .stat.acc .v{color:var(--pr-yellow)}
+#sec-unir .mg-summary{font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.6}
+#sec-unir .mg-summary b{color:var(--ink)}
+#sec-unir .mg-summary .mg-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Avisos del informe en ámbar, como el resto de avisos de la app. */
+#sec-unir .mg-warns:not(:empty){font-size:11px;color:var(--pr-yellow);
+  background:rgba(227,178,60,.10);border:1px solid rgba(227,178,60,.3);
+  border-radius:9px;padding:8px 10px;line-height:1.5;margin-top:9px}
+#sec-unir .mg-warns div+div{margin-top:5px}
+
+/* ── shimmer mientras el servidor calcula ─────────────────────────────────────
+   Mismo motivo que en los dos detalles: un panel vacío mientras se espera parece
+   la app colgada. Aquí no hace falta retrasarlo — la previsualización SIEMPRE va
+   a la red, nunca hay una copia local que se pinte al instante. */
+@keyframes un-shimmer{to{background-position:-200% 0}}
+#sec-unir .skel{overflow:hidden;
+  background:linear-gradient(90deg,var(--panel-2) 0%,var(--panel-3) 50%,var(--panel-2) 100%);
+  background-size:200% 100%;background-position:0 0;border-radius:6px;
+  animation:un-shimmer 1.15s linear infinite}
+#sec-unir .skel-stat{background:var(--panel-2);border:1px solid var(--line);
+  border-radius:10px;padding:10px 12px;min-width:0}
+#sec-unir .skel-stat .skel{height:9px;width:58%;margin-bottom:9px}
+#sec-unir .skel-stat .skel.b{height:19px;width:74%;margin-bottom:0}
+/* El lienzo de una gráfica no se rellena con HTML: el shimmer va en su caja y el
+   canvas (transparente hasta que Chart.js pinte) lo deja ver. */
+#sec-unir.is-loading .un-elev-panel:not(.is-empty) .chart-box{
+  background:linear-gradient(90deg,var(--panel-2) 0%,var(--panel-3) 50%,var(--panel-2) 100%);
+  background-size:200% 100%;border-radius:8px;
+  animation:un-shimmer 1.15s linear infinite}
+@media (prefers-reduced-motion:reduce){
+  #sec-unir .skel,#sec-unir.is-loading .chart-box{animation:none}
+}
+
+/* ── responsive ────────────────────────────────────────────────────────────── */
+@media(max-width:1199px){
+  #sec-unir .un-grid{grid-template-columns:1fr 330px}
+}
+@media(max-width:900px){
+  /* Una sola columna: el mapa arriba con alto fijo, el perfil justo debajo (que
+     es donde tiene sentido leerlo) y el panel después, en flujo normal (sin
+     scroll propio, que dentro de la página ya no aporta nada). */
+  #sec-unir .un-grid{grid-template-columns:1fr}
+  #sec-unir .un-left{min-height:0}
+  #sec-unir .un-map-wrap{height:45vh;min-height:300px;flex:none}
+  #sec-unir .un-side{min-height:0}
+}
+@media(max-width:600px){
+  #sec-unir .un-head{margin:16px 0 12px;align-items:flex-start}
+  #sec-unir .un-title h1{font-size:20px}
+  #sec-unir .un-head-l{flex-wrap:wrap}
+  #sec-unir .panel{padding:12px 14px}
+  #sec-unir .panel-head{flex-direction:column;align-items:flex-start;gap:2px}
+  #sec-unir .panel-sub{text-align:left}
+  #sec-unir .un-stats{gap:8px}
+  #sec-unir .stat .v{font-size:19px}
+  /* por encima del control de atribución, que va abajo a la derecha: a la misma
+     altura se pisan (el mapa es estrecho y los nombres de los planes, largos) */
+  #sec-unir .mg-legend{left:8px;bottom:34px;max-width:calc(100% - 20px)}
+  #sec-unir .chart-box{height:140px}
+}
+@media(max-width:520px){
+  /* La palabra «Pendiente» sobra cuando la tira ya no cabe con ella. */
+  #sec-unir .slope-legend .sl-lbl{display:none}
+}
+@media(hover:none) and (pointer:coarse){
+  /* «pasa el ratón para verla en el mapa» no significa nada sin ratón. */
+  #sec-unir #un-props-panel .panel-sub{display:none}
+  #sec-unir .un-row{min-height:46px}
+  #sec-unir .mg-tgl,#sec-unir .mg-opt{min-height:40px}
+}
+
+/* ══ MODO «MONTAJE» ══════════════════════════════════════════════════════════
+   El conmutador de la cabecera, los dos perfiles fuente (donde se arrastra para
+   elegir un tramo), la línea de tiempo de clips y la lista de trozos del panel
+   derecho. Sin hex sueltos: el color de cada clip lo pone el JS (es el color de
+   SERIE de su entrada, el mismo de su traza en el mapa y de su perfil), y todo
+   lo demás sale de los tokens de base.html. */
+
+/* ── conmutador de modo ─────────────────────────────────────────────────────
+   Segmentado, el mismo lenguaje que `.mg-seg` del hueco y que las píldoras de
+   filtro de «Mis Rutas». */
+/* A la derecha van dos cosas: el chip de «con qué se une» y el conmutador de
+   modo. Envuelven (el nombre de un plan puede ser largo), y en móvil el chip
+   se lleva su propia línea bajo el título — ver el bloque de 600 px. */
+#sec-unir .un-head-r{flex:none;display:flex;align-items:center;gap:10px;
+  flex-wrap:wrap;justify-content:flex-end;min-width:0}
+#sec-unir .un-mode{display:flex;border:1px solid var(--line-strong);border-radius:999px;
+  overflow:hidden}
+#sec-unir .un-mode-opt{background:transparent;border:0;color:var(--muted);
+  padding:7px 15px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;cursor:pointer;transition:color .15s,background .15s;
+  white-space:nowrap}
+#sec-unir .un-mode-opt:hover{color:var(--ink)}
+#sec-unir .un-mode-opt.on{background:var(--pr-yellow);color:var(--bg)}
+
+/* ── perfiles fuente ────────────────────────────────────────────────────────
+   Bajos a propósito (110 px): son el material del que se recorta, no la gráfica
+   protagonista — esa es la del resultado, que se queda con su alto y su
+   degradado por pendiente. El mapa cede altura (es `flex:1`), estos no. */
+#sec-unir .un-src-panel{flex:none;padding:12px 14px}
+#sec-unir .un-src-panel .panel-head{margin-bottom:8px;min-width:0}
+/* `max-width:100%` y no solo `min-width:0`: por debajo de 600 px la cabecera del
+   panel pasa a columna con `align-items:flex-start`, y ahí un título largo (los
+   nombres de Wikiloc lo son) se mide por su contenido y saca scroll horizontal a
+   la PÁGINA entera. Lo único que puede desbordar es la línea de tiempo, y esa
+   lleva su propio scroll. */
+#sec-unir .un-src-panel .panel-title{min-width:0;max-width:100%;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+#sec-unir .chart-box.src{height:110px}
+/* El cursor lo dice: aquí se arrastra para elegir un tramo. */
+#sec-unir #un-src-a,#sec-unir #un-src-b{cursor:ew-resize;touch-action:none}
+#sec-unir .un-src-foot{display:flex;align-items:center;justify-content:space-between;
+  gap:10px;flex-wrap:wrap;margin-top:8px}
+#sec-unir .un-src-range{font-size:10.5px;color:var(--muted-dim);min-width:0;
+  overflow:hidden;text-overflow:ellipsis}
+#sec-unir .un-src-btns{flex:none;display:flex;gap:6px;flex-wrap:wrap}
+#sec-unir .un-src-btns .btn[disabled]{opacity:.4;cursor:not-allowed}
+
+/* ── línea de tiempo ────────────────────────────────────────────────────────
+   Una franja de clips, cada uno de ancho proporcional a su longitud. Es lo
+   ÚNICO de la vista que puede desbordar a lo ancho, y por eso lleva su propio
+   scroll horizontal: recortar un clip al mínimo lo dejaría sin sus botones. */
+#sec-unir .un-tl-panel{flex:none;padding:12px 14px}
+#sec-unir .un-tl-panel .panel-head{align-items:center;margin-bottom:8px}
+#sec-unir .un-tl{display:flex;align-items:stretch;gap:0;overflow-x:auto;
+  overflow-y:hidden;padding-bottom:4px;min-height:64px}
+/* La barra fina del proyecto, en horizontal y SIEMPRE a la vista mientras haya
+   desbordamiento (la gruesa y gris del sistema no pega con nada de esta vista).
+   TRAMPA: en Chromium/Edge, poner `scrollbar-width` HACE QUE SE IGNOREN los
+   ::-webkit-scrollbar — medido: con los dos sale la barra estándar de 10 px en
+   vez de la de 6. Por eso los estándar van tras un @supports que solo cumple
+   quien no entiende el pseudo-elemento, que es justo Firefox. */
+#sec-unir .un-tl::-webkit-scrollbar{height:6px}
+#sec-unir .un-tl::-webkit-scrollbar-track{background:var(--bg);border-radius:3px}
+#sec-unir .un-tl::-webkit-scrollbar-thumb{background:var(--sage);border-radius:3px}
+#sec-unir .un-tl::-webkit-scrollbar-thumb:hover{background:var(--pr-yellow)}
+@supports not selector(::-webkit-scrollbar){
+  #sec-unir .un-tl{scrollbar-width:thin;scrollbar-color:var(--sage) var(--bg)}
+}
+#sec-unir .un-tl-none{display:flex;align-items:center;font-family:var(--mono);
+  font-size:11px;color:var(--muted-faint);line-height:1.5}
+#sec-unir .un-clip{flex:none;position:relative;display:flex;flex-direction:column;
+  justify-content:space-between;gap:2px;height:64px;box-sizing:border-box;
+  border:1px solid var(--line-strong);border-radius:9px;padding:5px 6px;
+  overflow:hidden;cursor:default;transition:border-color .15s,box-shadow .15s}
+#sec-unir .un-clip.hi{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink) inset}
+#sec-unir .un-clip-top{display:flex;align-items:center;justify-content:space-between;
+  gap:4px;min-width:0}
+#sec-unir .un-clip-lbl{font-family:var(--mono);font-size:11px;color:var(--bg-deep);
+  font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sec-unir .un-clip-dir{flex:none;font-size:12px;color:var(--bg-deep);line-height:1}
+#sec-unir .un-clip-len{font-family:var(--mono);font-size:9px;letter-spacing:.06em;
+  color:var(--bg-deep);opacity:.75;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+#sec-unir .un-clip-acts{display:flex;gap:2px;flex-wrap:nowrap}
+/* Botones de clip: tinta oscura sobre el color de la entrada (como el glifo de
+   los iconos de actividad), no blanca. */
+#sec-unir .un-pact{flex:none;background:rgba(11,18,14,.22);border:0;border-radius:6px;
+  color:var(--bg-deep);width:19px;height:19px;font-size:10px;line-height:1;
+  cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;
+  transition:background .15s}
+#sec-unir .un-pact:hover{background:rgba(11,18,14,.45)}
+#sec-unir .un-pact[disabled]{opacity:.35;cursor:not-allowed}
+/* El separador entre dos clips: el estado de la costura según el informe, y
+   debajo «Ajustar» cuando esa costura existe de verdad (dos trozos que el
+   servidor no encadena solo). */
+#sec-unir .un-seam{flex:none;align-self:center;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px;min-width:26px;padding:0 5px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;
+  color:var(--muted-faint);white-space:nowrap}
+#sec-unir .un-seam-txt{cursor:help}
+#sec-unir .un-seam.ok,#sec-unir .un-pc-seam.ok{color:var(--sage)}
+#sec-unir .un-seam.cut,#sec-unir .un-pc-seam.cut{color:var(--muted)}
+#sec-unir .un-seam.warn,#sec-unir .un-pc-seam.warn{color:var(--pr-yellow)}
+/* El separador, en la lista de texto del panel «Montaje». */
+#sec-unir .un-pc-seam{display:flex;align-items:center;gap:8px;padding:0 4px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;
+  color:var(--muted-faint);white-space:nowrap}
+#sec-unir .un-seam-fit{flex:none;background:var(--panel-2);color:var(--muted);
+  border:1px solid var(--line-strong);border-radius:6px;padding:2px 7px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;line-height:1.3;
+  cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+#sec-unir .un-seam-fit:hover{background:var(--panel-3);color:var(--ink);
+  border-color:var(--pr-yellow)}
+#sec-unir .un-seam-fit[disabled]{opacity:.35;cursor:not-allowed}
+#sec-unir .un-seam-fit[disabled]:hover{background:var(--panel-2);
+  color:var(--muted);border-color:var(--line-strong)}
+
+/* ── el montaje en texto (panel derecho) ───────────────────────────────────── */
+#sec-unir .un-pcs{display:flex;flex-direction:column;gap:6px}
+#sec-unir .un-pc{display:flex;align-items:flex-start;gap:8px;
+  border:1px solid var(--line);border-radius:9px;padding:7px 9px;
+  transition:border-color .15s,background .15s}
+#sec-unir .un-pc.hi{border-color:var(--pr-yellow);background:rgba(227,178,60,.08)}
+#sec-unir .un-pc-t{flex:1;min-width:0;font-family:var(--mono);font-size:10.5px;
+  color:var(--ink);line-height:1.5;overflow-wrap:anywhere}
+#sec-unir .un-pc-t em{display:block;font-style:normal;color:var(--muted-dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sec-unir .un-pc-t i{display:block;font-style:normal;color:var(--sage);font-size:10px}
+#sec-unir .un-pc-acts{flex:none;display:flex;gap:3px}
+/* Aquí el fondo es el panel, no el color de la entrada: los botones van con la
+   tinta normal. */
+#sec-unir .un-pc .un-pact{background:var(--panel-2);color:var(--muted);
+  border:1px solid var(--line)}
+#sec-unir .un-pc .un-pact:hover{background:var(--panel-3);color:var(--ink)}
+
+@media(max-width:600px){
+  #sec-unir .un-head-r{width:100%}
+  /* El chip, a su propia línea bajo el título, y el nombre con toda la anchura
+     que haya (elipsis + `title`: no se parte ni empuja al botón fuera). */
+  #sec-unir .un-pick-line{width:100%;min-width:0}
+  #sec-unir .un-pick-chip{flex:1;max-width:none}
+  #sec-unir .un-pick-btn{flex:none}
+  #sec-unir .un-mode{width:100%}
+  #sec-unir .un-mode-opt{flex:1}
+  #sec-unir .un-modal{padding:14px;max-width:none}
+  #sec-unir .un-modal-head h2{font-size:18px}
+  #sec-unir .un-list{max-height:52vh}
+  #sec-unir .chart-box.src{height:96px}
+  #sec-unir .un-src-btns{width:100%}
+  #sec-unir .un-src-btns .btn{flex:1}
+}
+@media(hover:none) and (pointer:coarse){
+  #sec-unir .un-mode-opt{min-height:40px}
+  #sec-unir .un-pact{width:26px;height:26px}
+}
+
+/* ══ MONTAJE: disposición propia ═════════════════════════════════════════════
+   En «Automático» la vista es la de siempre —lienzo a la izquierda, columna de
+   pasos de 380 px a la derecha— y NADA de este bloque la toca: todo cuelga de
+   `#sec-unir.is-montaje`, la clase que pone y quita `applyModeUI()` desde
+   `setMode()` (no hay una segunda clase de modo: esa ya existía).
+
+   En montaje el material es otro. Ya no hay un solo mapa que mirar, sino un
+   mapa MÁS dos perfiles fuente y una línea de tiempo, y los pasos de la
+   derecha pasan a ser cajas cortas. Apilado todo en una columna, «Crear»
+   quedaba a 1.400 px del principio de la página y el mapa se comía el ancho
+   que necesitan los perfiles. Así que aquí la rejilla se reparte por ÁREAS:
+
+       map    map  srca srca     el mapa ocupa las dos primeras columnas (≈55 %)
+       map    map  srcb srcb     y las tres filas de la pila de perfiles, así
+       map    map  tl   tl       que mide LO QUE MIDE LA PILA (grid stretch)
+       pieces tune result result los TRES pasos, en una sola fila
+       elev   elev elev elev     y el perfil del resultado, a todo lo ancho
+
+   Eran cuatro pasos hasta que «Con qué unir» se fue a su popup: la fila de
+   abajo tiene ahora tres, y el ancho que sobraba se lo queda «Resultado», que
+   es el que lleva las cifras y el botón «Crear».
+
+   `.un-left` y `.un-side` pasan a `display:contents`: sus paneles se colocan
+   por su `grid-area` SIN mover un solo nodo del DOM (los ids los usa el JS por
+   getElementById, y el markup es el mismo para una ruta y para un plan).
+   Los paneles que el JS esconde —`#un-props-panel`, `#un-ends` y «Ajustes»
+   mientras no hay informe— siguen en `display:none`, así que no son elementos
+   de la rejilla y no ocupan celda.
+
+   El mapa se entera del cambio de tamaño por el ResizeObserver de unir.js
+   (map.resize()), y `setMode()` lo REENCUADRA después de ese resize
+   (afterResize + fitCurrent): encuadrar en el mismo tick dejaría la cámara
+   calculada para el lienzo viejo. */
+#sec-unir.is-montaje .un-left,
+#sec-unir.is-montaje .un-side{display:contents}
+#sec-unir.is-montaje .un-map-wrap{grid-area:map;flex:none}
+#sec-unir.is-montaje #un-src-a-panel{grid-area:srca}
+#sec-unir.is-montaje #un-src-b-panel{grid-area:srcb}
+#sec-unir.is-montaje #un-tl-panel{grid-area:tl}
+#sec-unir.is-montaje #un-pieces-panel{grid-area:pieces}
+#sec-unir.is-montaje #un-tune{grid-area:tune}
+#sec-unir.is-montaje #un-result-panel{grid-area:result}
+#sec-unir.is-montaje .un-elev-panel{grid-area:elev}
+
+@media(min-width:768px){
+  /* El mapa es el único que se estira: llena las tres filas de la pila. */
+  #sec-unir.is-montaje .un-map-wrap{align-self:stretch;height:auto}
+  /* Los tres pasos alinean su parte de ARRIBA y miden lo suyo: estirarlos al
+     alto de la fila dejaría dos cajas medio vacías al lado de «Resultado», y
+     «Crear» flotando a mitad de panel. */
+  #sec-unir.is-montaje #un-pieces-panel,
+  #sec-unir.is-montaje #un-tune,
+  #sec-unir.is-montaje #un-result-panel{align-self:start}
+  /* Con columna propia los perfiles fuente ya no son una tira: 150 px. La línea
+     de tiempo va DEBAJO del mapa a todo el ancho (v0.11.7), así que el mapa mide
+     lo que los DOS perfiles fuente apilados (≈500 px). */
+  #sec-unir.is-montaje .chart-box.src{height:150px}
+}
+
+@media(min-width:1000px){
+  #sec-unir.is-montaje .un-grid{
+    grid-template-columns:minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,.9fr) minmax(0,.9fr);
+    grid-template-areas:
+      "map    map  srca   srca"
+      "map    map  srcb   srcb"
+      "tl     tl   tl     tl"
+      "pieces tune result result"
+      "elev   elev elev   elev";
+    align-items:start}
+  /* Suelo del mapa, no su alto: manda la pila de la derecha. Sin él, con B
+     todavía sin cargar (una sola fila ocupada) el mapa quedaría enano. */
+  #sec-unir.is-montaje .un-map-wrap{min-height:480px}
+}
+/* Entre 768 y 1000 no caben cuatro columnas de panel: dos, con el mapa entero
+   arriba y los dos perfiles fuente uno al lado del otro. «Resultado» se lleva
+   su propia fila entera: es el que lleva las cifras y «Crear». */
+@media(min-width:768px) and (max-width:999px){
+  #sec-unir.is-montaje .un-grid{
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    grid-template-areas:
+      "map    map"
+      "srca   srcb"
+      "tl     tl"
+      "pieces tune"
+      "result result"
+      "elev   elev";
+    align-items:start}
+  #sec-unir.is-montaje .un-map-wrap{min-height:400px}
+}
+
+/* Por debajo de 768, una sola columna en el orden en que se trabaja: mapa, los
+   dos perfiles, la línea de tiempo, los tres pasos y, al final, el perfil del
+   resultado (que describe lo que ya se ha montado). Lo único que puede
+   desbordar a lo ancho sigue siendo la línea de tiempo, con su scroll propio. */
+@media(max-width:767px){
+  #sec-unir.is-montaje .un-grid{
+    grid-template-columns:minmax(0,1fr);
+    grid-template-areas:"map" "srca" "srcb" "tl" "pieces" "tune" "result" "elev"}
+  #sec-unir.is-montaje .un-map-wrap{height:36vh;min-height:230px}
+}

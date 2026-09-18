@@ -45,6 +45,10 @@
      que en pantalla estrecha caigan debajo del mapa en flujo normal. #}
   <div class="pl-hero-actions">
     <button class="btn ghost sm" onclick="SEC.plan.openEditor()">✎ Editar track</button>
+    {# «Unir» ya no es una herramienta del editor: tiene pantalla propia
+       (/Plan/<pid>/unir). Como el editor, opera sobre el estado guardado en el
+       servidor, así que openUnir() exige conexión. #}
+    <button class="btn ghost sm" id="pl-unir-btn" onclick="SEC.plan.openUnir()">⛓ Unir…</button>
     <button class="btn ghost sm" id="pl-btn3d" onclick="SEC.plan.toggle3D()">Vista 3D</button>
     <button class="btn ghost sm" id="pl-offline-btn" onclick="SEC.plan.downloadMap()"
             title="Guarda en este dispositivo las teselas del mapa a lo largo de la ruta">

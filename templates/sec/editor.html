@@ -9,7 +9,9 @@
    La lógica vive en static/js/sec/editor.js y el CSS en static/css/editor.css.
    Ojo con los ids: los usa el JS por getElementById, así que renombrar uno lo
    rompe en silencio (#edelev, #edspeed, #ed-stats, #simp-panel, #spike-panel,
-   #speedfix-panel, #shift-panel, #merge-panel, #ver-list, #save-modal…). #}
+   #speedfix-panel, #shift-panel, #ver-list, #save-modal…).
+
+   Unir dos tracks NO está aquí: es su propia sección (templates/sec/unir.html). #}
 <section id="sec-editor" class="sec hidden">
 
 {# ── CABECERA ───────────────────────────────────────────────────────────────
@@ -163,18 +165,6 @@
             <div class="tool-foot">
               <button class="btn sm" onclick="SEC.editor.applyShift()">Aplicar</button>
               <button class="btn ghost sm" onclick="SEC.editor.closeShift()">Cancelar</button>
-            </div>
-          </div>
-          {# El texto lo repone applyKindUI(): «otra ruta» o «otro plan». #}
-          <button class="btn ghost sm ed-tool-btn" id="merge-btn" onclick="SEC.editor.toggleMerge()">⛓ Unir con otra ruta…</button>
-          <div id="merge-panel" class="tool-panel hidden">
-            <select id="merge-sel" class="ed-input" onchange="SEC.editor._mergeNameSync()"></select>
-            <input type="text" id="merge-name" class="ed-input" placeholder="Nombre de la ruta unida">
-            <div class="sel-hint" id="merge-hint">Crea una RUTA NUEVA con ambas; las originales
-              no se tocan. Se ordenan por hora; si los tiempos se solapan, se eliminan.</div>
-            <div class="tool-foot">
-              <button class="btn sm" onclick="SEC.editor.doMerge()">Unir</button>
-              <button class="btn ghost sm" onclick="SEC.editor.closeMerge()">Cancelar</button>
             </div>
           </div>
           {# display:none inline a propósito: el JS lo enseña con style.display=''

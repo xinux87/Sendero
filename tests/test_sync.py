@@ -12,7 +12,10 @@ import sqlite3
 
 import pytest
 
-from core.sync import diff_manifest, manifest_in_sync, decimate, resample
+from core.sync import (
+    diff_manifest, manifest_in_sync, decimate, decimate_indices,
+    decimate_with_segments, remap_indices, resample,
+)
 
 
 # ── core.sync (puro) ────────────────────────────────────────────────────────
@@ -59,6 +62,68 @@ def test_decimate_conserva_primero_y_ultimo():
 def test_decimate_no_toca_tracks_cortos():
     assert decimate([[0, 0], [1, 1]], 4) == [[0, 0], [1, 1]]
     assert decimate([], 4) == []
+
+
+# ── decimado con cortes de segmento (seg_starts) ────────────────────────────
+# El detalle pinta los cortes entre <trkseg> como HUECO, y sus índices apuntan
+# al geojson: si al decimar para ?lite=1 no se remapean (y no se conservan los
+# puntos del corte), los huecos se dibujarían en otro sitio del track.
+
+def test_decimate_indices_equivale_a_decimate():
+    coords = [[i, i] for i in range(23)]
+    idx = decimate_indices(len(coords), 4)
+    assert [coords[i] for i in idx] == decimate(coords, 4)
+    assert idx[0] == 0 and idx[-1] == len(coords) - 1
+
+
+def test_decimate_conserva_los_indices_pedidos():
+    coords = [[i, i] for i in range(40)]
+    dec = decimate(coords, 4, keep=[13, 14])
+    assert [13, 13] in dec and [14, 14] in dec
+
+
+def test_remap_indices_exacto_y_por_aproximacion():
+    kept = [0, 4, 8, 12]
+    assert remap_indices([0, 8], kept) == [0, 2]
+    # una marca que no sobrevivió se ajusta al primer punto conservado a partir
+    # de ella, nunca a un índice fuera de rango
+    assert remap_indices([5], kept) == [2]
+    assert remap_indices([99], kept) == [3]
+    assert remap_indices([1], []) == []
+
+
+def test_decimate_with_segments_remapea_los_cortes():
+    coords = [[i, i] for i in range(40)]
+    seg = [0, 17]                      # dos segmentos, el 2º empieza en el 17
+    dec, seg2 = decimate_with_segments(coords, seg, 4)
+    assert len(dec) < len(coords)
+    assert seg2[0] == 0
+    # el corte sigue apuntando al MISMO punto del track, ya en el array decimado
+    assert dec[seg2[1]] == coords[17]
+    # y el punto anterior es el último del segmento anterior, para que el hueco
+    # dibujado sea el hueco real y no se trague puntos de track de verdad
+    assert dec[seg2[1] - 1] == coords[16]
+
+
+def test_decimate_with_segments_un_solo_segmento_no_cambia_nada():
+    coords = [[i, i] for i in range(30)]
+    dec, seg = decimate_with_segments(coords, [0], 4)
+    assert dec == decimate(coords, 4)
+    assert seg == [0]
+    # y sin seg_starts (rutas importadas antes de la columna) tampoco
+    dec2, seg2 = decimate_with_segments(coords, None, 4)
+    assert dec2 == decimate(coords, 4) and seg2 == []
+
+
+def test_decimate_with_segments_track_corto_no_se_decima():
+    coords = [[0, 0], [1, 1]]
+    assert decimate_with_segments(coords, [0, 1], 4) == (coords, [0, 1])
+
+
+def test_decimate_with_segments_ignora_indices_imposibles():
+    coords = [[i, i] for i in range(10)]
+    dec, seg = decimate_with_segments(coords, [0, 99], 4)
+    assert seg == [0] and dec[0] == coords[0]
 
 
 def test_resample_acota_y_conserva_el_final():

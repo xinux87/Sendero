@@ -22,11 +22,12 @@ from flask import Blueprint, abort, request, jsonify
 
 import core.config as cfg
 from core.database import db, plan_id_from_public, set_public_id
-from core.editing import load_gpx, split_track, merge_gpx, EditError
+from core.editing import load_gpx, split_track, EditError
 from api.editor import (
     TargetError, commit_new_version, download_version_response, gps_meta,
-    load_target_gpx, run_edit, run_elevation_dem, run_list_versions, run_points,
-    run_restore, version_conflict,
+    load_target_gpx, merge_preview_response, merge_report_lean, run_edit,
+    run_elevation_dem, run_list_versions, run_merge, run_points, run_restore,
+    version_conflict,
 )
 from api.planned import _build_plan_dict, _reanalyse_plan
 
@@ -294,6 +295,14 @@ def split_plan(pid):
 def merge_plans():
     """Une 2+ planes en un plan NUEVO; los originales quedan intactos.
 
+    Body: {ids, name, preview?, options?{reverse, trim, join_gap, tol_m}}, el
+    mismo que el de rutas y con el mismo flujo (api/editor.py::run_merge): unir
+    no depende del target. Con `preview:true` no se crea nada.
+
+    Es donde más se nota que la unión mire la geometría: un plan casi nunca
+    lleva <time>, así que el orden no lo puede dar el reloj y hay que decidirlo
+    mirando por dónde van los tracks.
+
     Solo plan + plan: unir un plan con una ruta ya hecha mezclaría dos cosas
     distintas (lo que quiero hacer y lo que hice), y el resultado no cabría en
     ninguna de las dos tablas sin mentir.
@@ -320,9 +329,11 @@ def merge_plans():
         except Exception as e:
             return jsonify({"error": f"Archivo ilegible en «{r['name']}»: {e}"}), 400
     try:
-        xml, times_kept = merge_gpx(gpxs)
+        xml, report = run_merge(gpxs, [r["name"] for r in rows], data)
     except EditError as e:
         return jsonify({"error": str(e)}), 400
+    if data.get("preview"):
+        return merge_preview_response(xml, report)
 
     name = (data.get("name") or "").strip() or " + ".join(r["name"] for r in rows)
     b_public, err = _create_plan(con, name, rows[0]["activity_type"],
@@ -330,7 +341,8 @@ def merge_plans():
     if err:
         return err
     return jsonify({"id": b_public, "public_id": b_public, "name": name,
-                    "times_kept": times_kept}), 201
+                    "times_kept": report["times_kept"],
+                    "report": merge_report_lean(report)}), 201
 
 
 def _create_plan(con, name, activity_type, gpx_bytes):

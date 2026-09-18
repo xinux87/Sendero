@@ -95,3 +95,37 @@ def test_detect_activity_kayak():
     # 'remo' NO es palabra clave: iría dentro de "extremo" y arruinaría nombres.
     assert _detect_activity("Sendero del extremo sur") == "senderismo"
     assert _gpx_type_lookup("Kayaking") == "kayak"
+
+
+# ── seg_starts: dónde empieza cada <trkseg> ─────────────────────────────────
+# El detalle los necesita para pintar como HUECO el corte entre segmentos (una
+# pérdida de GPS, o dos rutas unidas por el editor). Si no, la recta que
+# MapLibre traza entre segmentos parece un camino.
+
+def test_seg_starts_un_solo_segmento(make_gpx_xml):
+    stats, coords, _, _, _ = analyse_gpx(make_gpx_xml(tracks=[(5,)]))
+    assert stats["seg_starts"] == [0]
+    assert len(coords) == 5
+
+
+def test_seg_starts_dos_segmentos(make_gpx_xml):
+    stats, coords, _, _, _ = analyse_gpx(make_gpx_xml(tracks=[(4, 6)]))
+    assert stats["seg_starts"] == [0, 4]
+    assert len(coords) == 10
+
+
+def test_seg_starts_cuenta_tambien_entre_tracks(make_gpx_xml):
+    """Dos <trk> con un <trkseg> cada uno: el aplanado es el mismo array, así que
+    el salto entre tracks es un corte igual que el de dos segmentos."""
+    stats, coords, _, _, _ = analyse_gpx(make_gpx_xml(tracks=[(3,), (3, 2)]))
+    assert stats["seg_starts"] == [0, 3, 6]
+    assert len(coords) == 8
+
+
+def test_seg_starts_no_falsea_la_distancia(make_gpx_xml):
+    """El corte NO fabrica distancia: dos segmentos de 5 puntos miden lo mismo
+    que dos tramos de 4 saltos, no que los 9 saltos de un track seguido."""
+    uno, _, _, _, _ = analyse_gpx(make_gpx_xml(tracks=[(10,)]))
+    dos, _, _, _, _ = analyse_gpx(make_gpx_xml(tracks=[(5, 5)]))
+    assert dos["distance_m"] < uno["distance_m"]
+    assert dos["seg_starts"] == [0, 5]

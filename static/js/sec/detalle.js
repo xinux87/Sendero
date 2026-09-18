@@ -398,6 +398,13 @@
         layout: {'line-join': 'round', 'line-cap': 'round'},
         paint: grad ? {'line-gradient': grad, 'line-width': 4, 'line-opacity': 0.95}
                     : {'line-color': color, 'line-width': 4, 'line-opacity': 0.9}});
+      /* Cortes entre <trkseg> (pérdida de GPS, o dos rutas unidas por el
+         editor): se tapan y se marcan con una línea punteada, o la recta que
+         MapLibre traza entre segmentos parecería camino. Va DESPUÉS de la traza
+         (se dibuja encima) y ANTES de la capa de hover, que debe quedar arriba.
+         El mapa se recrea entero al cambiar de capa base, así que no hace falta
+         repintarlo aparte (regla 15). */
+      addGapLayers(map, coords, current.seg_starts, 'd-');
       // Línea invisible más ancha encima, solo para que el hover sea más fácil
       // de acertar que sobre la línea real de 4px (patrón de dash-lines-hit).
       map.addLayer({id: 'ruta-linea-hit', type: 'line', source: 'ruta',
@@ -927,6 +934,17 @@
 
   function openEditor() { go(`/Sendero/${encodeURIComponent(pid)}/editor`); }
 
+  /* «Unir» tiene pantalla propia desde que salió del editor. Vive dentro del ⋯,
+     así que hay que cerrarlo antes de navegar (si no, al volver el menú seguiría
+     abierto). Exige conexión por el mismo motivo que el editor: la pantalla
+     trabaja sobre el estado guardado en el servidor. */
+  function openUnir() {
+    q('#d-actions-more').classList.remove('open');
+    if (!pid) return;
+    if (!needOnline('Unir necesita conexión con el servidor')) return;
+    go(`/Sendero/${encodeURIComponent(pid)}/unir`);
+  }
+
   /* Mapa sin conexión de ESTA ruta: la franja de teselas que
      cubre el track, no una región. Útil para repetir una ruta ya hecha. */
   function downloadMap() {
@@ -1330,7 +1348,7 @@
     mount, unmount, setTab, retry,
     openActivityPicker, closeActivityPicker, setActivity,
     toggle3D, saveNotes, rescanRoute, renameRoute, removeRoute, downloadGpx, downloadMap,
-    openEditor, dismissDup, delPhoto,
+    openEditor, openUnir, dismissDup, delPhoto,
     openImmich, closeImmich, renderImmich, confirmImmich, selectAllImmich,
     openLightbox, closeLightbox, lbNav, lbDelete,
   };

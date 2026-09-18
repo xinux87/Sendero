@@ -52,6 +52,10 @@
       <button class="btn ghost sm" id="rescan-btn" onclick="SEC.detalle.rescanRoute(this)">↺ Reescanear</button>
       <button class="btn ghost sm" onclick="SEC.detalle.downloadMap()"
               title="Guarda en este dispositivo las teselas del mapa a lo largo de la ruta">⬇ Mapa sin conexión</button>
+      {# «Unir» ya no es una herramienta del editor: tiene pantalla propia
+         (/Sendero/<pid>/unir). Como el editor, opera sobre el estado guardado en
+         el servidor, así que openUnir() exige conexión. #}
+      <button class="btn ghost sm" id="d-unir-btn" onclick="SEC.detalle.openUnir()">⛓ Unir…</button>
       <button class="btn ghost sm" onclick="SEC.detalle.renameRoute()">Renombrar</button>
       <button class="btn ghost sm" onclick="SEC.detalle.removeRoute()"
               style="border-color:var(--gr-red);color:var(--gr-red)">Eliminar</button>

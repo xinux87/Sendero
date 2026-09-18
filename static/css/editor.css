@@ -29,6 +29,12 @@
 /* ── rejilla: lienzo | columna de paneles ──────────────────────────────────── */
 #sec-editor .ed-grid{display:grid;grid-template-columns:1fr 330px;gap:16px;align-items:start}
 #sec-editor .ed-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+/* …y sus paneles, también: por debajo de 1200 px `.ed-col-side` pasa a grid y
+   un panel con `min-width:auto` estira su pista hasta el min-content de lo que
+   lleve dentro (un texto largo sin partir dentro de un panel bastaba para sacar
+   scroll horizontal en móvil). Con 0, la pista manda y el `text-overflow` de
+   dentro puede hacer su trabajo. */
+#sec-editor .ed-col > .panel{min-width:0}
 #sec-editor .ed-map-wrap{border-radius:12px;border:1px solid var(--line);overflow:hidden}
 #sec-editor #edmap{height:55vh;min-height:340px}
 

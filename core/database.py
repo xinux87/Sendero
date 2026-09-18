@@ -205,11 +205,21 @@ def init_db():
     # public_id: identificador opaco no secuencial expuesto en las URLs de la ruta
     # (/api/routes/<public_id>/...). La PK entera se queda interna. Se lee en el
     # listado → va en idx_routes_list_cov4 (regla 12) y lleva índice UNIQUE propio.
+    # seg_starts: JSON con el índice en `geojson` donde empieza cada <trkseg>
+    # ([0] = un solo segmento, NULL = desconocido → el cliente pinta como antes).
+    # Lo necesita el detalle para dibujar como HUECO el corte entre segmentos
+    # (pérdida de GPS, o dos rutas unidas), que si no se ve como una recta que
+    # parece camino. NO se lee en el listado, así que no va en ningún índice de
+    # cobertura (regla 12): solo lo leen _build_route_dict y el editor, siempre
+    # por id, que ya leen la fila entera. Sin backfill masivo al arrancar
+    # (parsear cientos de GPX): lo rellenan importar, reescanear y cada versión
+    # nueva del editor.
     for _col, _decl in (("content_hash", "TEXT"),
                         ("signature", "TEXT"),
                         ("dup_suspect_of", "INTEGER"),
                         ("locality", "TEXT"),
-                        ("public_id", "TEXT")):
+                        ("public_id", "TEXT"),
+                        ("seg_starts", "TEXT")):
         if _col not in route_cols:
             try:
                 con.execute(f"ALTER TABLE routes ADD COLUMN {_col} {_decl}")
@@ -487,9 +497,12 @@ def init_db():
     # calculó (el índice puede cambiar si ellos afinan el algoritmo).
     # ibp_all NO se lee en el listado a propósito: solo lo mira el PATCH y el
     # endpoint de cálculo, siempre por id, así que no necesita índice (regla 12).
+    # seg_starts: igual que en `routes` (ver allí). Tampoco se lee en el listado
+    # ni va en idx_planned_list_cov3 — solo lo mira _build_plan_dict, por id.
     for _col, _type in (("completed_at", "TEXT"), ("completed_route_id", "INTEGER"),
                         ("ibp_index", "INTEGER"), ("ibp_modality", "TEXT"),
-                        ("ibp_all", "TEXT"), ("ibp_at", "TEXT")):
+                        ("ibp_all", "TEXT"), ("ibp_at", "TEXT"),
+                        ("seg_starts", "TEXT")):
         if _col not in plan_cols:
             try:
                 con.execute(f"ALTER TABLE planned_routes ADD COLUMN {_col} {_type}")

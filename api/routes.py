@@ -20,7 +20,7 @@ from core.thumbs import generate_thumb
 from core.editing import load_gpx, extract_points
 from core.gps_analysis import detect_gps_anomalies
 from core.dedup import content_hash, route_signature
-from core.sync import decimate, resample
+from core.sync import decimate_with_segments, resample
 from core.geocode import reverse_geocode
 from werkzeug.utils import secure_filename
 
@@ -69,6 +69,12 @@ def _build_route_dict(rid):
     d["heart_rate"] = json.loads(d["heart_rate"] or "[]")
     d["speed"]      = json.loads(d["speed"]      or "[]")
     d["gps_issues"] = json.loads(d.get("gps_issues") or "[]")
+    # Índices de geojson donde empieza cada <trkseg>. [] o [0] = nada que
+    # dibujar aparte; más de uno = el detalle pinta esos cortes como HUECO en vez
+    # de dejar la recta que MapLibre traza entre segmentos. NULL (rutas
+    # importadas antes de esta columna, hasta que se reescaneen) → [], o sea
+    # el comportamiento de siempre.
+    d["seg_starts"] = json.loads(d.get("seg_starts") or "[]")
     # Nº de puntos del track COMPLETO. Se calcula aquí, antes de que ?lite=1
     # decime el geojson, porque si no el cliente contaría los puntos de la
     # versión ligera y "Puntos GPS" mentiría por un factor de 20.
@@ -232,6 +238,32 @@ def sendero_page(ref=None):
             return redirect("/Sendero/" + byname["public_id"], code=302)
     bootstrap = json.dumps(_route_payload(con, r["id"], lite=True)) if r else ""
     return render_template("shell.html", bootstrap_json=bootstrap)
+
+
+@routes_bp.route("/Sendero/<path:ref>/unir")
+def sendero_unir_page(ref):
+    """Unir una ruta con otra, espejo de /Plan/<pid>/unir.
+
+    Misma regla que el editor: si `ref` es un nombre se redirige al public_id (la
+    URL canónica). Sirve el shell SIN bootstrap: la unión la calcula el servidor
+    a partir de los dos archivos guardados, así que la sección pide lo que
+    necesita (la ruta, al Store) y no gana nada evitando ese fetch.
+
+    Convive con /Sendero/<path:ref> porque esta regla es más específica (el
+    sufijo estático /unir), igual que /Sendero/<path:ref>/editor con su detalle.
+    """
+    con = db()
+    r = con.execute("SELECT id FROM routes WHERE public_id=?", (ref,)).fetchone()
+    if not r:
+        byname = con.execute(
+            "SELECT public_id FROM routes WHERE name=? "
+            "ORDER BY COALESCE(started_at,created_at) DESC LIMIT 1", (ref,),
+        ).fetchone()
+        if byname and byname["public_id"]:
+            return redirect("/Sendero/" + byname["public_id"] + "/unir", code=302)
+        if not byname:
+            return redirect("/rutas")
+    return render_template("shell.html")
 
 
 def _compute_gps_issues(raw, is_fit, activity_type):
@@ -422,8 +454,8 @@ def create_route():
                  ele_min,ele_max,avg_speed,started_at,geojson,elevation,created_at,
                  activity_type,device,start_lat,start_lon,heart_rate,hr_avg,hr_max,
                  bbox_min_lon,bbox_min_lat,bbox_max_lon,bbox_max_lat,speed,
-                 content_hash,signature,dup_suspect_of,public_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 content_hash,signature,dup_suspect_of,public_id,seg_starts)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (name, "", stored, stats["distance_m"], stats["ascent_m"],
                  stats["descent_m"], stats["duration_s"], stats["moving_s"],
                  stats["ele_min"], stats["ele_max"], stats["avg_speed"],
@@ -433,7 +465,8 @@ def create_route():
                  json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max,
                  *(bbox or (None, None, None, None)),
                  json.dumps(speed_profile) if speed_profile else None,
-                 chash, sig, dup_suspect_of, public_id),
+                 chash, sig, dup_suspect_of, public_id,
+                 json.dumps(stats.get("seg_starts") or [])),
             )
             break
         except sqlite3.IntegrityError:
@@ -471,7 +504,11 @@ def _route_payload(con, iid, lite=False):
     d["rev"] = entity_rev(con, "route", iid)
     if lite:
         d["lite"] = True
-        d["geojson"] = decimate(d["geojson"])
+        # Los índices de seg_starts apuntan al geojson: al decimarlo hay que
+        # remapearlos (y conservar los puntos del corte), o los huecos del mapa
+        # se dibujarían en otro sitio.
+        d["geojson"], d["seg_starts"] = decimate_with_segments(
+            d["geojson"], d["seg_starts"])
         for key in ("elevation", "heart_rate", "speed"):
             d[key] = resample(d[key])
     return d
@@ -611,7 +648,8 @@ def _reanalyse_and_update(con, rid, row):
            ele_min=?,ele_max=?,avg_speed=?,started_at=?,
            geojson=?,elevation=?,device=?,activity_type=?,
            start_lat=?,start_lon=?,heart_rate=?,hr_avg=?,hr_max=?,
-           bbox_min_lon=?,bbox_min_lat=?,bbox_max_lon=?,bbox_max_lat=?,speed=?
+           bbox_min_lon=?,bbox_min_lat=?,bbox_max_lon=?,bbox_max_lat=?,speed=?,
+           seg_starts=?
            WHERE id=?""",
         (stats["distance_m"], stats["ascent_m"], stats["descent_m"],
          stats["duration_s"], stats["moving_s"],
@@ -619,7 +657,8 @@ def _reanalyse_and_update(con, rid, row):
          json.dumps(coords), json.dumps(elev), creator, activity_type,
          start_lat, start_lon,
          json.dumps(hr_profile) if hr_profile else None, hr_avg, hr_max,
-         *bbox, json.dumps(speed_profile) if speed_profile else None, rid),
+         *bbox, json.dumps(speed_profile) if speed_profile else None,
+         json.dumps(stats.get("seg_starts") or []), rid),
     )
     con.commit()
     thumb = generate_thumb(coords, r["gpx_file"])

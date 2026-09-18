@@ -33,6 +33,12 @@ def _build_plan_dict(pid):
     d = dict(r)
     d["geojson"]   = json.loads(d.get("geojson")   or "[]")
     d["elevation"] = json.loads(d.get("elevation") or "[]")
+    # Índices de geojson donde empieza cada <trkseg>, para que la ficha dibuje
+    # los cortes como HUECO en vez de la recta que MapLibre traza entre
+    # segmentos (ver _build_route_dict). Aquí NO hay variante ligera: el plan se
+    # sirve entero, así que estos índices no se remapean nunca. NULL (planes
+    # importados antes de esta columna) → [] = como siempre.
+    d["seg_starts"] = json.loads(d.get("seg_starts") or "[]")
     d["has_gpx"]   = bool(d.get("gpx_data"))
     d["gpx_data"]  = None
     # Las tres modalidades del IBP como objeto: el panel del detalle enseña la que
@@ -87,12 +93,13 @@ def _reanalyse_plan(con, pid):
     con.execute(
         """UPDATE planned_routes SET
            distance_m=?, ascent_m=?, descent_m=?, ele_min=?, ele_max=?,
-           start_lat=?, start_lon=?, geojson=?, elevation=?
+           start_lat=?, start_lon=?, geojson=?, elevation=?, seg_starts=?
            WHERE id=?""",
         (stats.get("distance_m"), stats.get("ascent_m"), stats.get("descent_m"),
          stats.get("ele_min"), stats.get("ele_max"),
          coords[0][1] if coords else None, coords[0][0] if coords else None,
-         json.dumps(coords), json.dumps(elev), pid),
+         json.dumps(coords), json.dumps(elev),
+         json.dumps(stats.get("seg_starts") or []), pid),
     )
     con.commit()
     return None
@@ -217,6 +224,32 @@ def plan_editor_page(ref):
     return render_template("shell.html")
 
 
+@planned_bp.route("/Plan/<path:ref>/unir")
+def plan_unir_page(ref):
+    """Unir un plan con otro, espejo de /Sendero/<pid>/unir.
+
+    Misma regla que el editor: si `ref` es un nombre se redirige al public_id (la
+    URL canónica). Sirve el shell SIN bootstrap: la unión la calcula el servidor
+    a partir de los dos GPX guardados, así que la sección pide lo que necesita
+    (el plan, al Store) y no gana nada evitando ese fetch.
+
+    Convive con /Plan/<path:ref> porque esta regla es más específica (el sufijo
+    estático /unir), igual que /Plan/<path:ref>/editor con su detalle.
+    """
+    con = db()
+    r = con.execute("SELECT id FROM planned_routes WHERE public_id=?", (ref,)).fetchone()
+    if not r:
+        byname = con.execute(
+            "SELECT public_id FROM planned_routes WHERE name=? "
+            "ORDER BY created_at DESC LIMIT 1", (ref,),
+        ).fetchone()
+        if byname and byname["public_id"]:
+            return redirect("/Plan/" + byname["public_id"] + "/unir", code=302)
+        if not byname:
+            return redirect("/planificacion")
+    return render_template("shell.html")
+
+
 @planned_bp.route("/api/planned", methods=["GET"])
 def list_planned():
     con = db()
@@ -299,15 +332,17 @@ def create_planned():
     cur = con.execute(
         """INSERT INTO planned_routes
            (name,source,source_url,activity_type,distance_m,ascent_m,descent_m,
-            ele_min,ele_max,start_lat,start_lon,geojson,elevation,gpx_data,created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ele_min,ele_max,start_lat,start_lon,geojson,elevation,gpx_data,created_at,
+            seg_starts)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (name, source, source_url, activity_type,
          stats.get("distance_m"), stats.get("ascent_m"), stats.get("descent_m"),
          stats.get("ele_min"), stats.get("ele_max"),
          start_lat, start_lon,
          json.dumps(coords), json.dumps(elev),
          gpx_bytes,
-         dt.datetime.now().isoformat()),
+         dt.datetime.now().isoformat(),
+         json.dumps(stats.get("seg_starts") or [])),
     )
     pid = cur.lastrowid
     pub = set_public_id(con, "planned_routes", pid)

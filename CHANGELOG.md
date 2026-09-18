@@ -5,6 +5,76 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.11.7] — 2026-09-18
+
+### Añadido
+- **Unir parte también por donde dos tracks se reencuentran.** Unir un bucle con un track
+  que sale de él, da una vuelta y vuelve por el mismo sendero ya no duplica kilómetros: en
+  el caso real (PARTE A + PARTE B) la propuesta recomendada pasa de 16,5 km a 15,5 km, que
+  es exactamente la Ruta Pichones que había que montar a mano (media 0 m y máximo 4 m de
+  desviación). Las etiquetas de las propuestas dicen los kilómetros de cada trozo cuando un
+  track aparece más de una vez.
+- **Modo «Montaje» al unir (unirV2)**, tipo editor de vídeo: los perfiles de las dos rutas
+  uno bajo otro, arrastras sobre uno para recortar un tramo, lo añades a una línea de tiempo
+  (mover, invertir, quitar) y el servidor solo arregla las costuras. Entre clip y clip se ve
+  si la costura queda cosida, con hueco o con solape recortado, y debajo el perfil de lo que
+  saldrá. Conmutador Automático · Montaje en la cabecera de la pantalla de unir.
+- **La ruta unida empieza y acaba donde tú digas.** En la pantalla de unir, un bloque «Inicio
+  y fin» deja elegir entre los cuatro extremos (inicio o fin de cada track); el mapa marca
+  INICIO y FIN del resultado y los cuatro extremos entre los que se elige. Si ningún recorrido
+  puede cumplirlo se avisa y se muestran las propuestas sin esa condición, en vez de fallar.
+- **Perfil de elevación del resultado**, debajo del mapa de unir, con el color por pendiente y
+  el hover sincronizado con la traza: se ve qué recorrido saldrá antes de crearlo.
+- **«Unir» es ahora una pantalla propia, y la unión piensa.** Desde el detalle de una ruta
+  (menú `⋯` → «⛓ Unir…») o desde la ficha de un plan (botón «⛓ Unir…») se abre una vista a
+  pantalla completa: mapa grande a la izquierda y, a la derecha, los cuatro pasos —con qué
+  unir, propuestas, ajustes y resultado—. Antes era un `<select>` y tres líneas de texto
+  metidos en la columna del editor, y lo que salía había que creérselo.
+- **La unión mira por dónde van los tracks, no el orden en que se los das.** Orienta cada
+  uno (si hace falta, lo invierte), **recorta el trozo que los dos repiten** en la costura,
+  cierra el circuito cuando el final se monta sobre el inicio y decide si el hueco que
+  queda se cose en recta (≤ 50 m) o se deja como corte. El caso que lo motivó: dos partes
+  de un recorrido dibujadas en Wikiloc daban, unidas a lo bruto, la segunda al revés con
+  una recta de 3 km por el medio, un tramo duplicado y el final encima del principio.
+- **Propuestas de ensamblaje.** Si el extremo de una ruta cae en mitad de la otra, la
+  segunda se parte por ahí y se ofrecen hasta **cinco formas de montar el recorrido**, con
+  su distancia, si cierra circuito, cuántos kilómetros repite y qué hueco deja; la primera
+  es la mejor. Pasar el ratón por una tarjeta la dibuja en el mapa sin elegirla.
+- **Previsualización en vivo**: el mapa enseña en todo momento lo que va a salir —cada
+  track de un color con flechas de sentido, en punteado lo que se va a descartar y en
+  blanco el hueco que no se une— y las cuatro cifras del resultado (distancia, desnivel,
+  puntos y huecos) se recalculan en el servidor con cada cambio. Nada se crea hasta pulsar
+  «Crear»; los originales no se tocan nunca.
+- **Ajustes de la unión**, para cuando la propuesta no es la que querías: invertir cada
+  track a mano, quitar el recorte del solape, forzar el hueco (automático · unir en recta ·
+  dejar corte) y subir o bajar la tolerancia con la que se considera que dos trazas van por
+  el mismo sitio. Con «↩ Volver a las propuestas» se deshace y vuelven las tarjetas.
+- **Los cortes del track se dibujan como huecos, no como atajos.** Un GPX con varios
+  segmentos —se perdió la señal, o son dos rutas unidas— se pintaba con una recta de punta
+  a punta que parecía un camino que nunca se anduvo. Ahora el detalle de una ruta y la
+  ficha de un plan tapan esa recta y la marcan con una línea de puntos. Las distancias
+  siempre estuvieron bien: lo que estaba mal era el dibujo. Las rutas ya importadas lo
+  ganan al reescanearlas (o al guardar cualquier edición).
+
+### Cambiado
+- **«Unir» desaparece del editor.** Ya no hay un panel «⛓ Unir con otra…» en la columna de
+  herramientas: el botón vive donde se decide unir, que es la ficha de lo que estás
+  mirando. El editor se queda con lo que es editar un track.
+- Las dos acciones nuevas exigen **conexión** y lo dicen: la unión la calcula el servidor,
+  que es quien tiene los dos tracks enteros. Sin red la pantalla se abre y explica por qué
+  no puede previsualizar, en vez de fallar en silencio.
+- Al crear la ruta o el plan unido, la respuesta trae ya el informe de lo que se hizo
+  (orientaciones, recortes, huecos y avisos), así que el resumen que ves es el del
+  resultado real y no una promesa.
+
+### Corregido
+- **Los avisos de la unión ya no se tragan nada**: si solo algunos tracks tienen marcas de
+  tiempo válidas se dice que se han descartado todas, en vez de hacerlo callando. Y un
+  track dibujado a mano que repite el mismo `<time>` en todos sus puntos **deja de contar
+  como que tiene tiempos**: eso no es un reloj, y tomarlo por tal impedía orientarlo.
+- El editor sacaba **scroll horizontal en móvil**: un texto largo dentro de un panel de la
+  columna lateral estiraba su pista de la rejilla más allá de la pantalla.
+
 ## [0.10.0] — 2026-09-13
 
 ### Añadido

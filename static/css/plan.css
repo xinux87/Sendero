@@ -271,6 +271,10 @@
      segunda fila alineado a la derecha y dejaba un hueco raro. */
   #sec-plan .pl-hero-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
   #sec-plan .pl-hero-actions .btn{width:100%}
+  /* Con la quinta acción («⛓ Unir…») las acciones vuelven a ser impares y el ⋯
+     se quedaba solo en la última fila con un hueco al lado: que ocupe el ancho
+     entero, que es el mismo remedio que ya usa el menú. */
+  #sec-plan #pl-more-btn{grid-column:1 / -1}
   #sec-plan .pl-more{grid-column:1 / -1}
 }
 @media(hover:none) and (pointer:coarse){

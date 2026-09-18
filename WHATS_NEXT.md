@@ -1,6 +1,6 @@
 # Qué viene después
 
-Lo que queda por hacer en Sendero. Revisado el 13-09-2026 con la 0.10.0 recién cerrada.
+Lo que queda por hacer en Sendero. Revisado el 17-09-2026 con la 0.11.7 recién cerrada.
 Tres listas: lo que **se hace**, lo que está **pendiente de probar** (el código existe, falta
 verificarlo con datos reales) y lo que se ha **descartado** — esto último está aquí para que
 nadie lo vuelva a proponer sin un motivo nuevo.
@@ -10,6 +10,30 @@ Al terminar cualquiera de estos puntos: bórralo de aquí y cuéntalo en `CHANGE
 ---
 
 ## Para hacer
+
+### Instalar `node` en esta máquina
+Los seis smoke tests de JavaScript (`sw_smoke.js`, `sec_smoke.js`, `tiles_smoke.js`,
+`slope_smoke.js`, `speedfix_smoke.js` y `gps_parity_smoke.js`) se lanzan con **Node a
+pelo**, sin npm ni dependencias (regla 1) — y aquí no hay `node`, así que **no se pueden
+ejecutar en esta máquina**. En la 0.11.7 se suplió verificando en un navegador real con
+Playwright (canal `msedge`), que es más caro y cubre otra cosa.
+Es una instalación, no un desarrollo: cualquier Node LTS sirve.
+
+### Backfill de `seg_starts` en las rutas ya importadas
+La columna (v0.11.7, los índices de `geojson` donde empieza cada `<trkseg>`) se rellena al
+importar, al reescanear y en cada versión nueva del editor, pero **no hay backfill masivo**
+al arrancar: implicaría reparsear cientos de GPX en `init_db()`. Mientras tanto, las rutas
+anteriores tienen NULL y su mapa sigue dibujando la recta entre segmentos. Hoy se arregla
+a mano con el re-escaneo masivo de «Mis Rutas» → ✎ Editar → Seleccionar todos → ↻
+Re-escanear; si algún día molesta, lo suyo es un script aparte que lea el GPX guardado y
+escriba solo esa columna, no tocar el arranque.
+
+### La atribución del mapa no se actualiza al cambiar de capa raster
+Preexistente, visto mientras se hacía la vista `unir`: `applyBasemap()` (`static/shared.js`)
+cambia de capa entre dos rásters con `src.setTiles(...)`, que **no toca la atribución** del
+estilo. Solo se refresca cuando hay `setStyle()`, o sea al entrar o salir de la capa
+offline. Resultado: pasas de Topográfico a Satélite y abajo a la derecha sigue poniendo lo
+del anterior. Afecta a todos los mapas con selector de capas, no solo al nuevo.
 
 ### La suite e2e cubre «Mis Planes» solo a medias
 `tests/e2e_spa.py` (226 comprobaciones) es la red de seguridad de la SPA. La 0.10.0 añadió
@@ -90,10 +114,16 @@ o entrar por `localhost`.
 - **Planificador interno de rutas** (dibujo por anclas con routing BRouter). Se implementó y
   se revirtió el mismo día; hoy «Dibujar ruta nueva» abre una web externa configurable
   (`PLANNER_URL`). Si vuelve a plantearse, es un rediseño desde cero, no un revert.
-- **Unir un plan con una ruta ya hecha.** «Unir» solo mezcla plan + plan (y ruta + ruta):
-  un plan es lo que quieres hacer y una ruta es lo que hiciste, y el resultado no cabría en
-  ninguna de las dos tablas sin mentir (¿lleva los tiempos y la FC de la mitad grabada? ¿es
-  pendiente o realizada?). Si algún día hace falta, es un concepto nuevo, no un `ids` mixto.
+- **Unir un plan con una ruta ya hecha.** Sigue igual con la vista `unir` de la 0.11.7:
+  solo mezcla plan + plan (y ruta + ruta), y cada URL (`/Plan/<pid>/unir`,
+  `/Sendero/<pid>/unir`) saca sus candidatos de su propia tabla. Un plan es lo que quieres
+  hacer y una ruta es lo que hiciste, y el resultado no cabría en ninguna de las dos tablas
+  sin mentir (¿lleva los tiempos y la FC de la mitad grabada? ¿es pendiente o realizada?).
+  Si algún día hace falta, es un concepto nuevo, no un `ids` mixto.
+- **Devolver «Unir» al editor.** Salió de ahí en la 0.11.7 y no vuelve: unir no es editar
+  un track, es crear uno nuevo a partir de dos, y necesita el mapa entero para enseñar las
+  propuestas, las orientaciones y el solape que se recorta. En los 330 px de la columna de
+  herramientas eso era un `<select>` y un botón a ciegas. El editor se queda con editar.
 - **Recalcular el índice IBP solo, al editar el track de un plan.** Al guardar una versión
   nueva el índice se **vacía** y ya está: el número lo calcula ibpindex.com con el GPX
   subido entero, o sea red, clave y el track completo saliendo de la LAN. Encadenar eso a

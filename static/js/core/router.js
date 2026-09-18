@@ -1,8 +1,8 @@
 /* Router de la SPA.
 
    Generaliza el router que ya existía en app.html (_showSec/_spaNavTo/popstate)
-   de 3 a 6 vistas, añadiendo las tres que antes eran documentos aparte: detalle
-   de ruta, detalle de plan y editor.
+   de 3 a 7 vistas, añadiendo las tres que antes eran documentos aparte (detalle
+   de ruta, detalle de plan y editor) y `unir`, que nació ya dentro del shell.
 
    Contrato de cada sección (static/js/sec/<sec>.js, dentro de su IIFE):
      window.SEC.<sec> = { mount(params), unmount() }
@@ -14,15 +14,17 @@
 const Router = (() => {
   'use strict';
 
-  // Orden importante: la primera que encaje gana. Cada editor va antes que su
-  // detalle porque /Sendero/<id>/editor también encajaría en el patrón del
-  // detalle (y lo mismo /Plan/<id>/editor con el del plan).
-  // `kind` es lo que le dice a la sección `editor` si edita una RUTA o un PLAN:
-  // es el MISMO módulo para las dos (ver static/js/sec/editor.js).
+  // Orden importante: la primera que encaje gana. Cada editor (y cada «unir») va
+  // antes que su detalle porque /Sendero/<id>/editor también encajaría en el
+  // patrón del detalle (y lo mismo /Plan/<id>/unir con el del plan).
+  // `kind` es lo que le dice a las secciones `editor` y `unir` si trabajan sobre
+  // una RUTA o un PLAN: es el MISMO módulo para las dos (ver static/js/sec/).
   const ROUTES = [
     {sec: 'editor',    re: /^\/Sendero\/([^/]+)\/editor\/?$/, params: m => ({id: dec(m[1]), kind: 'route'})},
+    {sec: 'unir',      re: /^\/Sendero\/([^/]+)\/unir\/?$/,   params: m => ({id: dec(m[1]), kind: 'route'})},
     {sec: 'detalle',   re: /^\/Sendero\/([^/]+)\/?$/,         params: m => ({id: dec(m[1])})},
     {sec: 'editor',    re: /^\/Plan\/([^/]+)\/editor\/?$/,    params: m => ({id: dec(m[1]), kind: 'plan'})},
+    {sec: 'unir',      re: /^\/Plan\/([^/]+)\/unir\/?$/,      params: m => ({id: dec(m[1]), kind: 'plan'})},
     {sec: 'plan',      re: /^\/Plan\/([^/]+)\/?$/,            params: m => ({id: dec(m[1])})},
     {sec: 'dashboard', re: /^\/dashboard\/?$/,                params: () => ({})},
     {sec: 'rutas',     re: /^\/rutas\/?$/,                    params: () => ({})},
@@ -49,11 +51,11 @@ const Router = (() => {
 
   /* ¿Está esta sección en el documento actual?
 
-     Durante la migración (§3) el shell solo aloja algunas de las 6 vistas; el
+     Durante la migración (§3) el shell solo aloja algunas de las vistas; el
      resto sigue sirviéndose como documento propio. Navegar hacia una sección que
      no está aquí NO es un error: es una recarga de página normal, como hoy. Sin
      esta comprobación el router intentaría cargar /static/js/sec/<sec>.js, se
-     comería el 404 y dejaría la vista vacía. Cuando estén las 6, siempre true. */
+     comería el 404 y dejaría la vista vacía. Con todas dentro, siempre true. */
   function hosted(sec) { return !!el(sec); }
 
   function assets(sec) {
