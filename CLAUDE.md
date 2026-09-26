@@ -34,7 +34,7 @@ sincronización delta. Lo que eso significa en la práctica:
 - **NO funciona sin conexión, a propósito**: el **editor** —el de una ruta y el de un
   plan, que son el mismo— (opera sobre el estado guardado en el servidor y cada guardado
   lleva `base_version`; encolar eso sería inventarse decisiones del servidor), **unir**
-  (la decisión la toma el servidor mirando la geometría de los dos tracks enteros, que el
+  (la decisión la toma el servidor mirando la geometría de los tracks enteros, que el
   cliente no tiene: la vista se abre y lo explica, pero no previsualiza ni crea nada),
   subir rutas
   o fotos, Immich, reescanear (rutas y planes), calcular el índice IBP y borrar. Todas
@@ -58,7 +58,7 @@ sincronización delta. Lo que eso significa en la práctica:
 # desarrollo
 pip install -r requirements-dev.txt   # incluye requirements.txt + pytest
 python app.py                      # http://localhost:8080, init_db() automático
-python -m pytest                   # 170 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
+python -m pytest                   # 204 tests unitarios (tests/): editing, parsers, FIT, gps_analysis,
                                    #   actividades (el catálogo y su cableado), la edición de PLANES
                                    #   (test_plan_editing.py: targets, versiones, unir, dividir, IBP),
                                    #   la UNIÓN inteligente (test_merge.py: geometría, propuestas,
@@ -394,7 +394,7 @@ archivo, nunca en `mount()`.
 | `templates/sec/rutas.html` | (sección `rutas`) | Listado con filtros (píldoras de actividad a la vista; fecha y **buscador** tras el botón `⋯`, ver «Cabecera de filtros»), mapa de visión general, tres vistas (⊞ Cuadrícula · ☰ Tabla · ▤ Panel), modo edición y subida de GPX/FIT. Lógica en `static/js/sec/rutas.js` |
 | `templates/sec/planes.html` | (sección `planes`) | Tarjetas de rutas planificadas, mapa (marcadores de salida **y** la traza de cada plan, ver abajo), alta por GPX, **marcar un plan como realizado** (botón por tarjeta + selector `#done-modal` de la ruta que lo cumplió), la chapa del **índice IBP** y el filtro de estado `#pg-filters` (Pendientes · Realizadas · Todas, que filtra también el mapa). Lógica en `static/js/sec/planes.js` |
 | `templates/sec/editor.html` | (sección `editor`) | Editor de tracks, el MISMO para una ruta y para un plan (los textos con género los pone `sec/editor.js` desde `K`). Lógica en `static/js/sec/editor.js`; sus metadatos de arranque los da `GET /api/routes/<id>/editor` o `GET /api/planned/<id>/editor`. **Unir NO está aquí** desde la v0.11.7: es la sección `unir` |
-| `templates/sec/unir.html` | (sección `unir`) | Unir dos tracks en uno nuevo, a pantalla completa y el MISMO markup para una ruta y para un plan (los textos con género los pone `sec/unir.js` desde `K`). Mapa `#un-map` + panel lateral de 380 px con cuatro pasos: «Con qué unir» (`#un-pick-panel`), «Propuestas» (`#un-props-panel`), «Ajustes» (`#un-tune`) y «Resultado» (`#un-result-panel`). Ver «Unir rutas y planes» |
+| `templates/sec/unir.html` | (sección `unir`) | Unir dos o más tracks (hasta 6) en uno nuevo, a pantalla completa y el MISMO markup para una ruta y para un plan (los textos con género los pone `sec/unir.js` desde `K`). Mapa `#un-map` + panel lateral de 380 px con los pasos «Propuestas» (`#un-props-panel`), «Inicio y fin» (`#un-ends`), «Ajustes» (`#un-tune`) y «Resultado» (`#un-result-panel`); «Con qué unir» es el popup de selección múltiple `#un-pick-modal`. Ver «Unir rutas y planes» |
 
 ### Navegación
 - **La URL canónica de todo es el `public_id`**, en rutas y en planes: `/Sendero/<pid>`,
@@ -834,8 +834,20 @@ con `preview:true` **no se crea nada** (200 `{preview, report, stats, elevation}
 es la serie `[{d,e}]` del resultado pasada por `core.sync.resample`, hasta **501** puntos, y solo
 va en la preview), sin él se crea
 (201, con el informe ya sin geometrías). Opciones mal formadas o `proposal` fuera de rango
-→ 400. Lo cubre `tests/test_merge.py` (30 tests: geometría, propuestas con el fixture
+→ 400. Lo cubre `tests/test_merge.py` (64 tests: geometría, 3+ entradas desordenadas, propuestas con el fixture
 sintético «bucle + ramal desde un punto interior», rendimiento y los dos endpoints).
+
+**Tres o más tracks** (v0.11.8): la vista deja unir hasta **6** (`MAX_INPUTS` de `unir.js`;
+el servidor admite 8, `_MAX_INPUTS`, 400 por encima). Lo que eso cambió en el servidor, y no
+se puede quitar sin que la selección múltiple vuelva a dar basura: **el orden en que llegan
+los `ids` es el de SELECCIÓN**, no el del recorrido, y con dos entradas no importaba. Por eso
+(1) con 3+ entradas sin tiempos se enumeran propuestas aunque no haya juntas interiores; (2)
+con 4+, además de «entradas enteras en el orden dado», `_greedy_orders()` añade los
+encadenados «al extremo más cercano» desde cada entrada y orientación (probar todas las
+permutaciones son 24·16 con cuatro); (3) con `reverse` forzado y 3+ entradas,
+`_order_min_gap()` elige el orden que menos hueco deja; y (4) en el ranking **cerrar circuito
+solo cuenta si no deja huecos cortados** — con tres tramos desordenados ganaba un «circuito»
+que se saltaba 5 km en recta. Lo cubren los tests de «3+ entradas» de `tests/test_merge.py`.
 
 **El cliente (`sec/unir.js` + `sec/unir.html` + `css/unir.css`)** solo pinta lo que dice el
 informe: **toda la decisión la toma el servidor**. Como el editor, sirve para las dos
@@ -845,20 +857,27 @@ elevación del resultado** (`#un-elev-panel`, el mapa cede altura); a la derecha
 380 px con cuatro pasos —«Propuestas»
 (tarjetas; **oculto si hay ≤1**; el hover pinta esa propuesta en gris punteado con las
 capas `mg-hover-*`, sin elegirla), «Inicio y fin» (`#un-ends`: dos `<select>` `#un-start`/`#un-end`
-con «Automático» + los cuatro extremos), «Ajustes» (`<details>` plegable) y «Resultado» (cuatro
+con «Automático» + dos extremos por entrada), «Ajustes» (`<details>` plegable) y «Resultado» (cuatro
 cifras, avisos, nombre y `#un-create`)—. Lo que hay que saber si lo tocas:
 
-- **Capas del mapa**: `un-a*` para el track que se está uniendo y `mg-*` para la
+- **Las entradas son N, no A y B** (v0.11.8): la 0 (A) es siempre la que se está uniendo
+  (`pid`) y las elegidas son B, C, D… en el orden en que se marcaron (`sels`); `nIn()` =
+  cuántas hay, `mgLabel(i)` su letra (la misma que `_letter` del servidor) y
+  `srcColor(i)` su color de serie (`SRC_COLOR`, seis). Todo lo que era por entrada va en
+  arrays de longitud `nIn()`: `srcs`, `srcCharts`, `selRange`, `partial`, `opts.reverse`.
+- **Capas del mapa**: `un-s<i>*` (una fuente con casing/line/hit por entrada, las
+  `MAX_INPUTS` creadas de una vez y vacías) para las trazas de entrada y `mg-*` para la
   previsualización (lo que se conserva, lo que se descarta en punteado, el hueco, las
-  flechas de sentido y los círculos de junta). Se reponen en `map.on('sendero:basemap')`
+  flechas de sentido `mg-arrow-<i>` y los círculos de junta). Se reponen en `map.on('sendero:basemap')`
   (regla 15), y **ese repintado NO se puede guardar con `map.isStyleLoaded()`**: en ese
   evento todavía devuelve `false`, así que salir de la capa offline dejaba el mapa sin
   capas y sin forma de recuperarlas. La única guarda es la de idempotencia
-  (`if (map.getSource('un-a')) return`).
+  (`if (map.getSource('un-s0')) return`).
 - **Cada cambio relanza la previsualización con debounce de 250 ms Y token**: sin el token,
   una respuesta lenta de la opción anterior pinta encima de la nueva y el mapa deja de
   describir lo que dicen los controles.
-- **Los toggles «Invertir A/B» salen de `reversed_inputs`**, no de `reversed`. Un `null`
+- **Los toggles «Invertir X» salen de `reversed_inputs`**, no de `reversed`, y los pinta
+  `renderToggles()` en `#un-revs` (uno por entrada; con más de 3, «↔ C» a secas). Un `null`
   ahí se pinta «parcial» y **deshabilitado**: la propuesta elegida usa esa entrada por
   trozos e invertirla entera no significa nada. Pulsar uno pone `reverse` explícito, con lo
   que el servidor deja de enumerar: las tarjetas desaparecen y sale «↩ Volver a las
@@ -867,11 +886,19 @@ cifras, avisos, nombre y `#un-create`)—. Lo que hay que saber si lo tocas:
 - **`MG_GAP_JOIN_M` (50) en `unir.js` es copia de `gap_join_m` del servidor** — no viaja en
   el informe y solo se usa para decidir si la chapa «hueco X» de una propuesta merece
   salir. Si cambias uno, cambia el otro.
-- **«Con qué unir» es un POPUP, no un panel** (v0.11.7): `#un-pick-modal` (overlay con el
-  buscador `#un-search` y la lista `#un-list`, candidatos de `K.list()` —el **Store**—
-  ordenados por cercanía a los extremos del track, grupo «Cercanos» a <3 km) más el chip
-  `#un-pick-chip` de la cabecera («Con: PARTE B · 11,4 km · a 2,98 km») con `#un-change`
-  («Cambiar» / «Elegir con qué unir» en ámbar sin candidato). Se abre solo al montar sin
+- **«Con qué unir» es un POPUP, no un panel** (v0.11.7), y **de selección múltiple**
+  (v0.11.8): `#un-pick-modal` (overlay con el buscador `#un-search` y la lista `#un-list`,
+  candidatos de `K.list()` —el **Store**— ordenados por cercanía a los extremos del track,
+  grupo «Cercanos» a <3 km) más el chip `#un-pick-chip` de la cabecera («Con: PARTE B ·
+  11,4 km · a 2,98 km», o «Con: B + C (2) · 23,4 km» con varias) con `#un-change`
+  («Cambiar» / «Elegir con qué unir» en ámbar sin candidato). Se trabaja sobre un BORRADOR
+  (`pickDraft`, copia de `sels` al abrir): click en una fila la marca con la letra que tendrá
+  (`.un-row-ck`), «Unir con N» (`#un-pick-ok`, `applyPick()`) lo aplica, doble click = unir
+  solo con esa, y cerrar de cualquier otra forma lo descarta. `setSelection()` **conserva lo
+  que puede**: las fuentes ya cargadas y los trozos del montaje de las entradas que siguen
+  (remapeando su índice: quitar B convierte la C en B) y la tolerancia/recorte/hueco; vuelve a
+  cero lo que depende del conjunto (informe, propuestas, `reverse`, extremos). `selGen`
+  invalida las cargas de fuentes en vuelo de la selección anterior. Se abre solo al montar sin
   candidato y con conexión (sin conexión no se abre y el botón queda deshabilitado; sin
   candidatos dice `K.sinOtras` y ofrece «← Volver»). Cierra por ✕, «Cancelar», velo y Escape
   — ese listener de `document` se registra **una vez al cargar el archivo** y comprueba
@@ -887,20 +914,23 @@ cifras, avisos, nombre y `#un-create`)—. Lo que hay que saber si lo tocas:
   segmentos** (como `analyse_gpx`) y **escala el total al último `d` de `elevation`**: los
   segmentos del informe vienen decimados y sin esa escala el crosshair se desplaza hacia el final.
 - **Inicio y fin**: `#un-start`/`#un-end` mandan `options.start`/`end` (`null` = automático);
-  cambiar cualquiera resetea `proposal` a 0, reelegir candidato los devuelve a «Automático», y
+  cambiar cualquiera resetea `proposal` a 0, cambiar la selección los devuelve a «Automático», y
   **el mismo extremo en los dos no se manda** (es un 400 seguro): se marca en ámbar y se espera.
   Si `report.endpoints_applied === false` los dos selects van en ámbar y el aviso del servidor
   sale en `#un-warns`. Los marcadores de inicio/fin (sobre `start_point`/`end_point`) son
   **PUNTOS** del tamaño de la traza —verde `--sage` el inicio, rojo `--gr-red` el fin, y uno solo
   a dos colores si `closed_loop` o están a <30 m (el caso real cierra a 30,4 m)—, no chapas con
   texto: la chapa «INICIO» tapaba justo el tramo que se quería mirar (v0.11.7); el nombre va en
-  el `title`. Ellos y los cuatro puntitos de `endpoints[]` son **marcadores DOM**: sobreviven a `sendero:basemap` y se quitan en
+  el `title`. Ellos y los puntitos de `endpoints[]` (dos por entrada) son **marcadores DOM**: sobreviven a `sendero:basemap` y se quitan en
   `clearMap()`/`unmount()`, junto con el `Chart` del perfil y el `.hover-infobox`.
 - **Modo «Montaje» (unirV2)**: la sección tiene dos modos, conmutador `#un-mode` en la
   cabecera (Automático · Montaje), preferencia en `sessionStorage` (`sendero_unir_modo_v1`);
   cambiar de modo **no pierde** candidato ni trozos. En Montaje la columna izquierda pasa a
-  ser mapa → **perfil de A** (`#un-src-a`) → **perfil de B** (`#un-src-b`) → **línea de tiempo**
-  (`#un-timeline`) → perfil del resultado; y a la derecha «Propuestas» e «Inicio y fin» se
+  ser mapa → **un perfil fuente por entrada** (dentro de `#un-srcs`) → **línea de tiempo**
+  (`#un-timeline`) → perfil del resultado. Los paneles fuente **no están en el markup**: los
+  crea `srcEl(i)` la primera vez y se reutilizan (su `<canvas>` se engancha una sola vez, con
+  listeners en `window`), y sus elementos se buscan dentro del panel (`data-r`), nunca por id.
+  Con más de dos, `.un-srcs.many` los baja a 96 px (el mapa mide lo que la pila); y a la derecha «Propuestas» e «Inicio y fin» se
   esconden y aparece «Montaje» (`#un-pieces-panel`, la lista de clips en texto con las piezas
   REALES tras el recorte). Se selecciona un tramo **arrastrando** sobre un perfil fuente (el
   sentido del arrastre cuenta: de derecha a izquierda = invertido; «＋ Añadir invertido» le da la
@@ -912,22 +942,24 @@ cifras, avisos, nombre y `#un-create`)—. Lo que hay que saber si lo tocas:
   los trozos y la selección con el mismo factor (`applyTrackLens`, una vez por entrada); sin
   reescalar la elevación, el eje del perfil y la selección hablan de escalas distintas. Los
   perfiles fuente van sin degradado (cada uno del color de su entrada) y con `events: []` (el
-  gesto es un arrastre sobre el propio canvas). B entera se pinta atenuada en `un-b*`. Los dos
-  `Chart` fuente se destruyen en `unmount()`, al volver a Automático y (solo B) al cambiar de
-  candidato — `clearMap()` **no** los destruye: son el material del montaje. La línea de tiempo
+  gesto es un arrastre sobre el propio canvas). Las entradas se pintan enteras y atenuadas en
+  `un-s<i>*`. Los `Chart` fuente se destruyen en `unmount()`, al volver a Automático y al
+  cambiar la selección (se rehacen con las fuentes que sigan) — `clearMap()` **no** los
+  destruye: son el material del montaje. La línea de tiempo
   es lo único de la vista con `overflow-x` propio.
   - **La rejilla de Montaje es OTRA** (v0.11.7): bajo `#sec-unir.is-montaje`, `.un-left` y
     `.un-side` pasan a `display:contents` y cada panel se coloca por `grid-area`
-    (`map/srca/srcb/tl/pieces/tune/result/elev`), sin mover nodos del DOM. ≥1000 px:
-    `map map srca srca / map map srcb srcb / tl tl tl tl / pieces tune result result /
-    elev elev elev elev` (la línea de tiempo bajo el mapa a todo el ancho desde la v0.11.7;
-    el mapa ≈55 % de ancho y **mide lo que los dos perfiles fuente apilados**:
-    `align-self:stretch`, sin alto propio, `min-height` solo como suelo); 768-999: dos
-    columnas; <768: una. Los paneles que el JS esconde con `display:none` no ocupan celda.
+    (`map/srcs/tl/pieces/tune/result/elev`), sin mover nodos del DOM. ≥1000 px:
+    `map map srcs srcs / tl tl tl tl / pieces tune result result / elev elev elev elev` (la
+    línea de tiempo bajo el mapa a todo el ancho desde la v0.11.7; el mapa ≈55 % de ancho y
+    **mide lo que la pila de perfiles fuente**: `align-self:stretch`, sin alto propio,
+    `min-height` solo como suelo); 768-999: dos columnas y los perfiles de dos en dos;
+    <768: una. Los paneles que el JS esconde con `display:none` no ocupan celda.
     Automático no cambia (medido: misma rejilla y mismos bounds).
   - **Cambiar de modo cambia el tamaño del mapa: el encuadre va DESPUÉS del resize.**
     `afterResize()` (doble `requestAnimationFrame` con `map.resize()`) + `fitCurrent()`
-    (informe → `fitReport`; Montaje con B cargada → `fitBoth`, bounds A+B; si no → `fitA`).
+    (informe → `fitReport`; Montaje con alguna elegida cargada → `fitAll`, bounds de todas;
+    si no → `fitA`).
     Encuadrar en el mismo tick calcula la cámara para el lienzo viejo: el síntoma era entrar
     en Montaje y ver media ruta. `refitNext` es de un solo uso al volver a Automático (el
     informe se rehace); fuera de eso, cambiar una opción **no** le mueve la cámara al usuario.
@@ -948,19 +980,18 @@ cifras, avisos, nombre y `#un-create`)—. Lo que hay que saber si lo tocas:
     tras `@supports not selector(::-webkit-scrollbar)` (solo Firefox). Y en Chromium headless no
     se pinta ninguna barra: para verlas, `headless=False` y
     `--disable-features=OverlayScrollbar,FluentOverlayScrollbar`.
-  - **Hover de las dos fuentes (solo Montaje)**: `srcHover = {i, d}` es el hermano de `hoverD`;
+  - **Hover de las fuentes (solo Montaje)**: `srcHover = {i, d}` es el hermano de `hoverD`;
     si los dos están vivos manda el del resultado (el `.hover-infobox` es uno solo). Perfil →
     mapa va por listeners del propio `<canvas>` (enganchados una vez; los perfiles fuente
     siguen con `events: []`, así que ahí no aplican las trampas de `onHover`, pero sí
     `_syncing` y `render()`), y no actúa mientras `dragI !== null`. Mapa → perfil va por
-    `un-a-hit`/`un-b-hit` (debajo de `mg-keep-hit`) con **UN solo handler para las dos**: A y
-    B se solapan por diseño, los dos eventos se disparan a la vez y gana el vértice más
-    cercano. Los `map.on(...)` se registran en `initMap()`, no en `addDataLayers()` (que se
+    `un-s<i>-hit` (debajo de `mg-keep-hit`) con **UN solo handler para todas**: las entradas
+    se solapan por diseño, los eventos se disparan a la vez y gana el vértice más cercano. Los `map.on(...)` se registran en `initMap()`, no en `addDataLayers()` (que se
     reejecuta tras `sendero:basemap`). Punto propio `un-src-hover-point`.
 - **Requiere conexión**: la sección se monta igual sin ella (está en `SHELL_PATHS`) pero
   avisa con `K.offline` y no previsualiza ni crea nada.
 - `window.SEC.unir = {mount, unmount, retry, searchChanged, openPick, closePick, changePick
-  (alias de openPick), veilClick, backFromPick, backToProposals, toggleRev, optsChanged, setGap,
+  (alias de openPick), veilClick, backFromPick, applyPick, backToProposals, toggleRev, optsChanged, setGap,
   endsChanged, setMode, srcAll, srcAdd, clearPieces, fitSeam, doMerge}`.
 
 ### Huecos entre segmentos (`seg_starts`)
@@ -2371,7 +2402,7 @@ estado, escritas por `mifit_sync.py` (NO en `_SETTINGS_KEYS`, no editables por U
   archivo, `params.kind`), y con **conexión y sin ella** (sin red se monta y avisa, no
   falla). ¿Sigue sin aparecer ningún `/api/routes` ni `/Sendero/` a mano en `sec/unir.js`
   (todo por `K`)? ¿`unmount()` destruye el mapa? ¿Entrar y salir de la capa offline
-  repinta las capas `un-a*`/`mg-*` —y el repintado sigue **sin** guardarse con
+  repinta las capas `un-s<i>*`/`mg-*` —y el repintado sigue **sin** guardarse con
   `map.isStyleLoaded()`, regla 15—? ¿A **420 px** de ancho el panel no saca scroll
   horizontal? ¿El perfil, los marcadores de inicio/fin y el `.hover-infobox` se destruyen en
   `unmount()`/`clearMap()`, y el hover perfil↔mapa se apaga al salir del perfil? ¿Sigue sin

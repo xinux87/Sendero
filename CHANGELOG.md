@@ -5,6 +5,25 @@ Todas las novedades relevantes de Sendero. El formato sigue de forma laxa
 [SemVer](https://semver.org/lang/es/). La versión activa se muestra al pie del
 panel de Ajustes y en `GET /api/config`.
 
+## [0.11.8] — 2026-09-26
+
+### Añadido
+- **Unir más de dos tracks a la vez** (hasta 6, rutas con rutas o planes con planes). El
+  popup «Con qué unir» es ahora de selección múltiple: cada fila marcada lleva la letra que
+  tendrá (B, C, D…) y «Unir con N» aplica la selección; doble click une solo con esa. La
+  leyenda, los toggles «Invertir», los extremos de «Inicio y fin» y, en modo Montaje, los
+  perfiles fuente pasan a ser uno por track. Añadir o quitar un track conserva los trozos
+  del montaje de los que siguen.
+
+### Corregido
+- **Unir tres o más tracks ya no depende del orden en que se eligen.** El servidor
+  respetaba el orden de llegada cuando los tracks no se cruzaban por dentro, y tres tramos
+  que encadenan salían con huecos de kilómetros; ahora busca el orden (y la orientación)
+  del recorrido también en ese caso, y con orientación forzada elige el orden que menos
+  hueco deja.
+- **Una propuesta «circular» que se salta kilómetros ya no gana** a un recorrido continuo:
+  cerrar circuito solo puntúa si no deja huecos sin coser.
+
 ## [0.11.7] — 2026-09-18
 
 ### Añadido

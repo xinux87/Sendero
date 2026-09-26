@@ -802,6 +802,71 @@ def test_tres_entradas_encadenadas():
     assert [t["idx"] for t in rep["tracks"]] == [0, 1, 2]
 
 
+# ── 3+ entradas en cualquier orden ─────────────────────────────────────────
+# La vista `unir` deja elegir varias, y el orden en que llegan es el de
+# SELECCIÓN: el servidor tiene que encontrar el del recorrido. `_zigzag(n)` son
+# n tramos rectos de ~3 km que empalman extremo con extremo (sin juntas
+# interiores), con los impares guardados al revés.
+
+def _zigzag(n):
+    wps = [(-3.0 + 0.03 * i, 42.0 + (0.02 if i % 2 else 0)) for i in range(n + 1)]
+    out = []
+    for i in range(n):
+        c = _densify([wps[i], wps[i + 1]])
+        out.append(_gpx(c[::-1] if i % 2 else c, f"T{i}"))
+    return out
+
+
+@pytest.mark.parametrize("orden", [[1, 2, 0], [2, 0, 1], [0, 2, 1]])
+def test_tres_entradas_desordenadas_se_encadenan_sin_hueco(orden):
+    gs = _zigzag(3)
+    xml, rep = smart_merge([gs[i] for i in orden], [f"T{i}" for i in orden])
+    p0 = rep["proposals"][0]
+    assert p0["gap_m"] < 1 and rep["gap_m"] < 1
+    assert len(_segments(xml)) == 1
+    # usa las tres, cada una entera y una sola vez
+    assert sorted(x["track"] for x in p0["pieces"]) == [0, 1, 2]
+
+
+def test_un_circuito_con_hueco_no_gana_al_recorrido_continuo():
+    """Con [1, 2, 0] salía primera «A + C + B (invertida)»: cerraba circuito
+    saltándose 5 km en recta. Cerrar solo cuenta si no deja huecos cortados."""
+    gs = _zigzag(3)
+    _xml, rep = smart_merge([gs[1], gs[2], gs[0]], ["T1", "T2", "T0"])
+    assert rep["proposals"][0]["gap_m"] < 1
+
+
+@pytest.mark.parametrize("n", [4, 5, 6])
+def test_cuatro_o_mas_entradas_desordenadas_se_encadenan_rapido(n):
+    """Con 4+ no se prueban todas las permutaciones: los encadenados «al
+    extremo más cercano» (_greedy_orders) son los que encuentran el recorrido."""
+    import random
+    rnd = random.Random(n)
+    gs = _zigzag(n)
+    orden = list(range(n))
+    rnd.shuffle(orden)
+    t0 = time.time()
+    _xml, rep = smart_merge([gs[i] for i in orden], [f"T{i}" for i in orden])
+    assert time.time() - t0 < 2.0
+    assert rep["proposals"][0]["gap_m"] < 1
+
+
+def test_orientacion_forzada_con_tres_reordena_para_no_dejar_hueco():
+    gs = _zigzag(3)
+    # llegan como [T2, T0, T1]; T1 va guardado al revés → hay que invertirlo
+    _xml, rep = smart_merge([gs[2], gs[0], gs[1]], ["T2", "T0", "T1"],
+                            reverse=[False, False, True])
+    assert len(rep["proposals"]) == 1
+    assert rep["order"] == [1, 2, 0]           # T0 → T1 (invertido) → T2
+    assert rep["gap_m"] < 1
+
+
+def test_demasiadas_entradas():
+    gs = _zigzag(9)
+    with pytest.raises(EditError):
+        smart_merge(gs, [f"T{i}" for i in range(9)])
+
+
 def test_el_informe_va_decimado():
     a = _line(42.0000, 3000, dlat=0.00002)
     b = _line(42.0700, 3000, dlat=0.00002)
@@ -1128,3 +1193,28 @@ def test_endpoint_valida_pieces(client):
                                        "start": "0x", "proposal": 99}})
     assert ok.status_code == 200, ok.get_data(as_text=True)
     assert any("montaje manual" in w for w in ok.get_json()["report"]["warnings"])
+
+
+def test_endpoint_une_tres_planes_en_cualquier_orden(client):
+    """Lo que manda la vista `unir` con selección múltiple: A + dos elegidas, en
+    el orden en que se marcaron (que no es el del recorrido)."""
+    gs = _zigzag(3)
+    ids = [_plan(client, gs[i], f"Tramo {i}") for i in (1, 2, 0)]
+    r = client.post("/api/planned/merge", json={"ids": ids, "preview": True})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    rep = r.get_json()["report"]
+    assert rep["proposals"][0]["gap_m"] < 1
+    assert len(rep["track_lengths_m"]) == 3 and len(rep["endpoints"]) == 3
+    # extremos de la TERCERA entrada: «2s»/«2e» son válidos
+    r = client.post("/api/planned/merge", json={"ids": ids, "preview": True,
+                                                "options": {"start": "2s"}})
+    assert r.status_code == 200 and r.get_json()["report"]["endpoints_applied"] is True
+    # y un montaje manual con trozos de las tres
+    L = rep["track_lengths_m"]
+    pieces = [{"track": 2, "from_m": 0, "to_m": L[2]},
+              {"track": 0, "from_m": L[0], "to_m": 0},
+              {"track": 1, "from_m": 0, "to_m": L[1]}]
+    r = client.post("/api/planned/merge", json={"ids": ids, "preview": True,
+                                                "options": {"pieces": pieces}})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert len(r.get_json()["report"]["proposals"][0]["pieces"]) == 3

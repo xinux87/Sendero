@@ -104,6 +104,11 @@
 #sec-unir .un-modal-head .panel-sub{flex:1;text-align:right}
 #sec-unir .un-modal .un-x{flex:none;padding:4px 10px;line-height:1}
 #sec-unir .un-modal .un-wide{margin-top:12px}
+/* Pie del popup: «Cancelar» + «Unir con N». La lista es de selección múltiple,
+   así que elegir ya no cierra el popup: lo cierra este botón. */
+#sec-unir .un-pick-foot{display:flex;gap:8px;margin-top:12px}
+#sec-unir .un-pick-foot .btn{flex:1}
+#sec-unir .un-pick-ok[disabled]{opacity:.45;cursor:not-allowed}
 
 /* ── el chip de la cabecera ──────────────────────────────────────────────────
    «Con: <nombre> · 11,4 km · a 2,98 km» en una línea. El nombre puede ser largo
@@ -138,6 +143,18 @@
   font-family:inherit;transition:border-color .15s,background .15s}
 #sec-unir .un-row:hover{border-color:var(--muted-dim);background:var(--panel-2)}
 #sec-unir .un-row.on{border-color:var(--pr-yellow);background:rgba(227,178,60,.08)}
+/* Lleno (ya hay 5 elegidas además de la que se une): las demás no se pueden marcar. */
+#sec-unir .un-row[disabled]{opacity:.4;cursor:not-allowed}
+#sec-unir .un-row[disabled]:hover{border-color:var(--line);background:transparent}
+/* La casilla de cada fila: vacía sin marcar, y con la LETRA que tendrá esa
+   entrada (B, C, D…) cuando lo está — es la misma que dirán la leyenda, los
+   perfiles fuente y las propuestas, así que se sabe desde aquí cuál es cuál.
+   El color de fondo lo pone el JS (es el color de serie de esa entrada). */
+#sec-unir .un-row-ck{flex:none;width:20px;height:20px;border-radius:6px;
+  border:1.5px solid var(--line-strong);display:flex;align-items:center;
+  justify-content:center;font-family:var(--mono);font-size:11px;font-weight:600;
+  color:var(--bg)}
+#sec-unir .un-row.on .un-row-ck{border-color:transparent}
 #sec-unir .un-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 #sec-unir .un-row-name{display:flex;align-items:center;gap:7px;font-size:12.5px;
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -284,7 +301,8 @@
 #sec-unir .un-tune[open] summary::after{transform:rotate(180deg)}
 #sec-unir .un-tune-body{display:flex;flex-direction:column;gap:9px;margin-top:12px;
   padding-top:12px;border-top:1px solid var(--line)}
-#sec-unir .mg-revs{display:flex;gap:7px}
+#sec-unir .mg-revs{display:flex;flex-wrap:wrap;gap:7px}
+#sec-unir .mg-revs:empty{display:none}
 #sec-unir .mg-tgl{flex:1;background:transparent;border:1px solid var(--line-strong);
   border-radius:8px;color:var(--muted);padding:7px 4px;font-family:var(--mono);
   font-size:10.5px;letter-spacing:.06em;cursor:pointer;transition:color .15s,background .15s}
@@ -396,7 +414,7 @@
 }
 
 /* ══ MODO «MONTAJE» ══════════════════════════════════════════════════════════
-   El conmutador de la cabecera, los dos perfiles fuente (donde se arrastra para
+   El conmutador de la cabecera, los perfiles fuente (donde se arrastra para
    elegir un tramo), la línea de tiempo de clips y la lista de trozos del panel
    derecho. Sin hex sueltos: el color de cada clip lo pone el JS (es el color de
    SERIE de su entrada, el mismo de su traza en el mapa y de su perfil), y todo
@@ -434,7 +452,12 @@
   text-overflow:ellipsis;white-space:nowrap}
 #sec-unir .chart-box.src{height:110px}
 /* El cursor lo dice: aquí se arrastra para elegir un tramo. */
-#sec-unir #un-src-a,#sec-unir #un-src-b{cursor:ew-resize;touch-action:none}
+#sec-unir .un-src-panel canvas{cursor:ew-resize;touch-action:none}
+/* La pila de perfiles fuente (uno por entrada, los crea srcEl() en unir.js).
+   Con más de dos, cada perfil se queda en 96 px: seis a 150 harían un mapa de
+   más de un metro de alto (el mapa mide lo que la pila). */
+#sec-unir .un-srcs{display:flex;flex-direction:column;gap:16px;min-width:0}
+#sec-unir .un-srcs.many .chart-box.src{height:96px}
 #sec-unir .un-src-foot{display:flex;align-items:center;justify-content:space-between;
   gap:10px;flex-wrap:wrap;margin-top:8px}
 #sec-unir .un-src-range{font-size:10.5px;color:var(--muted-dim);min-width:0;
@@ -558,14 +581,14 @@
    `setMode()` (no hay una segunda clase de modo: esa ya existía).
 
    En montaje el material es otro. Ya no hay un solo mapa que mirar, sino un
-   mapa MÁS dos perfiles fuente y una línea de tiempo, y los pasos de la
+   mapa MÁS un perfil fuente por entrada y una línea de tiempo, y los pasos de la
    derecha pasan a ser cajas cortas. Apilado todo en una columna, «Crear»
    quedaba a 1.400 px del principio de la página y el mapa se comía el ancho
    que necesitan los perfiles. Así que aquí la rejilla se reparte por ÁREAS:
 
-       map    map  srca srca     el mapa ocupa las dos primeras columnas (≈55 %)
-       map    map  srcb srcb     y las tres filas de la pila de perfiles, así
-       map    map  tl   tl       que mide LO QUE MIDE LA PILA (grid stretch)
+       map    map  srcs srcs     el mapa ocupa las dos primeras columnas (≈55 %)
+       tl     tl   tl   tl       y mide LO QUE MIDE LA PILA de perfiles fuente
+                                 (uno por entrada, en `.un-srcs`; grid stretch)
        pieces tune result result los TRES pasos, en una sola fila
        elev   elev elev elev     y el perfil del resultado, a todo lo ancho
 
@@ -587,8 +610,7 @@
 #sec-unir.is-montaje .un-left,
 #sec-unir.is-montaje .un-side{display:contents}
 #sec-unir.is-montaje .un-map-wrap{grid-area:map;flex:none}
-#sec-unir.is-montaje #un-src-a-panel{grid-area:srca}
-#sec-unir.is-montaje #un-src-b-panel{grid-area:srcb}
+#sec-unir.is-montaje .un-srcs{grid-area:srcs}
 #sec-unir.is-montaje #un-tl-panel{grid-area:tl}
 #sec-unir.is-montaje #un-pieces-panel{grid-area:pieces}
 #sec-unir.is-montaje #un-tune{grid-area:tune}
@@ -606,16 +628,16 @@
   #sec-unir.is-montaje #un-result-panel{align-self:start}
   /* Con columna propia los perfiles fuente ya no son una tira: 150 px. La línea
      de tiempo va DEBAJO del mapa a todo el ancho (v0.11.7), así que el mapa mide
-     lo que los DOS perfiles fuente apilados (≈500 px). */
+     lo que los perfiles fuente apilados (≈500 px con dos). */
   #sec-unir.is-montaje .chart-box.src{height:150px}
+  #sec-unir.is-montaje .un-srcs.many .chart-box.src{height:96px}
 }
 
 @media(min-width:1000px){
   #sec-unir.is-montaje .un-grid{
     grid-template-columns:minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,.9fr) minmax(0,.9fr);
     grid-template-areas:
-      "map    map  srca   srca"
-      "map    map  srcb   srcb"
+      "map    map  srcs   srcs"
       "tl     tl   tl     tl"
       "pieces tune result result"
       "elev   elev elev   elev";
@@ -625,29 +647,30 @@
   #sec-unir.is-montaje .un-map-wrap{min-height:480px}
 }
 /* Entre 768 y 1000 no caben cuatro columnas de panel: dos, con el mapa entero
-   arriba y los dos perfiles fuente uno al lado del otro. «Resultado» se lleva
+   arriba y los perfiles fuente de dos en dos, uno al lado del otro. «Resultado» se lleva
    su propia fila entera: es el que lleva las cifras y «Crear». */
 @media(min-width:768px) and (max-width:999px){
   #sec-unir.is-montaje .un-grid{
     grid-template-columns:minmax(0,1fr) minmax(0,1fr);
     grid-template-areas:
       "map    map"
-      "srca   srcb"
+      "srcs   srcs"
       "tl     tl"
       "pieces tune"
       "result result"
       "elev   elev";
     align-items:start}
   #sec-unir.is-montaje .un-map-wrap{min-height:400px}
+  #sec-unir.is-montaje .un-srcs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 }
 
 /* Por debajo de 768, una sola columna en el orden en que se trabaja: mapa, los
-   dos perfiles, la línea de tiempo, los tres pasos y, al final, el perfil del
+   perfiles fuente, la línea de tiempo, los tres pasos y, al final, el perfil del
    resultado (que describe lo que ya se ha montado). Lo único que puede
    desbordar a lo ancho sigue siendo la línea de tiempo, con su scroll propio. */
 @media(max-width:767px){
   #sec-unir.is-montaje .un-grid{
     grid-template-columns:minmax(0,1fr);
-    grid-template-areas:"map" "srca" "srcb" "tl" "pieces" "tune" "result" "elev"}
+    grid-template-areas:"map" "srcs" "tl" "pieces" "tune" "result" "elev"}
   #sec-unir.is-montaje .un-map-wrap{height:36vh;min-height:230px}
 }

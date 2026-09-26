@@ -1,4 +1,5 @@
-/* Sección `unir`: unir DOS tracks en uno nuevo, a pantalla completa.
+/* Sección `unir`: unir DOS O MÁS tracks (hasta MAX_INPUTS) en uno nuevo, a
+   pantalla completa.
    Markup en templates/sec/unir.html, CSS en static/css/unir.css.
 
    Hasta la v0.10.0 esto era una herramienta DENTRO del editor («⛓ Unir con
@@ -8,7 +9,10 @@
    es que ahora tiene la pantalla entera: mapa a la izquierda y los pasos a la
    derecha (propuestas · ajustes · resultado). Elegir CON QUÉ unir no gasta un
    panel: es el popup #un-pick-modal (openPick/closePick) y el chip
-   #un-pick-chip de la cabecera.
+   #un-pick-chip de la cabecera. El popup es de SELECCIÓN MÚLTIPLE: la entrada
+   0 (A) es siempre la que se está uniendo, y las elegidas son B, C, D… en el
+   orden en que se marcaron (`sels`). Ese orden solo da las letras: el del
+   recorrido lo decide el servidor mirando la geometría.
 
    Sirve para DOS entidades, como el editor: una RUTA (/Sendero/<pid>/unir) y un
    PLAN (/Plan/<pid>/unir). El router pasa `params.kind` ('route' | 'plan') y
@@ -27,11 +31,11 @@
    - `report.reversed`/`order`/`trimmed_m`/`tracks` van por PIEZA ensamblada, no
      por entrada: con una junta interior `order` puede repetir un índice o
      dejarse uno fuera. Lo que va POR ENTRADA es el `reversed_inputs` de cada
-     propuesta — de ahí salen los toggles «Invertir A/B» (revFromReport), y un
+     propuesta — de ahí salen los toggles «Invertir X» (revFromReport), y un
      `null` ahí significa «esa entrada se usa por trozos»: el toggle se muestra
      «parcial» y deshabilitado.
    - Forzar la orientación (`reverse`) hace que el servidor NO enumere nada: hay
-     una sola propuesta y `proposal` debe ser 0. Por eso al pulsar «Invertir A/B»
+     una sola propuesta y `proposal` debe ser 0. Por eso al pulsar «Invertir X»
      las tarjetas desaparecen y sale «↩ Volver a las propuestas».
    - Cada cambio relanza la previsualización con debounce y TOKEN: sin el token,
      una respuesta lenta de la opción anterior pinta encima de la nueva y el mapa
@@ -45,7 +49,7 @@
      nunca como opción scriptable: eso se resuelve una vez por punto y el hover
      repinta en cada movimiento del ratón.
    - `options.start`/`options.end` fuerzan por dónde empieza y acaba el
-     recorrido unido: '' = automático, o '<i><e>' (i = entrada 0|1, e = s|e). El
+     recorrido unido: '' = automático, o '<i><e>' (i = entrada, e = s|e). El
      servidor contesta si pudo cumplirlo en `report.endpoints_applied`.
 
    Contrato: mount(params, opts) / unmount(). params.id = public_id,
@@ -65,10 +69,11 @@
       list: () => Store.routes(),
       load: pid => Store.route(pid, {lite: true}),
       titulo: 'Unir ruta',
-      unirCon: 'Con qué ruta unir',
+      unirCon: 'Con qué rutas unir',
+      okN: n => n ? `Unir con ${n} ruta${n === 1 ? '' : 's'}` : 'Elige al menos una',
       buscarPh: 'Buscar por nombre o localidad…',
       sinOtras: 'No hay otras rutas con las que unir.',
-      elige: 'Elige con qué ruta unir.',
+      elige: 'Elige con qué rutas unir.',
       crear: 'Crear ruta unida',
       nombrePh: 'Nombre de la ruta unida',
       creando: 'Creando la ruta…',
@@ -76,7 +81,7 @@
       noEncontrada: 'Ruta no encontrada.',
       noCargada: 'No se pudo cargar esta ruta.',
       estaEl: 'esta ruta',            // leyenda A de la previsualización
-      laOtra: 'la otra ruta',         // …y leyenda B
+      laOtra: 'la otra ruta',         // …y leyenda B (solo si son dos)
       invertidaN: 'invertida',        // resumen del informe: «B invertida»
       invertidasN: 'invertidas',
       entera: 'entera',               // pieza que usa la entrada completa
@@ -84,11 +89,11 @@
                   'invertirla entera no significa nada.',
       offline: 'Unir necesita conexión: la unión la calcula el servidor. ' +
                'Puedes mirar la ruta, pero no previsualizar ni crear nada.',
-      perfilVacio: 'Elige con qué ruta unir para ver el perfil del resultado.',
+      perfilVacio: 'Elige con qué rutas unir para ver el perfil del resultado.',
       // modo «Montaje»
-      eligeMontaje: 'Elige con qué ruta unir para montar el recorrido.',
+      eligeMontaje: 'Elige con qué rutas unir para montar el recorrido.',
       sinTrozos: 'Añade al menos un trozo.',
-      noCargadaB: 'No se pudo cargar la otra ruta.',
+      noCargadaB: 'No se pudo cargar una de las rutas elegidas.',
     },
     plan: {
       mergeApi: '/api/planned/merge',
@@ -97,10 +102,11 @@
       list: () => Store.planned(),
       load: pid => Store.plan(pid),
       titulo: 'Unir plan',
-      unirCon: 'Con qué plan unir',
+      unirCon: 'Con qué planes unir',
+      okN: n => n ? `Unir con ${n} plan${n === 1 ? '' : 'es'}` : 'Elige al menos uno',
       buscarPh: 'Buscar por nombre…',
       sinOtras: 'No hay otros planes con los que unir.',
-      elige: 'Elige con qué plan unir.',
+      elige: 'Elige con qué planes unir.',
       crear: 'Crear plan unido',
       nombrePh: 'Nombre del plan unido',
       creando: 'Creando el plan…',
@@ -116,10 +122,10 @@
                   'invertirlo entero no significa nada.',
       offline: 'Unir necesita conexión: la unión la calcula el servidor. ' +
                'Puedes mirar el plan, pero no previsualizar ni crear nada.',
-      perfilVacio: 'Elige con qué plan unir para ver el perfil del resultado.',
-      eligeMontaje: 'Elige con qué plan unir para montar el recorrido.',
+      perfilVacio: 'Elige con qué planes unir para ver el perfil del resultado.',
+      eligeMontaje: 'Elige con qué planes unir para montar el recorrido.',
       sinTrozos: 'Añade al menos un trozo.',
-      noCargadaB: 'No se pudo cargar el otro plan.',
+      noCargadaB: 'No se pudo cargar uno de los planes elegidos.',
     },
   };
   let kind = 'plan';
@@ -132,7 +138,12 @@
   let items = [];              // candidatos (del Store), ya ordenados por cercanía
   let search = '';             // texto del buscador
   let searchTimer = null;
-  let selPid = null;           // el candidato elegido (B)
+  /* Las entradas ELEGIDAS, en orden: sels[0] es B, sels[1] es C… (la A es
+     `pid`). `pickDraft` es la selección que se está haciendo en el popup, que
+     solo pasa a `sels` al pulsar «Unir con N» (cerrar la descarta). `selGen`
+     sube con cada cambio de selección: invalida las cargas de fuentes en vuelo
+     que eran de la selección anterior, como `_tok` las del montaje. */
+  let sels = [], pickDraft = [], selGen = 0;
   let pickOpen = false;        // ¿está abierto el popup «con qué unir»?
   let map = null, capa = null;
   let mapRO = null;        // ResizeObserver del mapa: la columna crece con el panel derecho
@@ -154,10 +165,10 @@
      recuerda si en modo AUTOMÁTICO había más de una (para ofrecer «volver a las
      propuestas» tras forzar una orientación, que deja una sola); `partial[i]`
      marca la entrada que la propuesta elegida usa por trozos. */
-  let props = [], hadProps = false, partial = [false, false];
+  let props = [], hadProps = false, partial = [];
   /* Inicio y fin FORZADOS. '' = automático (lo decide el servidor mirando la
      geometría); si no, '<i><e>' con i = índice de entrada (0 = la que se está
-     uniendo, 1 = la elegida) y e = 's' (inicio) | 'e' (fin): '0s','0e','1s','1e'.
+     uniendo, 1… = las elegidas) y e = 's' (inicio) | 'e' (fin): '0s','0e','1s'…
      Viajan en `options.start`/`options.end`, y el servidor contesta en
      `report.endpoints_applied` si ha podido cumplirlos (si no, además manda su
      aviso en `warnings` y las propuestas son las de siempre).
@@ -174,11 +185,11 @@
      es camino, y la distancia tampoco lo cuenta, igual que en analyse_gpx). */
   let elevChart = null, resElev = [], resCoords = [], resCum = [], resBreak = null;
   let hoverD = null, hoverBoxEl = null;
-  /* Hover sobre una de las dos ENTRADAS (solo en montaje): {i, d} en km, o null.
+  /* Hover sobre una de las ENTRADAS (solo en montaje): {i, d} en km, o null.
      Es el hermano de `hoverD`, que es el del resultado; si los dos estuvieran
      vivos manda el del resultado (ver updateSrcMapHover). */
   let srcHover = null;
-  /* Marcadores DOM de inicio/fin del resultado y de los cuatro extremos
+  /* Marcadores DOM de inicio/fin del resultado y de los extremos
      originales. DOM y no capas a propósito: sobreviven al setStyle() de un
      cambio de capa base, así que no hay que reponerlos (regla 15). */
   let endMarkers = [];
@@ -190,7 +201,7 @@
      (como un editor de vídeo) y el servidor solo arregla las costuras. Viaja en
      `options.pieces` y, con él, el servidor ignora proposal/start/end/reverse.
 
-     `srcs[i]` es la entrada i (0 = la que se está uniendo, 1 = la elegida) ya
+     `srcs[i]` es la entrada i (0 = la que se está uniendo, 1… = las elegidas) ya
      aplanada: sus coordenadas, su distancia acumulada en km punto a punto y su
      serie de elevación. Es lo que traduce «km 4,1» a un punto del mapa y al
      revés, y de ahí salen los `from_m`/`to_m` que se mandan (en METROS).
@@ -199,12 +210,14 @@
      trozo va invertido — que es como lo entiende el servidor. */
   const MODE_KEY = 'sendero_unir_modo_v1';
   let mode = 'auto';                 // 'auto' | 'montaje'
-  let srcs = [null, null];           // {name, coords, cum, total, elev}
-  let srcCharts = [null, null];
-  let selRange = [null, null];            // selección por arrastre: {a, b} en km
+  let srcs = [];                     // por entrada: {name, coords, cum, total, elev}
+  let srcCharts = [];
+  let selRange = [];                 // por entrada: selección por arrastre {a, b} en km
+  /* Por entrada, el panel de su perfil fuente (lo crea srcEl() la primera vez
+     y se reutiliza): {panel, title, sub, canvas, range, add, addr}. */
+  const srcEls = [];
   let pieces = [];                   // el montaje, en orden
   let hiPiece = null;                // clip resaltado por el ratón (índice)
-  let loadingB = false;
   /* Memo del cálculo de «Ajustar» (el par de vértices más cercano de cada
      costura): es O(n·m) y se consulta dos veces por repintado (línea de tiempo
      y panel). La firma cubre lo único que puede cambiarlo: los trozos, la
@@ -217,9 +230,17 @@
      vez por entrada, comparando con tolerancia para que no oscile). */
   let trackLens = null;
 
-  /* Colores de serie (los mismos que las gráficas: elevación y velocidad), no
-     tokens de CSS: van en el JS que pinta, como el resto de colores de serie. */
-  const MG_A_COLOR = '#f0b070', MG_B_COLOR = '#3d9be9';
+  /* Cuántos tracks se pueden unir de una vez, contando el que se está uniendo.
+     El servidor admite algo más (`_MAX_INPUTS` de core/editing.py); aquí manda
+     lo que se puede leer: seis colores distintos y seis perfiles fuente. */
+  const MAX_INPUTS = 6;
+  /* Colores de serie, uno por entrada, no tokens de CSS: van en el JS que
+     pinta, como el resto de colores de serie. A y B son los de siempre
+     (elevación y velocidad de las gráficas); C… salen de la paleta del
+     catálogo de actividades, lejos del rojo del marcador de fin. */
+  const SRC_COLOR = ['#f0b070', '#3d9be9', '#43b97f', '#a86ee0', '#e055c0', '#23bfc4'];
+  const MG_A_COLOR = SRC_COLOR[0];
+  const srcColor = i => SRC_COLOR[i % SRC_COLOR.length];
   const MG_INK = '#0b120e';     // tinta oscura del contorno de las flechas
   /* Gris apagado (= --muted) para la propuesta que se está SOLO mirando: tiene
      que leerse como «esta no es la elegida» al lado de las dos de color. */
@@ -236,7 +257,6 @@
      una sola «INICIO / FIN». */
   const ENDS_SAME_M = 30;
   const NAME_MAX = 28;          // recorte de los nombres en los desplegables
-  const SRC_COLOR = [MG_A_COLOR, MG_B_COLOR];
   const TL_MIN_PX = 56;         // ancho mínimo de un clip de la línea de tiempo
   /* Trozo más corto que esto (en metros) no tiene costura que arreglar: el
      servidor lo rechaza con un 400 (es 2·tol_m), así que aquí ni se añade. */
@@ -308,41 +328,35 @@
        SIN las trazas y sin forma de recuperarlas — salir de la capa offline
        borraba la previsualización entera. Las fuentes se pueden añadir en cuanto
        el estilo está puesto, que es justo lo que dice ese evento. */
-    if (!map || map.getSource('un-a')) return;
-    if (!map.hasImage('mg-arrow-a')) map.addImage('mg-arrow-a', _arrowImage(MG_A_COLOR));
-    if (!map.hasImage('mg-arrow-b')) map.addImage('mg-arrow-b', _arrowImage(MG_B_COLOR));
+    if (!map || map.getSource('un-s0')) return;
+    for (let i = 0; i < MAX_INPUTS; i++) {
+      if (!map.hasImage('mg-arrow-' + i)) map.addImage('mg-arrow-' + i, _arrowImage(srcColor(i)));
+    }
 
-    /* El track que se está uniendo (A), mientras no hay previsualización: con
-       ribete oscuro debajo, por el mismo motivo que la traza por pendiente de
-       los dos detalles (el color claro se pierde sobre el topográfico). */
-    map.addSource('un-a', {type: 'geojson', data: EMPTY_FC});
-    map.addLayer({id: 'un-a-casing', type: 'line', source: 'un-a',
-      layout: {'line-join': 'round', 'line-cap': 'round'},
-      paint: {'line-color': MG_INK, 'line-width': 7, 'line-opacity': .45}});
-    map.addLayer({id: 'un-a-line', type: 'line', source: 'un-a',
-      layout: {'line-join': 'round', 'line-cap': 'round'},
-      paint: {'line-color': MG_A_COLOR, 'line-width': 4, 'line-opacity': .95}});
-    /* Línea ancha invisible para el hover de la fuente (modo Montaje), mismo
-       patrón que `mg-keep-hit`. Va aquí, DEBAJO de `mg-keep-hit`, que se añade
-       más abajo: donde el resultado se monte sobre la traza atenuada manda el
-       resultado (lo comprueba el handler con queryRenderedFeatures). */
-    map.addLayer({id: 'un-a-hit', type: 'line', source: 'un-a',
-      layout: {'line-join': 'round', 'line-cap': 'round'},
-      paint: {'line-color': MG_INK, 'line-width': 18, 'line-opacity': 0}});
-
-    /* El track elegido (B), igual que A. Solo se usa en modo MONTAJE: ahí las
-       dos entradas se ven ENTERAS y atenuadas debajo del resultado, porque de
-       ellas es de donde se recortan los trozos. En automático queda vacío. */
-    map.addSource('un-b', {type: 'geojson', data: EMPTY_FC});
-    map.addLayer({id: 'un-b-casing', type: 'line', source: 'un-b',
-      layout: {'line-join': 'round', 'line-cap': 'round'},
-      paint: {'line-color': MG_INK, 'line-width': 7, 'line-opacity': .45}});
-    map.addLayer({id: 'un-b-line', type: 'line', source: 'un-b',
-      layout: {'line-join': 'round', 'line-cap': 'round'},
-      paint: {'line-color': MG_B_COLOR, 'line-width': 4, 'line-opacity': .95}});
-    map.addLayer({id: 'un-b-hit', type: 'line', source: 'un-b',
-      layout: {'line-join': 'round', 'line-cap': 'round'},
-      paint: {'line-color': MG_INK, 'line-width': 18, 'line-opacity': 0}});
+    /* Una traza por ENTRADA (`un-s<i>`, del color de su serie), con ribete
+       oscuro debajo por el mismo motivo que la traza por pendiente de los dos
+       detalles (el color claro se pierde sobre el topográfico). En automático
+       solo se ve la de A, mientras no hay previsualización; en MONTAJE se ven
+       todas ENTERAS y atenuadas debajo del resultado, porque de ellas es de
+       donde se recortan los trozos. Se crean las MAX_INPUTS de una vez (vacías)
+       para que añadir un track a la selección no tenga que tocar el estilo.
+       `un-s<i>-hit` es la línea ancha invisible del hover de la fuente (modo
+       Montaje), mismo patrón que `mg-keep-hit`; va DEBAJO de `mg-keep-hit`, que
+       se añade más abajo: donde el resultado se monte sobre la traza atenuada
+       manda el resultado (lo comprueba el handler con queryRenderedFeatures). */
+    for (let i = 0; i < MAX_INPUTS; i++) {
+      const id = 'un-s' + i;
+      map.addSource(id, {type: 'geojson', data: EMPTY_FC});
+      map.addLayer({id: id + '-casing', type: 'line', source: id,
+        layout: {'line-join': 'round', 'line-cap': 'round'},
+        paint: {'line-color': MG_INK, 'line-width': 7, 'line-opacity': .45}});
+      map.addLayer({id: id + '-line', type: 'line', source: id,
+        layout: {'line-join': 'round', 'line-cap': 'round'},
+        paint: {'line-color': srcColor(i), 'line-width': 4, 'line-opacity': .95}});
+      map.addLayer({id: id + '-hit', type: 'line', source: id,
+        layout: {'line-join': 'round', 'line-cap': 'round'},
+        paint: {'line-color': MG_INK, 'line-width': 18, 'line-opacity': 0}});
+    }
 
     /* Previsualización: una sola fuente con todo (las partes que se conservan,
        lo que se va a descartar y el hueco), separadas por `kind` con un filtro
@@ -433,30 +447,32 @@
     if (rep) paintReport(rep); else clearMap(false);
   }
 
-  /* Las dos trazas de entrada (A y B), enteras. Quién se ve y con qué fuerza
-     depende del modo:
+  /* Las trazas de entrada, enteras. Quién se ve y con qué fuerza depende del
+     modo:
      - AUTOMÁTICO: A sola mientras no hay previsualización; con informe a la
        vista sobra, porque sus piezas ya se pintan (y recortadas) en `tracks`.
-     - MONTAJE: las DOS siempre, atenuadas — son el material del que se recortan
+     - MONTAJE: todas siempre, atenuadas — son el material del que se recortan
        los trozos, así que tienen que verse aunque el resultado esté encima.
      Se llama desde repaint(), paintReport() y clearMap(): un solo sitio decide. */
   function paintSources() {
-    if (!map || !map.getSource('un-a')) return;
+    if (!map || !map.getSource('un-s0')) return;
     const montaje = mode === 'montaje';
     const linea = c => (c && c.length > 1)
       ? {type: 'Feature', properties: {}, geometry: {type: 'LineString', coordinates: c}}
       : EMPTY_FC;
     const dim = montaje ? .38 : .95;
-    [['un-a', trackA()], ['un-b', (srcs[1] && srcs[1].coords) || []]].forEach(([id, coords], i) => {
+    for (let i = 0; i < MAX_INPUTS; i++) {
+      const id = 'un-s' + i;
+      const coords = i === 0 ? trackA() : ((i < nIn() && srcs[i] && srcs[i].coords) || []);
       const s = map.getSource(id);
-      if (!s) return;
+      if (!s) continue;
       const visible = montaje ? true : (i === 0 && !rep);
       s.setData(visible ? linea(coords) : EMPTY_FC);
       try {
         map.setPaintProperty(id + '-line', 'line-opacity', dim);
         map.setPaintProperty(id + '-casing', 'line-opacity', montaje ? .3 : .45);
       } catch (e) {}
-    });
+    }
   }
 
   function initMap() {
@@ -531,15 +547,15 @@
       setHoverD(null);
     });
 
-    /* Lo mismo para las DOS trazas fuente, que es lo que se mira en montaje:
-       pasar el ratón por A o por B en el mapa mueve el crosshair de SU perfil y
+    /* Lo mismo para las trazas fuente, que es lo que se mira en montaje:
+       pasar el ratón por A, B, C… en el mapa mueve el crosshair de SU perfil y
        pone el punto sobre esa traza. Se registra AQUÍ, una sola vez, por el
        mismo motivo que el del resultado: `addDataLayers()` repone las capas tras
        cada `sendero:basemap` (regla 15) y registrarlo allí acumularía handlers. */
-    const HIT = ['un-a-hit', 'un-b-hit'];
+    const HIT = Array.from({length: MAX_INPUTS}, (_, i) => 'un-s' + i + '-hit');
     const hitLayers = () => HIT.filter(l => map.getLayer(l));
-    /* El MISMO handler para las dos capas, y decide él cuál es: A y B se solapan
-       largos tramos (para eso se unen), así que en esos metros los dos eventos
+    /* El MISMO handler para todas las capas, y decide él cuál es: las entradas
+       se solapan largos tramos (para eso se unen), así que en esos metros los eventos
        se disparan y el último registrado ganaría siempre — el ratón sobre A
        señalaba B. Aquí se mira el vértice más cercano de CADA entrada que esté
        bajo el cursor y gana el más cerca, así el resultado no depende del orden
@@ -555,7 +571,7 @@
       }
       const {lng, lat} = e.lngLat;
       let bi = -1, bk = 0, bd = Infinity;
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < Math.min(nIn(), MAX_INPUTS); i++) {
         const s = srcs[i];
         if (!s || !s.coords.length || !map.getLayer(HIT[i])) continue;
         if (!map.queryRenderedFeatures(e.point, {layers: [HIT[i]]}).length) continue;
@@ -568,8 +584,8 @@
       map.getCanvas().style.cursor = 'crosshair';
       setSrcHover(bi, srcs[bi].cum[bk]);
     };
-    /* Salir de UNA traza no es salir de las dos: si el cursor sigue sobre la
-       otra, se deja que su propio mousemove lo resuelva. */
+    /* Salir de UNA traza no es salir de todas: si el cursor sigue sobre otra,
+       se deja que su propio mousemove lo resuelva. */
     const srcHoverOut = e => {
       if (mode !== 'montaje') return;
       if (e && e.point && map.queryRenderedFeatures(e.point, {layers: hitLayers()}).length) return;
@@ -616,13 +632,13 @@
     map.fitBounds([[mnLo, mnLa], [mxLo, mxLa]], {padding: 50, duration: 0});
   }
 
-  /* Las DOS entradas enteras. Es el encuadre del modo «Montaje» mientras no hay
-     informe: ahí se ven las dos trazas a la vez (son el material del que se
-     recortan los trozos), así que mirar solo A deja media tarea fuera. */
-  function fitBoth() {
+  /* Todas las entradas enteras. Es el encuadre del modo «Montaje» mientras no
+     hay informe: ahí se ven todas las trazas a la vez (son el material del que
+     se recortan los trozos), así que mirar solo A deja media tarea fuera. */
+  function fitAll() {
     if (!map || geoTracking(map)) return;
     let mnLo = Infinity, mxLo = -Infinity, mnLa = Infinity, mxLa = -Infinity;
-    [trackA(), (srcs[1] && srcs[1].coords) || []].forEach(c => c.forEach(([lo, la]) => {
+    [trackA()].concat(srcs.slice(1, nIn()).map(x => (x && x.coords) || [])).forEach(c => c.forEach(([lo, la]) => {
       if (lo < mnLo) mnLo = lo; if (lo > mxLo) mxLo = lo;
       if (la < mnLa) mnLa = la; if (la > mxLa) mxLa = la;
     }));
@@ -630,15 +646,16 @@
     map.fitBounds([[mnLo, mnLa], [mxLo, mxLa]], {padding: 60, duration: 0});
   }
 
-  /* A dónde toca mirar AHORA: al resultado si ya hay informe; si no, a las dos
-     entradas cuando las dos se están viendo (montaje con B cargada); y si no, a
-     A sola. En automático B no se pinta, así que encuadrarla dejaría medio mapa
-     vacío. Lo usa el botón «centrar» y el reencuadre del conmutador de modo. */
+  /* A dónde toca mirar AHORA: al resultado si ya hay informe; si no, a todas
+     las entradas cuando se están viendo (montaje con alguna elegida ya
+     cargada); y si no, a A sola. En automático las elegidas no se pintan, así
+     que encuadrarlas dejaría medio mapa vacío. Lo usa el botón «centrar» y el
+     reencuadre del conmutador de modo. */
   function fitCurrent() {
     if (!map) return;
     if (rep) { fitReport(rep); return; }
-    if (mode === 'montaje' && srcs[1] && srcs[1].coords && srcs[1].coords.length > 1) {
-      fitBoth();
+    if (mode === 'montaje' && srcs.slice(1, nIn()).some(x => x && x.coords && x.coords.length > 1)) {
+      fitAll();
       return;
     }
     fitA();
@@ -680,8 +697,8 @@
   function paintReport(r) {
     if (!map || !map.getSource('mg')) return;
     paintSources();
-    const col = ei => ei === 0 ? MG_A_COLOR : MG_B_COLOR;
-    const arr = ei => ei === 0 ? 'mg-arrow-a' : 'mg-arrow-b';
+    const col = ei => srcColor(ei);
+    const arr = ei => 'mg-arrow-' + (ei % MAX_INPUTS);
     const feats = [];
     const line = (coords, p) => {
       if (coords && coords.length > 1)
@@ -930,7 +947,7 @@
     placeHoverBox(box, ll, parts.join(''));
   }
 
-  /* ── hover sobre una de las dos FUENTES (solo modo Montaje) ────────────────
+  /* ── hover sobre una de las FUENTES (solo modo Montaje) ────────────────────
      El del resultado dice «dónde cae el km 4,1 de lo que voy a crear»; este dice
      «dónde cae el km 4,1 de A», que es la pregunta mientras se recortan trozos.
      Misma mecánica y mismo cuadro flotante, pero con su propia fuente de punto
@@ -962,7 +979,7 @@
       return;
     }
     src.setData({type: 'FeatureCollection', features: [{type: 'Feature',
-      properties: {color: SRC_COLOR[srcHover.i]},
+      properties: {color: srcColor(srcHover.i)},
       geometry: {type: 'Point', coordinates: ll}}]});
     if (hoverD != null) return;          // el cuadro lo está escribiendo el resultado
     const e = nearestByD(s.elev, srcHover.d);
@@ -984,7 +1001,7 @@
     _syncing = true;
     srcHover = next;
     try {
-      for (let k = 0; k < 2; k++) {
+      for (let k = 0; k < srcCharts.length; k++) {
         if (!srcCharts[k]) continue;
         if ((next && next.i === k) || (prev && prev.i === k)) {
           try { srcCharts[k].render(); } catch (e) {}
@@ -1014,7 +1031,7 @@
        puntos y reenvía el último evento de ratón (ver «Rendimiento del hover»). */
     try {
       if (elevChart) elevChart.render();
-      if (apagaSrc) for (let k = 0; k < 2; k++) {
+      if (apagaSrc) for (let k = 0; k < srcCharts.length; k++) {
         if (srcCharts[k]) { try { srcCharts[k].render(); } catch (e) {} }
       }
     } finally { _syncing = false; }
@@ -1050,12 +1067,12 @@
   }
 
   /* El mismo crosshair en un perfil FUENTE, pero leyendo `srcHover` y solo si
-     el que está señalado es este (los dos perfiles se repintan por separado). */
+     el que está señalado es este (cada perfil se repinta por separado). */
   function srcCrosshairPlugin(i) {
     return {id: 'unSrcCrosshair',
       afterDatasetsDraw(chart) {
         if (!srcHover || srcHover.i !== i) return;
-        drawCrosshair(chart, srcHover.d, () => SRC_COLOR[i]);
+        drawCrosshair(chart, srcHover.d, () => srcColor(i));
       }};
   }
 
@@ -1227,7 +1244,7 @@
     if (!Array.isArray(lens)) return false;
     trackLens = lens;
     let cambia = false;
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < srcs.length; i++) {
       const s = srcs[i], L = lens[i];
       if (!s || !(L > 0)) continue;
       const nuevo = L / 1000, viejo = s.total || nuevo;
@@ -1267,24 +1284,69 @@
   }
 
   /* El tramo resaltado en el mapa: el clip que señala el ratón si lo hay, y si
-     no las selecciones vivas de los dos perfiles. Solo en modo montaje. */
+     no las selecciones vivas de los perfiles. Solo en modo montaje. */
   function paintSelection() {
     if (!map || !map.getSource('un-sel')) return;
     const feats = [];
     const add = (i, a, b) => {
       const c = srcSlice(i, a, b);
-      if (c.length > 1) feats.push({type: 'Feature', properties: {color: SRC_COLOR[i]},
+      if (c.length > 1) feats.push({type: 'Feature', properties: {color: srcColor(i)},
         geometry: {type: 'LineString', coordinates: c}});
     };
     if (mode === 'montaje') {
       const p = (hiPiece != null) ? pieces[hiPiece] : null;
       if (p) add(p.track, p.from_m / 1000, p.to_m / 1000);
-      else for (let i = 0; i < 2; i++) if (selRange[i]) add(i, selRange[i].a, selRange[i].b);
+      else for (let i = 0; i < selRange.length; i++) if (selRange[i]) add(i, selRange[i].a, selRange[i].b);
     }
     map.getSource('un-sel').setData({type: 'FeatureCollection', features: feats});
   }
 
-  /* ── los dos perfiles fuente ───────────────────────────────────────────── */
+  /* ── los perfiles fuente (uno por entrada) ─────────────────────────────────
+     El markup solo trae el contenedor `#un-srcs`: el panel de cada entrada lo
+     crea srcEl(i) la PRIMERA vez que hace falta y se queda (se esconde con
+     style.display cuando sobra). Reutilizarlo no es un detalle: el <canvas> se
+     engancha una sola vez (bindSrcDrag, que pone listeners en `window`), y
+     recrearlo en cada montaje los iría acumulando. Los elementos se buscan
+     dentro del propio panel, nunca por id: son seis copias del mismo markup. */
+  function srcEl(i) {
+    if (srcEls[i]) return srcEls[i];
+    const box = q('#un-srcs');
+    if (!box || i >= MAX_INPUTS) return null;
+    const p = document.createElement('div');
+    p.className = 'panel un-src-panel';
+    p.style.display = 'none';
+    p.innerHTML =
+      '<div class="panel-head"><span class="panel-title" data-r="title"></span>' +
+      '<span class="panel-sub mono" data-r="sub"></span></div>' +
+      '<div class="chart-box src"><canvas data-r="canvas"></canvas></div>' +
+      '<div class="un-src-foot"><span class="un-src-range mono" data-r="range"></span>' +
+      '<span class="un-src-btns">' +
+      `<button class="btn ghost sm" type="button" onclick="SEC.unir.srcAll(${i})">Todo</button>` +
+      `<button class="btn ghost sm" type="button" data-r="addr" onclick="SEC.unir.srcAdd(${i},true)">＋ Añadir invertido</button>` +
+      `<button class="btn sm" type="button" data-r="add" onclick="SEC.unir.srcAdd(${i},false)">＋ Añadir trozo</button>` +
+      '</span></div>';
+    box.appendChild(p);
+    const r = k => p.querySelector(`[data-r="${k}"]`);
+    srcEls[i] = {panel: p, title: r('title'), sub: r('sub'), canvas: r('canvas'),
+      range: r('range'), add: r('add'), addr: r('addr')};
+    return srcEls[i];
+  }
+
+  /* Qué paneles fuente se ven: los de las entradas que hay y ya están cargadas,
+     y solo en montaje. Con más de dos, perfiles más bajos (`.many`). */
+  function showSrcPanels() {
+    const montaje = mode === 'montaje';
+    const box = q('#un-srcs');
+    if (box) {
+      box.style.display = (montaje && !!srcs[0]) ? '' : 'none';
+      box.classList.toggle('many', nIn() > 2);
+    }
+    for (let i = 0; i < MAX_INPUTS; i++) {
+      const el = (i < nIn() && montaje && srcs[i]) ? srcEl(i) : srcEls[i];
+      if (el && el.panel) el.panel.style.display = (montaje && i < nIn() && srcs[i]) ? '' : 'none';
+    }
+  }
+
   /* Ámbar de la selección: es `--pr-yellow`, literal porque un <canvas> necesita
      un color concreto — el mismo criterio (y el mismo dibujo) que la banda A–B
      del perfil del editor. */
@@ -1318,24 +1380,25 @@
     try { srcCharts[i].destroy(); } catch (e) {}
     srcCharts[i] = null;
   }
-  function destroySrcCharts() { destroySrcChart(0); destroySrcChart(1); }
+  function destroySrcCharts() { for (let i = 0; i < srcCharts.length; i++) destroySrcChart(i); }
 
   function drawSrcChart(i) {
     destroySrcChart(i);
     const s = srcs[i];
-    const ctx = q(i === 0 ? '#un-src-a' : '#un-src-b');
+    const el = s ? srcEl(i) : null;
+    const ctx = el && el.canvas;
     if (!s || !ctx || typeof Chart !== 'function' || !s.elev.length) return;
     const elev = s.elev;
     srcCharts[i] = new Chart(ctx, {
       type: 'line',
       plugins: [selBandPlugin(i), srcCrosshairPlugin(i)],
-      /* Sin degradado por pendiente a propósito: estos dos perfiles son el
+      /* Sin degradado por pendiente a propósito: estos perfiles son el
          MATERIAL (cada uno del color de su entrada, que es como se identifican
          en el mapa y en los clips), no el resultado. El color por pendiente se
          queda para el perfil del resultado, donde describe el recorrido. */
       data: {datasets: [{
         data: elev.map(p => ({x: p.d, y: p.e})), fill: true,
-        borderColor: SRC_COLOR[i], backgroundColor: rgba(SRC_COLOR[i], .14),
+        borderColor: srcColor(i), backgroundColor: rgba(srcColor(i), .14),
         borderWidth: 1.8, pointRadius: 0, tension: .3,
       }]},
       options: {
@@ -1364,8 +1427,8 @@
   /* Arrastrar sobre el perfil = elegir un tramo. Mismo gesto que la selección
      A–B del editor, y con las mismas dos precauciones: el movimiento y el
      soltar se escuchan en `window` (o soltar fuera del lienzo dejaría el
-     arrastre pegado) y el enganche se hace UNA sola vez por <canvas> — el
-     markup es estático y `mount()` puede correr decenas de veces. */
+     arrastre pegado) y el enganche se hace UNA sola vez por <canvas> — los
+     paneles se reutilizan (srcEl) y `mount()` puede correr decenas de veces. */
   let dragI = null;
   function bindSrcDrag(canvas, i) {
     if (canvas._unBound) return;
@@ -1437,13 +1500,14 @@
   function srcName(i) {
     const s = srcs[i];
     if (s && s.name) return s.name;
-    return i === 0 ? ((current && current.name) || K.estaEl) : (selName() || K.laOtra);
+    return i === 0 ? ((current && current.name) || K.estaEl) : (selName(i) || K.laOtra);
   }
 
   function renderSrcHead(i) {
     const s = srcs[i];
-    const t = q(i === 0 ? '#un-src-a-title' : '#un-src-b-title');
-    const sub = q(i === 0 ? '#un-src-a-sub' : '#un-src-b-sub');
+    const el = s ? srcEl(i) : srcEls[i];
+    if (!el) return;
+    const t = el.title, sub = el.sub;
     if (t) t.textContent = `${mgLabel(i)} · ${srcName(i)}` +
       (s ? ` · ${fmt(s.total, 1)} km` : '');
     const n = pieces.filter(p => p.track === i).length;
@@ -1452,7 +1516,9 @@
 
   function renderSrcFoot(i) {
     const s = srcs[i], r = selRange[i];
-    const lab = q(i === 0 ? '#un-src-a-range' : '#un-src-b-range');
+    const el = s ? srcEl(i) : srcEls[i];
+    if (!el) return;
+    const lab = el.range;
     /* El sentido del ARRASTRE cuenta: de derecha a izquierda es el tramo al
        revés, y «＋ Añadir trozo» lo mete ya invertido. «＋ Añadir invertido»
        le da la vuelta a lo que diga la selección. */
@@ -1460,11 +1526,7 @@
       ? `km ${fmt(r.a, 1)} → ${fmt(r.b, 1)} · ${fmt(Math.abs(r.b - r.a), 1)} km` +
         (r.b < r.a ? ' · invertido' : '')
       : 'Arrastra sobre el perfil para elegir un tramo (doble click: entero).';
-    [i === 0 ? '#un-src-a-add' : '#un-src-b-add',
-     i === 0 ? '#un-src-a-addr' : '#un-src-b-addr'].forEach(id => {
-      const b = q(id);
-      if (b) b.disabled = !(s && r);
-    });
+    [el.add, el.addr].forEach(b => { if (b) b.disabled = !(s && r); });
   }
 
   function srcAll(i) {
@@ -1515,7 +1577,7 @@
     hiPiece = null;
     renderTimeline();
     renderPiecesPanel();
-    renderSrcHead(0); renderSrcHead(1);
+    for (let i = 0; i < nIn(); i++) renderSrcHead(i);
     paintSelection();
     elevEmptyText();
     if (pieces.length) { showSkeleton(); schedule(); }
@@ -1524,7 +1586,7 @@
       prevTok++;
       rep = null; stats = null; props = [];
       clearMap(false);
-      showEmpty(selPid ? K.sinTrozos : K.eligeMontaje);
+      showEmpty(sels.length ? K.sinTrozos : K.eligeMontaje);
     }
   }
 
@@ -1639,7 +1701,7 @@
 
   function fitSig() {
     return pieces.map(p => `${p.track}:${Math.round(p.from_m)}:${Math.round(p.to_m)}`).join('|') +
-      '#' + tolM() + '#' + [0, 1].map(i => srcs[i] ? `${srcs[i].cum.length},${srcs[i].total}` : '-').join(';');
+      '#' + tolM() + '#' + srcs.map(x => x ? `${x.cum.length},${x.total}` : '-').join(';');
   }
 
   /* Un plan por separador (pieces.length-1), `null` donde no hay costura que
@@ -1772,7 +1834,7 @@
       const w = Math.max(TL_MIN_PX, Math.round(len / tot * TL_SPAN_PX));
       const rev = p.to_m < p.from_m;
       html += `<div class="un-clip" data-k="${k}" style="width:${w}px;` +
-        `background:${rgba(SRC_COLOR[p.track], .7)}" title="${esc(srcName(p.track))}">` +
+        `background:${rgba(srcColor(p.track), .7)}" title="${esc(srcName(p.track))}">` +
         '<div class="un-clip-top">' +
         `<span class="un-clip-lbl">${mgLabel(p.track)} · ${fmt(p.from_m / 1000, 1)}→${fmt(p.to_m / 1000, 1)}</span>` +
         `<span class="un-clip-dir" title="${rev ? 'Invertido' : 'Sentido original'}">${rev ? '←' : '→'}</span>` +
@@ -1868,7 +1930,7 @@
     if (hiPiece === k) return;
     hiPiece = k;
     paintSelection();
-    for (let i = 0; i < 2; i++) if (srcCharts[i]) { try { srcCharts[i].render(); } catch (e) {} }
+    for (let i = 0; i < srcCharts.length; i++) if (srcCharts[i]) { try { srcCharts[i].render(); } catch (e) {} }
     ['#un-timeline', '#un-pieces-list'].forEach(id => {
       const box = q(id);
       if (!box || !box.querySelectorAll) return;
@@ -1883,7 +1945,7 @@
     const el = q('#un-elev-empty');
     if (!el) return;
     el.textContent = mode === 'montaje'
-      ? (selPid ? K.sinTrozos : K.eligeMontaje) : K.perfilVacio;
+      ? (sels.length ? K.sinTrozos : K.eligeMontaje) : K.perfilVacio;
   }
 
   function applyModeUI() {
@@ -1892,10 +1954,9 @@
     if (a) a.classList.toggle('on', !montaje);
     if (b) b.classList.toggle('on', montaje);
     const show = (id, on) => { const el = q(id); if (el) el.style.display = on ? '' : 'none'; };
-    show('#un-src-a-panel', montaje && !!srcs[0]);
-    show('#un-src-b-panel', montaje && !!srcs[1]);
-    show('#un-tl-panel', montaje && !!selPid);
-    show('#un-pieces-panel', montaje && !!selPid);
+    showSrcPanels();
+    show('#un-tl-panel', montaje && sels.length > 0);
+    show('#un-pieces-panel', montaje && sels.length > 0);
     /* En montaje, «Propuestas» e «Inicio y fin» no aplican: el orden y los
        extremos los pone el montaje, y el servidor los ignora. */
     if (montaje) {
@@ -1903,40 +1964,50 @@
       show('#un-ends', false);
       show('#un-back-props', false);
     }
-    // «Invertir A/B» tampoco: cada trozo lleva su propio sentido.
-    const revs = q('#un-tune .mg-revs');
+    // «Invertir X» tampoco: cada trozo lleva su propio sentido.
+    const revs = q('#un-revs');
     if (revs) revs.style.display = montaje ? 'none' : '';
     const sec = document.getElementById('sec-unir');
     if (sec) sec.classList.toggle('is-montaje', montaje);
     elevEmptyText();
-    // La columna izquierda cambia de alto al aparecer o irse tres paneles.
+    // La columna izquierda cambia de alto al aparecer o irse varios paneles.
     if (map && typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(() => { if (map) map.resize(); });
     }
   }
 
-  /* Carga lo que falte de las dos entradas y deja los perfiles pintados. A ya
-     está en `current`; B se pide al Store (que da geojson + elevation), como
-     hace el detalle. */
+  /* Carga lo que falte de las entradas y deja los perfiles pintados. A ya
+     está en `current`; las elegidas se piden al Store (que da geojson +
+     elevation), como hace el detalle, y a la vez. Dos llamadas solapadas (el
+     conmutador de modo y un cambio de selección) pueden pedir la misma: se
+     guarda la primera que llegue (`!srcs[i]`), porque la segunda ya no
+     llevaría el reescalado de `track_lengths_m` y los trozos se reescalarían
+     dos veces. `selGen` descarta lo que era de otra selección. */
   async function ensureSources() {
     if (!srcs[0] && current) srcs[0] = buildSrc(current);
-    if (selPid && !srcs[1] && !loadingB) {
-      loadingB = true;
-      const tok = _tok;
-      let d = null;
-      try { d = await K.load(selPid); } catch (e) { d = null; }
-      loadingB = false;
-      if (tok !== _tok) return;
-      if (!d) toast(K.noCargadaB);
-      else srcs[1] = buildSrc(d);
+    const falta = [];
+    sels.forEach((p, j) => { if (!srcs[j + 1]) falta.push([p, j + 1]); });
+    if (falta.length) {
+      const tok = _tok, gen = selGen;
+      const got = await Promise.all(falta.map(([p]) =>
+        Promise.resolve().then(() => K.load(p)).catch(() => null)));
+      if (tok !== _tok || gen !== selGen) return;
+      let fallo = false;
+      got.forEach((d, k) => {
+        const i = falta[k][1];
+        if (!d) fallo = true;
+        else if (!srcs[i]) srcs[i] = buildSrc(d);
+      });
+      if (fallo) toast(K.noCargadaB);
     }
     if (trackLens) applyTrackLens(trackLens);
-    for (let i = 0; i < 2; i++) { renderSrcHead(i); drawSrcChart(i); renderSrcFoot(i); }
+    for (let i = 0; i < nIn(); i++) { renderSrcHead(i); drawSrcChart(i); renderSrcFoot(i); }
     applyModeUI();
     paintSources();
     paintSelection();
-    /* Con B ya cargada el mapa enseña DOS trazas y, además, acaba de aparecer
-       su panel (la rejilla cambia otra vez): se reencuadra tras el resize. */
+    /* Con las elegidas ya cargadas el mapa enseña todas las trazas y, además,
+       acaban de aparecer sus paneles (la rejilla cambia otra vez): se
+       reencuadra tras el resize. */
     if (mode === 'montaje') afterResize(fitCurrent);
   }
 
@@ -1953,7 +2024,7 @@
     /* Cambiar de modo cambia la rejilla, así que el mapa cambia de tamaño: el
        encuadre hay que rehacerlo DESPUÉS del resize (afterResize), o se queda
        el de la caja anterior. Se hace ya con lo que se sabe, y otra vez cuando
-       ensureSources() termine de traer B (que es cuando hay dos trazas). */
+       ensureSources() termine de traer las elegidas (que es cuando hay varias trazas). */
     if (montajeActivo()) {
       afterResize(fitCurrent);
       ensureSources().then(() => { if (mode === 'montaje') afterPieces(); });
@@ -1978,12 +2049,12 @@
        que es el de otro ensamblaje): el definitivo lo pone la previsualización
        que viene, que trae el informe de automático y llega con la rejilla ya
        asentada. */
-    if (selPid && opts) { rep = null; refitNext = true; showSkeleton(); preview(); }
+    if (sels.length && opts) { rep = null; refitNext = true; showSkeleton(); preview(); }
     else { clearMap(false); showEmpty(K.elige); }
     afterResize(() => { if (prevRep) fitReport(prevRep); else fitA(); });
   }
 
-  function montajeActivo() { return mode === 'montaje' && !!selPid; }
+  function montajeActivo() { return mode === 'montaje' && sels.length > 0; }
 
   /* ── la lista de candidatos ───────────────────────────────────────────────
      Del Store, no de la red: funciona con la copia local y no repite una
@@ -2020,6 +2091,10 @@
         || String(r.locality || '').toLowerCase().includes(s);
   }
 
+  /* Una fila del popup. La casilla de la izquierda dice, si está marcada, qué
+     LETRA tendrá esa entrada (B, C, D…) y va del color de su serie: es como se
+     la va a reconocer luego en el mapa, la leyenda y los perfiles. Con el cupo
+     lleno (MAX_INPUTS) las no marcadas salen deshabilitadas. */
   function itemRow(r) {
     const act = activityOf(r.activity_type);
     const km = fmt((r.distance_m || 0) / 1000, 1) + ' km';
@@ -2027,7 +2102,14 @@
     // iconSvg ya trae su círculo del color de la actividad (el catálogo es la
     // única fuente de verdad del color): aquí solo se le da tamaño.
     const chip = act ? `<span class="un-act" title="${esc(act.label)}">${iconSvg(act, 18)}</span>` : '';
-    return `<button class="un-row${r.public_id === selPid ? ' on' : ''}" data-pid="${esc(r.public_id)}">` +
+    const k = pickDraft.indexOf(r.public_id);
+    const on = k >= 0;
+    const lleno = !on && pickDraft.length >= MAX_INPUTS - 1;
+    const ck = on
+      ? `<span class="un-row-ck" style="background:${srcColor(k + 1)}">${mgLabel(k + 1)}</span>`
+      : '<span class="un-row-ck"></span>';
+    return `<button class="un-row${on ? ' on' : ''}" data-pid="${esc(r.public_id)}"` +
+      (lleno ? ` disabled title="Como mucho ${MAX_INPUTS} a la vez"` : '') + '>' + ck +
       `<span class="un-row-main"><span class="un-row-name">${chip}${esc(r.name || '(sin nombre)')}</span>` +
       `<span class="un-row-meta">${esc(km)}` +
       (r.locality ? ` · ${esc(r.locality)}` : '') + '</span></span>' +
@@ -2038,7 +2120,8 @@
     const list = q('#un-list');
     if (!list) return;
     const sub = q('#un-pick-sub');
-    if (sub) sub.textContent = items.length ? `${items.length} disponible${items.length === 1 ? '' : 's'}` : '';
+    if (sub) sub.textContent = items.length
+      ? `${items.length} disponible${items.length === 1 ? '' : 's'} · hasta ${MAX_INPUTS - 1}` : '';
     /* Sin nada con lo que unir, el popup lo dice y ofrece la única salida que
        tiene sentido: volver. Ese botón es de este caso y de ningún otro, y el
        buscador sobra (no hay nada que buscar). */
@@ -2046,6 +2129,7 @@
     if (back) back.style.display = items.length ? 'none' : '';
     const sb = q('#un-search');
     if (sb) sb.style.display = items.length ? '' : 'none';
+    renderPickOk();
     if (!items.length) { list.innerHTML = `<div class="un-none">${esc(K.sinOtras)}</div>`; return; }
     const vis = items.filter(itemMatches);
     if (!vis.length) { list.innerHTML = '<div class="un-none">Nada coincide con la búsqueda.</div>'; return; }
@@ -2055,10 +2139,36 @@
       ? `<div class="un-group">${esc(t)}</div>` + rs.map(itemRow).join('') : '';
     list.innerHTML = grupo('Cercanos', cerca) + grupo('Todos', lejos);
     /* Los listeners van en las filas que se crean aquí —se recrean en cada
-       repintado, así que no se acumulan— y no en `document`. */
+       repintado, así que no se acumulan— y no en `document`. Click = marcar o
+       desmarcar; doble click = unir SOLO con esa (el atajo del caso de siempre,
+       que antes era un click). */
     list.querySelectorAll('.un-row').forEach(el => {
-      el.addEventListener('click', () => pickItem(el.dataset.pid));
+      el.addEventListener('click', () => toggleDraft(el.dataset.pid));
+      el.addEventListener('dblclick', () => { pickDraft = [el.dataset.pid]; applyPick(); });
     });
+  }
+
+  /* «Unir con N»: aplica la selección. Sin nada marcado no hay qué aplicar. */
+  function renderPickOk() {
+    const ok = q('#un-pick-ok');
+    if (!ok) return;
+    ok.style.display = items.length ? '' : 'none';
+    ok.disabled = !pickDraft.length;
+    ok.textContent = K.okN(pickDraft.length);
+  }
+
+  function toggleDraft(p) {
+    if (!p) return;
+    const k = pickDraft.indexOf(p);
+    if (k >= 0) pickDraft.splice(k, 1);
+    else if (pickDraft.length < MAX_INPUTS - 1) pickDraft.push(p);
+    else { toast(`Como mucho se pueden unir ${MAX_INPUTS} a la vez.`); return; }
+    /* Se repinta la lista entera (y no solo la fila): quitar una cambia la
+       letra de todas las que van detrás, y llenar el cupo deshabilita el resto. */
+    const list = q('#un-list');
+    const top = list ? list.scrollTop : 0;
+    renderList();
+    if (list) list.scrollTop = top;
   }
 
   function searchChanged() {
@@ -2068,39 +2178,68 @@
     searchTimer = setTimeout(() => { searchTimer = null; search = v.trim(); renderList(); }, 180);
   }
 
-  function selName() {
-    const r = items.find(x => x.public_id === selPid);
+  /* Cuántas entradas hay (A + las elegidas) y el nombre de la entrada i ≥ 1. */
+  function nIn() { return 1 + sels.length; }
+  function itemOf(p) { return items.find(x => x.public_id === p) || null; }
+  function selName(i) {
+    const r = itemOf(sels[i - 1]);
     return r ? (r.name || '') : '';
   }
 
-  /* Elegir con qué unir: se previsualiza AL INSTANTE (no hay botón
-     «Previsualizar»: el usuario ya ha dicho lo único que hacía falta). */
-  function pickItem(otherPid) {
-    if (!otherPid || !Store.isOnline()) {
-      if (!Store.isOnline()) toast(K.offline);
-      return;
-    }
-    selPid = otherPid;
-    opts = {revManual: false, reverse: [false, false], proposal: 0, trim: true, gap: 'auto', tol: 30};
+  /* Aplicar la selección del popup: se previsualiza AL INSTANTE (no hay botón
+     «Previsualizar»: el usuario ya ha dicho lo único que hacía falta).
+
+     Cambiar la selección NO tira el montaje entero: los tracks que siguen
+     conservan su perfil cargado y sus trozos (con el índice nuevo, porque
+     quitar B convierte la C en B), y solo se pierden los trozos de los que se
+     quitan. Lo que sí vuelve a cero es lo que depende del CONJUNTO: el informe,
+     las propuestas, la orientación forzada y los extremos pedidos (sus índices
+     ya no significan lo mismo). La tolerancia, el recorte y el hueco se
+     conservan: son preferencias del usuario, no del conjunto. */
+  function applyPick() {
+    if (!Store.isOnline()) { toast(K.offline); return; }
+    const next = pickDraft.filter(p => p && p !== pid).slice(0, MAX_INPUTS - 1);
+    if (!next.length) return;
+    closePick();
+    if (next.length === sels.length && next.every((p, k) => p === sels[k]) && opts) return;
+    setSelection(next);
+  }
+
+  function setSelection(next) {
+    const prev = sels;
+    // índice viejo → nuevo de cada entrada (0 = A siempre es 0)
+    const remap = [0].concat(prev.map(p => { const k = next.indexOf(p); return k < 0 ? -1 : k + 1; }));
+    const nsrcs = [srcs[0] || null], nsel = [selRange[0] || null];
+    next.forEach((p, k) => {
+      const old = prev.indexOf(p);
+      nsrcs[k + 1] = old >= 0 ? (srcs[old + 1] || null) : null;
+      nsel[k + 1] = old >= 0 ? (selRange[old + 1] || null) : null;
+    });
+    pieces = pieces.filter(p => remap[p.track] >= 0)
+      .map(p => Object.assign({}, p, {track: remap[p.track]}));
+    setSrcHover(null);
+    destroySrcCharts();
+    srcs = nsrcs; selRange = nsel; srcCharts = [];
+    sels = next.slice();
+    selGen++;
+    hiPiece = null; trackLens = null;
+    const base = opts || {trim: true, gap: 'auto', tol: 30};
+    opts = {revManual: false, reverse: new Array(nIn()).fill(false), proposal: 0,
+      trim: base.trim, gap: base.gap, tol: base.tol};
     rep = null; stats = null; fitted = false;
     resetProps();
-    // Otro candidato = otros extremos posibles: los desplegables vuelven a
-    // «Automático» (mantener «Inicio de B» apuntando a otra B no significa nada).
+    // Otras entradas = otros extremos posibles: los desplegables vuelven a
+    // «Automático» (mantener «Inicio de C» apuntando a otra C no significa nada).
     resetEnds();
     clearElevation();
-    const t = q('#un-trim'); if (t) t.checked = true;
-    const tol = q('#un-tol'); if (tol) tol.value = 30;
+    const t = q('#un-trim'); if (t) t.checked = !!opts.trim;
+    const tol = q('#un-tol'); if (tol) tol.value = opts.tol;
     setGapUI();
+    renderToggles();
     renderEnds();
     syncName();
-    renderList();                 // marca la fila elegida
     renderPickChip();
-    closePick();                  // elegir es lo único que hacía falta del popup
-    /* Otro candidato = otro material: los trozos del montaje ya no significan
-       nada (apuntaban a la B anterior) y la fuente B se vuelve a cargar. */
-    srcs[1] = null; selRange = [null, null]; pieces = []; hiPiece = null; trackLens = null;
-    setSrcHover(null);
-    destroySrcChart(1);
+    paintSources();
     if (mode === 'montaje') {
       ensureSources().then(() => { if (mode === 'montaje') afterPieces(); });
       return;
@@ -2114,15 +2253,18 @@
      había candidato) y, en modo Montaje, una celda entera de la rejilla; ahora
      es un popup y en la cabecera solo queda el chip de lo elegido.
 
-     Se cierra con ✕, «Cancelar», un click en el velo y Escape (ese listener se
-     registra una sola vez al cargar este archivo, al final). */
+     Es de selección MÚLTIPLE: se trabaja sobre un borrador (`pickDraft`, copia
+     de `sels` al abrir) y solo «Unir con N» lo aplica. Se cierra sin aplicar
+     con ✕, «Cancelar», un click en el velo y Escape (ese listener se registra
+     una sola vez al cargar este archivo, al final). */
   function openPick() {
     if (!Store.isOnline()) { toast(K.offline); return; }
     const ov = q('#un-pick-modal');
     if (!ov) return;
+    pickDraft = sels.slice();
     ov.classList.remove('hidden');
     pickOpen = true;
-    renderList();               // repinta con la fila elegida marcada
+    renderList();               // repinta con las filas elegidas marcadas
     const s = q('#un-search');
     if (s) { try { s.focus(); s.select(); } catch (e) {} }
   }
@@ -2145,20 +2287,31 @@
     go(pid ? K.detailUrl(pid) : K.listUrl);
   }
 
-  /* El chip de la cabecera: «Con: <nombre> · 11,4 km · a 2,98 km». Sin candidato
-     dice «Sin elegir» y el botón pasa a ámbar («Elegir con qué unir»), que es lo
-     único que queda por hacer. Sin conexión el botón se deshabilita: la unión la
-     calcula el servidor y el aviso #un-offline ya lo explica. */
+  /* El chip de la cabecera: «Con: <nombre> · 11,4 km · a 2,98 km» con una sola
+     elegida, y «Con: B + C (3) · 31,2 km» con varias (los km son la suma, el
+     `title` los nombra todos). Sin candidato dice «Sin elegir» y el botón pasa
+     a ámbar («Elegir con qué unir»), que es lo único que queda por hacer. Sin
+     conexión el botón se deshabilita: la unión la calcula el servidor y el
+     aviso #un-offline ya lo explica. */
   function renderPickChip() {
     const chip = q('#un-pick-chip'), btn = q('#un-change');
-    const r = selPid ? items.find(x => x.public_id === selPid) : null;
+    const rs = sels.map(itemOf).filter(Boolean);
     if (chip) {
-      if (r) {
+      if (rs.length === 1) {
+        const r = rs[0];
         const km = fmt((r.distance_m || 0) / 1000, 1) + ' km';
         const dist = (r._d == null || r._d === Infinity) ? '' : ' · a ' + mgDist(r._d);
         const nom = r.name || '(sin nombre)';
         chip.innerHTML = `Con: ${esc(nom)} <span class="un-pick-km">· ${esc(km)}</span>${esc(dist)}`;
         chip.title = `Con: ${nom} · ${km}${dist}`;
+        chip.classList.add('on');
+      } else if (rs.length > 1) {
+        const tot = rs.reduce((a, r) => a + (r.distance_m || 0), 0);
+        const km = fmt(tot / 1000, 1) + ' km';
+        const noms = rs.map(r => r.name || '(sin nombre)');
+        chip.innerHTML = `Con: ${esc(noms.join(' + '))} (${rs.length}) ` +
+          `<span class="un-pick-km">· ${esc(km)}</span>`;
+        chip.title = 'Con: ' + noms.map((n, k) => `${mgLabel(k + 1)} · ${n}`).join(', ');
         chip.classList.add('on');
       } else {
         chip.textContent = 'Sin elegir';
@@ -2167,13 +2320,13 @@
       }
     }
     if (btn) {
-      btn.textContent = selPid ? 'Cambiar' : 'Elegir con qué unir';
-      btn.classList.toggle('need', !selPid);
+      btn.textContent = sels.length ? 'Cambiar' : 'Elegir con qué unir';
+      btn.classList.toggle('need', !sels.length);
       btn.disabled = !Store.isOnline();
     }
     // «Cancelar» solo con candidato: sin uno, cancelar no deja nada en pantalla.
     const cancel = q('#un-pick-cancel');
-    if (cancel) cancel.style.display = selPid ? '' : 'none';
+    if (cancel) cancel.style.display = sels.length ? '' : 'none';
   }
 
   /* Se mantiene el nombre viejo («Cambiar» del panel de antes) porque es el que
@@ -2182,12 +2335,13 @@
 
   function syncName() {
     const el = q('#un-name');
-    if (el) el.value = `${(current && current.name) || ''} + ${selName()}`;
+    if (el) el.value = [(current && current.name) || '']
+      .concat(sels.map((_, k) => selName(k + 1))).join(' + ');
   }
 
   /* ── opciones (lo que viaja en `options`) ─────────────────────────────── */
   function body(preview_) {
-    if (!selPid || !pid) return null;
+    if (!sels.length || !pid) return null;
     const nameEl = q('#un-name');
     const o = {
       trim: !!opts.trim,
@@ -2211,7 +2365,7 @@
       o.start = ends.start || null;
       o.end = ends.end || null;
     }
-    const b = {ids: [pid, selPid], name: nameEl ? nameEl.value.trim() : '', options: o};
+    const b = {ids: [pid].concat(sels), name: nameEl ? nameEl.value.trim() : '', options: o};
     if (preview_) b.preview = true;
     return b;
   }
@@ -2220,7 +2374,7 @@
      contenedor (y con él los mouseenter/leave de sus tarjetas, que viven en los
      nodos y se van con ellos). */
   function resetProps() {
-    props = []; hadProps = false; partial = [false, false];
+    props = []; hadProps = false; partial = [];
     const box = q('#un-proposals'); if (box) box.innerHTML = '';
     const pcs = q('#un-pieces'); if (pcs) pcs.innerHTML = '';
     const back = q('#un-back-props'); if (back) back.style.display = 'none';
@@ -2228,7 +2382,8 @@
     hoverClear();
   }
 
-  /* Qué orientación lleva cada ENTRADA de `ids` (0 = A, la que se está uniendo).
+  /* Qué orientación lleva cada ENTRADA de `ids` (0 = A, la que se está uniendo;
+     1… = las elegidas).
      Sale de `proposals[proposal].reversed_inputs`, que es lo único del informe
      que va por entrada: `order`/`reversed` van por PIEZA ensamblada y con una
      junta interior pueden repetir un índice o dejarse uno fuera.
@@ -2237,13 +2392,14 @@
   function revFromReport(r) {
     const pr = (r.proposals || [])[r.proposal | 0];
     const ri = pr && pr.reversed_inputs;
+    const n = nIn();
     if (Array.isArray(ri)) {
-      partial = [ri[0] == null, ri[1] == null];
-      return [ri[0] === true, ri[1] === true];
+      partial = Array.from({length: n}, (_, i) => ri[i] == null);
+      return Array.from({length: n}, (_, i) => ri[i] === true);
     }
-    partial = [false, false];
-    const out = [false, false];
-    (r.order || []).forEach((ei, k) => { if (ei === 0 || ei === 1) out[ei] = !!(r.reversed || [])[k]; });
+    partial = new Array(n).fill(false);
+    const out = new Array(n).fill(false);
+    (r.order || []).forEach((ei, k) => { if (ei >= 0 && ei < n) out[ei] = !!(r.reversed || [])[k]; });
     return out;
   }
 
@@ -2259,15 +2415,15 @@
     schedule();
   }
 
-  /* Deshacer el «Invertir A/B»: vuelve a la orientación automática y, con ella,
+  /* Deshacer el «Invertir X»: vuelve a la orientación automática y, con ella,
      a la lista de propuestas (el servidor solo las enumera si nadie fuerza la
      orientación). El botón solo está a la vista si antes hubo más de una. */
   function backToProposals() {
     if (!opts) return;
     opts.revManual = false;
-    opts.reverse = [false, false];
+    opts.reverse = new Array(nIn()).fill(false);
     opts.proposal = 0;
-    partial = [false, false];
+    partial = [];
     hoverClear();
     renderToggles();
     schedule();
@@ -2299,10 +2455,14 @@
   }
 
   /* ── inicio y fin ─────────────────────────────────────────────────────────
-     Cuatro extremos posibles (los dos de cada entrada) y dos desplegables. Los
-     nombres salen de `report.endpoints` en cuanto hay informe —es lo que el
-     servidor dice que son las entradas— y, mientras tanto, del Store. */
-  const END_KEYS = ['0s', '0e', '1s', '1e'];
+     Dos extremos posibles por entrada y dos desplegables. Los nombres salen de
+     `report.endpoints` en cuanto hay informe —es lo que el servidor dice que
+     son las entradas— y, mientras tanto, del Store. */
+  function endKeys() {
+    const out = [];
+    for (let i = 0; i < nIn(); i++) out.push(i + 's', i + 'e');
+    return out;
+  }
 
   function corta(s) {
     s = String(s || '');
@@ -2317,12 +2477,12 @@
     const t = ((rep && rep.tracks) || []).find(x => x.idx === i);
     if (t && t.name) return t.name;
     if (i === 0) return (current && current.name) || K.estaEl;
-    return selName() || K.laOtra;
+    return selName(i) || K.laOtra;
   }
 
   function endLabel(key) {
-    const i = key.charCodeAt(0) - 48;
-    return (key[1] === 's' ? 'Inicio de ' : 'Fin de ') + inputName(i);
+    const i = parseInt(key, 10) || 0;
+    return (key[key.length - 1] === 's' ? 'Inicio de ' : 'Fin de ') + inputName(i);
   }
 
   /* Rellena los dos desplegables conservando lo elegido. Se llama al elegir
@@ -2331,9 +2491,9 @@
   function renderEnds() {
     const panel = q('#un-ends');
     // En montaje los extremos los pone el propio montaje: el panel no aplica.
-    if (panel) panel.style.display = (selPid && mode !== 'montaje') ? '' : 'none';
-    if (!selPid || mode === 'montaje') return;
-    const html = '<option value="">Automático</option>' + END_KEYS.map(k => {
+    if (panel) panel.style.display = (sels.length && mode !== 'montaje') ? '' : 'none';
+    if (!sels.length || mode === 'montaje') return;
+    const html = '<option value="">Automático</option>' + endKeys().map(k => {
       const full = endLabel(k);
       return `<option value="${k}" title="${esc(full)}">${esc(corta(full))}</option>`;
     }).join('');
@@ -2468,17 +2628,17 @@
     if (applyTrackLens(rep.track_lengths_m) && mode === 'montaje') {
       // El eje, el título («… · 9,5 km») y la etiqueta del rango hablan de la
       // misma escala que los `from_m`: se rehacen los tres.
-      for (let i = 0; i < 2; i++) { drawSrcChart(i); renderSrcHead(i); renderSrcFoot(i); }
+      for (let i = 0; i < nIn(); i++) { drawSrcChart(i); renderSrcHead(i); renderSrcFoot(i); }
     }
     if (mode === 'montaje') {
       /* En montaje la única «propuesta» es el montaje mismo (el servidor la
          devuelve como la 0, con las piezas ya recortadas): ni toggles ni
          alternativas que elegir. `hadProps` no se toca, para que al volver a
          automático se recuerde si las había. */
-      partial = [false, false];
+      partial = [];
     } else if (opts.revManual) {
       // La orientación la manda el usuario; y sin partir nada, nada es parcial.
-      partial = [false, false];
+      partial = [];
     } else {
       /* Solo el modo automático dice si HAY alternativas: con `reverse` forzada
          el servidor devuelve una sola y no querríamos olvidar que las había. */
@@ -2507,7 +2667,9 @@
   }
 
   /* ── el informe, en el panel ───────────────────────────────────────────── */
-  const mgLabel = ei => ei === 0 ? 'A' : 'B';
+  /* A, B, C…: la letra de cada entrada (la de `_letter` en core/editing.py, que
+     es la que usan las etiquetas de las propuestas). */
+  const mgLabel = ei => String.fromCharCode(65 + (ei | 0));
   /* Metros, o kilómetros cuando son tantos que «253.234 m» no se lee (unir dos
      rutas de valles distintos deja huecos de cientos de km). */
   function mgDist(m) {
@@ -2515,18 +2677,24 @@
     return m >= 1000 ? `${fmt(m / 1000, 2)} km` : `${fmt(m, m < 100 ? 1 : 0)} m`;
   }
 
+  /* Un toggle «↔ Invertir X» por entrada, pintados aquí (cuántos hay depende de
+     cuántas se unen). Con muchas el texto se acorta a «↔ X», que es lo que cabe
+     en la columna de 380 px; el `title` lo dice entero. */
   function renderToggles() {
-    const rv = opts ? opts.reverse : [false, false];
-    ['#un-rev-a', '#un-rev-b'].forEach((id, i) => {
-      const el = q(id);
-      if (!el) return;
+    const box = q('#un-revs');
+    if (!box) return;
+    const n = nIn();
+    const rv = opts ? opts.reverse : [];
+    const corto = n > 3;
+    box.innerHTML = Array.from({length: n}, (_, i) => {
       const part = !!partial[i];
-      el.classList.toggle('partial', part);
-      el.classList.toggle('on', !part && !!rv[i]);
-      el.disabled = part;
-      el.title = part ? K.parcialTip : '';
-      el.textContent = part ? `↔ ${mgLabel(i)}: parcial` : `↔ Invertir ${mgLabel(i)}`;
-    });
+      const L = mgLabel(i);
+      const txt = part ? `↔ ${L}: parcial` : (corto ? `↔ ${L}` : `↔ Invertir ${L}`);
+      const tit = part ? K.parcialTip : `Invertir ${L} · ${inputName(i)}`;
+      return `<button class="mg-tgl${part ? ' partial' : (rv[i] ? ' on' : '')}" type="button"` +
+        ` title="${esc(tit)}"${part ? ' disabled' : ''}` +
+        ` onclick="SEC.unir.toggleRev(${i})">${esc(txt)}</button>`;
+    }).join('');
   }
 
   function chips(p) {
@@ -2594,7 +2762,7 @@
     });
   }
 
-  /* Las PIEZAS de la propuesta elegida: con una junta interior la leyenda A/B
+  /* Las PIEZAS de la propuesta elegida: con una junta interior la leyenda de colores
      puede mentir («A» es media A), así que se dicen en orden y con sus km. */
   function renderPieces() {
     const box = q('#un-pieces');
@@ -2637,13 +2805,15 @@
       const t = (r.tracks || []).find(x => x.idx === i);
       if (t && t.name) return t.name;
       if (i === 0) return (current && current.name) || K.estaEl;
-      return selName() || K.laOtra;
+      return selName(i) || K.laOtra;
     };
+    /* «(esta ruta)» siempre en A; «(la otra ruta)» solo cuando son dos — con
+       más, «la otra» ya no dice cuál. */
+    const cual = i => i === 0 ? K.estaEl : (nIn() === 2 ? K.laOtra : '');
     const leg = q('#un-legend');
-    if (leg) leg.innerHTML =
-      [[0, MG_A_COLOR, K.estaEl], [1, MG_B_COLOR, K.laOtra]].map(([i, c, cual]) =>
-        `<div class="mg-leg"><b style="background:${c}"></b>` +
-        `<span>${mgLabel(i)} · ${esc(nm(i))} (${esc(cual)})</span></div>`).join('');
+    if (leg) leg.innerHTML = Array.from({length: nIn()}, (_, i) =>
+      `<div class="mg-leg"><b style="background:${srcColor(i)}"></b>` +
+      `<span>${mgLabel(i)} · ${esc(nm(i))}${cual(i) ? ' (' + esc(cual(i)) + ')' : ''}</span></div>`).join('');
     // recortes, por entrada (los del informe ya son metros)
     const rec = (r.tracks || []).map(t => [t.idx, (t.trimmed_head_m || 0) + (t.trimmed_tail_m || 0)])
       .filter(([, m]) => m >= 1).map(([i, m]) => `${mgDist(m)} de ${mgLabel(i)}`);
@@ -2828,22 +2998,24 @@
     prevTok++;
     destroyMap();          // se lleva los marcadores y el cuadro de hover
     destroyChart();        // …y el Chart del perfil, que es de esta vista
-    destroySrcCharts();    // …y los dos perfiles fuente del modo montaje
-    srcs = [null, null]; selRange = [null, null]; pieces = []; hiPiece = null;
-    trackLens = null; loadingB = false; dragI = null;
+    destroySrcCharts();    // …y los perfiles fuente del modo montaje
+    srcs = []; srcCharts = []; selRange = []; pieces = []; hiPiece = null;
+    trackLens = null; dragI = null; selGen++;
     ['#un-timeline', '#un-pieces-list'].forEach(id => {
       const el = q(id); if (el) el.innerHTML = '';
     });
-    ['#un-src-a-panel', '#un-src-b-panel', '#un-tl-panel', '#un-pieces-panel'].forEach(id => {
+    ['#un-srcs', '#un-tl-panel', '#un-pieces-panel'].forEach(id => {
       const el = q(id); if (el) el.style.display = 'none';
     });
+    srcEls.forEach(el => { if (el && el.panel) el.panel.style.display = 'none'; });
+    const revs = q('#un-revs'); if (revs) revs.innerHTML = '';
     resetProps();
     resetEnds();
     resElev = []; resCoords = []; resCum = []; resBreak = null; hoverD = null;
     srcHover = null;
     const endsPanel = q('#un-ends'); if (endsPanel) endsPanel.style.display = 'none';
     opts = null; rep = null; stats = null; fitted = false; refitNext = false;
-    selPid = null; items = []; search = ''; creating = false;
+    sels = []; pickDraft = []; items = []; search = ''; creating = false;
     current = null;
     busy(false);
     hideLoadError();
@@ -2929,7 +3101,7 @@
        una vez la lista está cargada, para que se vea ya con sus «Cercanos» (o
        con el «no hay otras» y su «← Volver»). Si ya hay candidato (se vuelve de
        otra sección, o «↻ Reintentar») no se abre: estorbaría. */
-    if (!selPid) openPick();
+    if (!sels.length) openPick();
   }
 
   function unmount() {
@@ -2957,7 +3129,7 @@
     searchChanged, backToProposals, toggleRev, optsChanged, setGap,
     endsChanged, doMerge,
     // el popup «con qué unir» (`changePick` es el nombre viejo de openPick)
-    openPick, closePick, changePick, veilClick, backFromPick,
+    openPick, closePick, changePick, veilClick, backFromPick, applyPick,
     // modo «Montaje»
     setMode, srcAll, srcAdd, clearPieces, fitSeam,
   };

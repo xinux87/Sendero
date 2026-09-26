@@ -1,5 +1,5 @@
-{# Sección `unir`: unir DOS tracks en uno nuevo, a pantalla completa. Sirve para
-   un PLAN (/Plan/<pid>/unir) y para una RUTA (/Sendero/<pid>/unir) — es el mismo
+{# Sección `unir`: unir DOS O MÁS tracks (hasta 6) en uno nuevo, a pantalla
+   completa. Sirve para un PLAN (/Plan/<pid>/unir) y para una RUTA (/Sendero/<pid>/unir) — es el mismo
    markup, y los textos que cambian de género los pone sec/unir.js desde su
    objeto `K`, igual que hace el editor.
 
@@ -72,57 +72,25 @@
   <div class="un-left">
   <div class="un-map-wrap">
     <div id="un-map"></div>
-    {# Leyenda A/B sobre el mapa: la rellena mergeRenderTune() con los colores de
+    {# Leyenda A/B/C… sobre el mapa: la rellena renderTune() con los colores de
        serie (los pinta el JS, como el resto de colores de serie). #}
     <div class="mg-legend" id="un-legend"></div>
   </div>
 
-  {# ── MODO MONTAJE: los dos perfiles fuente + la línea de tiempo ───────────
+  {# ── MODO MONTAJE: un perfil fuente por entrada + la línea de tiempo ──
      Solo en modo «Montaje» (los esconde/enseña sec/unir.js con style.display,
      no con .hidden: el mapa cede altura y estos paneles son `flex:none`).
+
+     Hay tantos perfiles como tracks se unen (hasta 6), así que el markup solo
+     pone el CONTENEDOR: los paneles los crea `srcEl(i)` en sec/unir.js, uno por
+     entrada, y los reutiliza (el <canvas> de cada uno se engancha una sola vez).
 
      Sobre cada perfil se ARRASTRA para elegir un tramo (mismo gesto que la
      selección A–B del editor); el tramo elegido se resalta también en el mapa.
      «＋ Añadir trozo» lo mete al final de la línea de tiempo, «＋ Añadir
      invertido» lo mete con el sentido cambiado (from_m > to_m, que es como el
      servidor entiende «invertido»). #}
-  <div class="panel un-src-panel" id="un-src-a-panel" style="display:none">
-    <div class="panel-head">
-      <span class="panel-title" id="un-src-a-title">A</span>
-      <span class="panel-sub mono" id="un-src-a-sub"></span>
-    </div>
-    <div class="chart-box src"><canvas id="un-src-a"></canvas></div>
-    <div class="un-src-foot">
-      <span class="un-src-range mono" id="un-src-a-range"></span>
-      <span class="un-src-btns">
-        <button class="btn ghost sm" id="un-src-a-all" type="button"
-                onclick="SEC.unir.srcAll(0)">Todo</button>
-        <button class="btn ghost sm" id="un-src-a-addr" type="button"
-                onclick="SEC.unir.srcAdd(0,true)">＋ Añadir invertido</button>
-        <button class="btn sm" id="un-src-a-add" type="button"
-                onclick="SEC.unir.srcAdd(0,false)">＋ Añadir trozo</button>
-      </span>
-    </div>
-  </div>
-
-  <div class="panel un-src-panel" id="un-src-b-panel" style="display:none">
-    <div class="panel-head">
-      <span class="panel-title" id="un-src-b-title">B</span>
-      <span class="panel-sub mono" id="un-src-b-sub"></span>
-    </div>
-    <div class="chart-box src"><canvas id="un-src-b"></canvas></div>
-    <div class="un-src-foot">
-      <span class="un-src-range mono" id="un-src-b-range"></span>
-      <span class="un-src-btns">
-        <button class="btn ghost sm" id="un-src-b-all" type="button"
-                onclick="SEC.unir.srcAll(1)">Todo</button>
-        <button class="btn ghost sm" id="un-src-b-addr" type="button"
-                onclick="SEC.unir.srcAdd(1,true)">＋ Añadir invertido</button>
-        <button class="btn sm" id="un-src-b-add" type="button"
-                onclick="SEC.unir.srcAdd(1,false)">＋ Añadir trozo</button>
-      </span>
-    </div>
-  </div>
+  <div class="un-srcs" id="un-srcs" style="display:none"></div>
 
   {# La línea de tiempo: un clip por trozo, de ancho proporcional a su longitud,
      y entre clips el estado de la costura (cosida / hueco / solape recortado)
@@ -189,8 +157,8 @@
       <div class="un-pcs" id="un-pieces-list"></div>
     </div>
 
-    {# Inicio y fin del recorrido unido. Los cuatro extremos posibles son los de
-       las dos entradas («0s» inicio de A, «0e» fin de A, «1s»/«1e» los de B) y
+    {# Inicio y fin del recorrido unido. Los extremos posibles son los de cada
+       entrada («0s» inicio de A, «0e» fin de A, «1s»/«1e» los de B…) y
        van a `options.start`/`options.end`; vacío = automático (lo decide el
        servidor con la geometría). No va dentro de «Ajustes» a propósito: es de
        lo que más se toca, y plegado no se encontraría.
@@ -217,10 +185,8 @@
     <details class="panel un-tune" id="un-tune" style="display:none">
       <summary class="panel-title">Ajustes</summary>
       <div class="un-tune-body">
-        <div class="mg-revs">
-          <button class="mg-tgl" id="un-rev-a" onclick="SEC.unir.toggleRev(0)">↔ Invertir A</button>
-          <button class="mg-tgl" id="un-rev-b" onclick="SEC.unir.toggleRev(1)">↔ Invertir B</button>
-        </div>
+        {# Un «↔ Invertir X» por entrada: los pinta renderToggles(). #}
+        <div class="mg-revs" id="un-revs"></div>
         <label class="mg-check">
           <input type="checkbox" id="un-trim" checked onchange="SEC.unir.optsChanged()">
           <span>Recortar solape en la costura</span>
@@ -292,8 +258,15 @@
        ninguna salida útil y quedarse en la vista no lleva a ninguna parte. #}
     <button class="btn ghost un-wide" id="un-pick-back" type="button" style="display:none"
             onclick="SEC.unir.backFromPick()">← Volver</button>
-    <button class="btn ghost un-wide" id="un-pick-cancel" type="button" style="display:none"
-            onclick="SEC.unir.closePick()">Cancelar</button>
+    {# Las filas se MARCAN (se pueden elegir varias, hasta 5 además de la que se
+       está uniendo) y este botón aplica la selección; cerrar sin él la descarta.
+       Doble click en una fila = unir solo con esa. #}
+    <div class="un-pick-foot">
+      <button class="btn ghost" id="un-pick-cancel" type="button" style="display:none"
+              onclick="SEC.unir.closePick()">Cancelar</button>
+      <button class="btn un-pick-ok" id="un-pick-ok" type="button" disabled
+              onclick="SEC.unir.applyPick()">Unir</button>
+    </div>
   </div>
 </div>
 </section>

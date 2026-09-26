@@ -431,6 +431,7 @@ _MAX_PROPOSALS = 5         # cuántas propuestas se devuelven
 _MAX_CHAIN = 8             # piezas encadenadas como mucho (freno del DFS)
 _MAX_CHAINS = 400          # candidatos que explora el DFS antes de rendirse
 _MAX_JUNCTIONS = 4         # juntas por track (freno de la enumeración)
+_MAX_INPUTS = 8            # entradas por unión (la vista `unir` deja elegir 6)
 _DETOUR_MIN_M = 500.0      # …y cuánto tienen que separarse dos tracks para que
                            # cuente como que se han separado (ver _overlap_runs)
 _JUNCTION_MERGE_M = 250.0  # dos juntas más cerca que esto son la misma junta
@@ -1346,14 +1347,99 @@ def _whole_chains(groups, n_inputs):
     seqs = []
     for perm in orders:
         for mask in masks:
-            seq = []
-            for src in perm:
-                g = groups[src]
-                rev = bool((mask >> src) & 1)
-                ids = [u.uid for u in (reversed(g) if rev else g)]
-                seq.extend((uid, rev) for uid in ids)
-            seqs.append(seq)
+            seqs.append(_whole_seq(groups, perm, [bool((mask >> s) & 1)
+                                                  for s in range(n_inputs)]))
+    # Con 4+ entradas no se prueban todas las permutaciones (24, 120… por cada
+    # orientación), y el orden dado es el de SELECCIÓN en la vista `unir`, o
+    # sea arbitrario: sin esto, cuatro tramos que encadenan salían con huecos
+    # de kilómetros. Se añaden los encadenados «al extremo más cercano».
+    if n_inputs >= 4:
+        seqs += [_whole_seq(groups, perm, revs)
+                 for perm, revs in _greedy_orders(groups, n_inputs)]
     return seqs
+
+
+def _whole_seq(groups, perm, revs):
+    """Secuencia de piezas de las entradas ENTERAS en el orden `perm`, cada una
+    orientada según `revs[src]`."""
+    seq = []
+    for src in perm:
+        g = groups[src]
+        rev = bool(revs[src])
+        seq.extend((u.uid, rev) for u in (reversed(g) if rev else g))
+    return seq
+
+
+def _whole_ends(g, rev):
+    """Primer y último punto de la entrada entera `g` (sus piezas en orden)."""
+    return (g[-1].start(True), g[0].end(True)) if rev else \
+        (g[0].start(False), g[-1].end(False))
+
+
+def _greedy_orders(groups, n_inputs):
+    """Órdenes «vecino más cercano»: desde cada entrada y orientación, se
+    empalma siempre la entrada libre (y la orientación) cuyo inicio queda más
+    cerca del final actual. 2·n recorridos, O(n³): barato para cualquier n."""
+    out = []
+    for s0 in range(n_inputs):
+        for r0 in (False, True):
+            revs = [False] * n_inputs
+            revs[s0] = r0
+            perm = [s0]
+            end = _whole_ends(groups[s0], r0)[1]
+            left = set(range(n_inputs)) - {s0}
+            while left:
+                best = None
+                for s in sorted(left):
+                    for r in (False, True):
+                        st, en = _whole_ends(groups[s], r)
+                        d = _hav_m(end.longitude, end.latitude,
+                                   st.longitude, st.latitude)
+                        if best is None or d < best[0]:
+                            best = (d, s, r, en)
+                _d, s, r, end = best
+                perm.append(s)
+                revs[s] = r
+                left.discard(s)
+            out.append((tuple(perm), revs))
+    return out
+
+
+def _order_min_gap(units, order, forced):
+    """Orientación FORZADA con 3+ entradas: el orden que deja menos hueco entre
+    el final de cada una y el principio de la siguiente. Con ≤5 entradas se
+    prueban todas las permutaciones (120 como mucho, cada una O(n)); con más,
+    el vecino más cercano desde cada entrada. Empate → el orden dado."""
+    def cost(perm):
+        tot = 0.0
+        for a, b in zip(perm, perm[1:]):
+            e = units[a].end(bool(forced[a]))
+            s = units[b].start(bool(forced[b]))
+            tot += _hav_m(e.longitude, e.latitude, s.longitude, s.latitude)
+        return tot
+
+    base = tuple(order)
+    if len(base) <= 5:
+        cands = itertools.permutations(base)
+    else:
+        cands = []
+        for first in base:
+            perm, left = [first], [u for u in base if u != first]
+            while left:
+                e = units[perm[-1]].end(bool(forced[perm[-1]]))
+                nxt = min(left, key=lambda u: _hav_m(
+                    e.longitude, e.latitude,
+                    units[u].start(bool(forced[u])).longitude,
+                    units[u].start(bool(forced[u])).latitude))
+                perm.append(nxt)
+                left.remove(nxt)
+            cands.append(tuple(perm))
+    best, best_c = base, cost(base)
+    for perm in cands:
+        c = cost(perm)
+        if c < best_c - 1.0:
+            best, best_c = perm, c
+    return list(best)
 
 
 def _variants(seq, closed):
@@ -1609,7 +1695,10 @@ def _propose(units, groups, n_inputs, had_times, tol_m, gap_join_m, close_tol,
         # Un hueco que se une en recta no es un defecto: si no, una propuesta
         # que se deja medio track fuera ganaría a la completa por 30 m de nada.
         gap = 0.0 if c["gap_m"] <= gap_join_m else c["gap_m"]
-        return (0 if c["closed_loop"] else 1,
+        # Un «circuito» con kilómetros de hueco sin coser no es un circuito:
+        # con 3+ entradas salía uno que cerraba saltándose 5 km y ganaba al
+        # recorrido continuo. Cerrar solo cuenta si no deja huecos cortados.
+        return (0 if c["closed_loop"] and gap == 0.0 else 1,
                 round(c["repeated_m"] / 10.0),
                 round(gap / 5.0),
                 -c["n_pieces"], c["n_rev"],
@@ -1776,6 +1865,8 @@ def smart_merge(gpxs, names=None, *, reverse=None, trim=True, join_gap=None,
     gpxs = list(gpxs)
     if len(gpxs) < 2:
         raise EditError("Indica al menos dos rutas que unir")
+    if len(gpxs) > _MAX_INPUTS:
+        raise EditError(f"Como mucho se pueden unir {_MAX_INPUTS} rutas a la vez")
     tol_m = float(tol_m)
 
     # El montaje manual manda: el recorrido lo dicta el usuario pieza a pieza,
@@ -1848,6 +1939,7 @@ def smart_merge(gpxs, names=None, *, reverse=None, trim=True, join_gap=None,
         track_lengths = [_plain_len(pts, cos_lat) for pts, _b, _n in entries]
 
     requested = None
+    free = False
     if manual:
         specs = normalize_pieces(pieces, len(entries))
         units, manual_rev, requested = _manual_units(entries, specs, tol_m, cums)
@@ -1873,7 +1965,10 @@ def smart_merge(gpxs, names=None, *, reverse=None, trim=True, join_gap=None,
     # Pedir extremos obliga a enumerar aunque no haya juntas interiores: la
     # condición se cumple eligiendo el ORDEN y la orientación de las entradas,
     # y eso es justo lo que enumera _propose.
-    if forced is None and (len(units) > len(entries) or want):
+    # Y con 3+ entradas sin tiempos, también: el orden en que llegan es el de
+    # SELECCIÓN, no el del recorrido, y con dos solo había un orden posible.
+    if forced is None and (len(units) > len(entries) or want
+                           or (free and len(entries) >= 3)):
         proposals, ep_applied = _propose(units, groups, len(entries), had_times,
                                          tol_m, gap_join_m, close_tol, cos_lat,
                                          cell, want_s, want_e)
@@ -1900,6 +1995,11 @@ def smart_merge(gpxs, names=None, *, reverse=None, trim=True, join_gap=None,
     else:
         order = (sorted(range(len(units)), key=lambda i: ubounds[i][0])
                  if have_times else list(range(len(units))))
+        if forced is not None and not have_times and len(units) >= 3:
+            # Orientación forzada: lo único libre es el orden, y el que llega es
+            # el de selección. Se elige el que menos hueco deja (antes de mirar
+            # los extremos pedidos, que pueden reordenarlo otra vez).
+            order = _order_min_gap(units, order, forced)
         if want and forced is not None:
             # Con `reverse` explícito lo único que queda libre es el orden.
             alt = _order_for_endpoints(units, order, forced, want_s, want_e,
